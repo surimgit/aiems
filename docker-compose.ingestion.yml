@@ -15,7 +15,7 @@ services:
         condition: service_started
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     restart: always
     ports:
       - "6379:6379"
@@ -32,13 +32,19 @@ services:
       retries: 5
 
   mqtt:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.0.18
     restart: always
     ports:
       - "1883:1883"
       - "9001:9001"
+    environment:
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
     volumes:
-      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/acl.template:/mosquitto/config/acl.template:ro
+      - ./infra/mosquitto/entrypoint.sh:/mosquitto/config/entrypoint.sh:ro
       - mqtt_data:/mosquitto/data
       - mqtt_log:/mosquitto/log
 

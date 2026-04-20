@@ -9,3 +9,4 @@ node_modules/
 redis_data/
 pg_data/
 mqtt_data/
+.claude/

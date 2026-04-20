@@ -29,14 +29,15 @@ Vue.js + TypeScript 프론트엔드, Flask(Python) 백엔드 다중 서비스, M
 ```bash
 # 1. 환경변수 설정
 cp .env.example .env
-# .env 파일에서 비밀번호 등 실제 값 채우기 (최소한 REDIS_PASSWORD 필수)
+# .env 파일의 모든 빈 값 채우기 (REDIS_PASSWORD, *_PASSWORD, MQTT_USER/PASSWORD, JWT_SECRET 등)
 
-# 2. 전체 서비스 실행
-docker compose up --build
+# 2. 환경변수 검증 (누락된 필수 값이 있으면 실패)
+./infra/check_env.sh
 
-# 3. Redis Streams Consumer Group 초기화 (최초 1회)
-pip install redis
-python infra/init_streams.py
+# 3. 전체 서비스 실행 (한 방)
+docker compose up -d --build
+# stream-init 컨테이너가 자동으로 Redis Streams Consumer Group을 생성한 뒤,
+# 모든 서비스가 순서대로 기동됩니다.
 ```
 
 ## Redis Streams 토픽 목록
@@ -48,6 +49,7 @@ python infra/init_streams.py
 | mg:state:result | State-Processor | DB-Writer | 가공된 상태 데이터 |
 | mg:ai:result | AI-Service | Control, DB-Writer | AI 예측/추천 결과 |
 | mg:db:write | 전체 서비스 | DB-Writer | 시계열 저장 요청 |
+| mg:emergency:event | Ingestion, State-Processor | State-Processor, Control, DB-Writer | 비상 이벤트 (Emergency Event Bus) |
 
 ## 브랜치 전략
 | 브랜치 | 용도 | 규칙 |
