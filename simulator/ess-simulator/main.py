@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import signal
 from pathlib import Path
+from typing import Sequence
 
 from pydantic import ValidationError
 
@@ -28,16 +29,19 @@ async def async_main(config_path: Path) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(sig, app.request_shutdown)
+            # noinspection PyTypeChecker
+            loop.add_signal_handler(sig, lambda : app.request_shutdown())
         except NotImplementedError:
             pass
 
     await app.run()
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
+    """Parse CLI args and run the simulator entrypoint."""
+
     parser = build_arg_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     config_path = Path(args.config).resolve()
 
     try:

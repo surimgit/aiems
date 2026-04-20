@@ -1,25 +1,46 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 import paho.mqtt.client as mqtt
 
 from core.command_handler import CommandAck
+from mqtt_contract import SimulatorSnapshot, build_topic, snapshot_to_telemetry, to_ack_message
+
+
+class PublisherClient(Protocol):
+    """Publisher가 실제 MQTT 클라이언트에 기대하는 최소 기능이다."""
+
+    def publish(self, topic: str, payload: str, qos: int = 0) -> Any:
+        ...
+
+    def connect(self, host: str, port: int, keepalive: int = 60) -> Any:
+        ...
+
+    def loop_start(self) -> Any:
+        ...
+
+    def loop_stop(self) -> Any:
+        ...
+
+    def disconnect(self) -> Any:
+        ...
 
 
 class MqttPublisher:
     def __init__(self, broker_host: str, broker_port: int) -> None:
         self.broker_host = broker_host
         self.broker_port = broker_port
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.client: PublisherClient = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.connected = False
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
 
-    def build_topic(self, plant_id: str, device_id: str, message_type: str) -> str:
-        return f"{plant_id}/ess/{device_id}/{message_type}"
+    @staticmethod
+    def build_topic(plant_id: str, resource_type: str, device_id: str, message_type: str) -> str:
+        """공통 계약 함수를 써서 토픽을 만든다."""
+
+        return build_topic(plant_id, resource_type, device_id, message_type)
 
     def start(self) -> None:
         try:
@@ -33,58 +54,37 @@ class MqttPublisher:
             self.client.loop_stop()
             self.client.disconnect()
 
-    def serialize_telemetry(self, snapshot: dict[str, Any]) -> str:
-        payload = {
-            "device_id": snapshot["device_id"],
-            "plant_id": snapshot["plant_id"],
-            "resource_type": "ess",
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "data": {
-                "instantaneous": {
-                    "P": snapshot["power_kw"],
-                    "Q": 0.0,
-                    "V": 380.0,
-                    "I": 0.0,
-                    "f": 60.0,
-                    "PF": 1.0,
-                },
-                "energy": {
-                    "kWh": snapshot["accumulated_energy_kwh"],
-                    "kvarh": 0.0,
-                },
-                "status": {
-                    "SOC": snapshot["soc"],
-                    "operating_mode": snapshot["operating_mode"],
-                    "comms_health": "ok",
-                    "state": snapshot["state"],
-                    "low_soc_threshold": snapshot["low_soc_threshold"],
-                    "high_soc_threshold": snapshot["high_soc_threshold"],
-                    "min_safe_soc_threshold": snapshot["min_safe_soc_threshold"],
-                    "max_safe_soc_threshold": snapshot["max_safe_soc_threshold"],
-                    "max_temperature_c": snapshot["max_temperature_c"],
-                },
-            },
-        }
-        return json.dumps(payload, ensure_ascii=False)
+    @staticmethod
+    def serialize_telemetry(snapshot: SimulatorSnapshot) -> str:
+        """정형 snapshot을 telemetry JSON 문자열로 직렬화한다."""
 
-    def serialize_ack(self, ack: CommandAck) -> str:
-        return ack.model_dump_json(exclude_none=True)
+        return snapshot_to_telemetry(snapshot).model_dump_json()
 
-    def publish_telemetry(self, snapshot: dict[str, Any]) -> None:
+    @staticmethod
+    def serialize_ack(ack: CommandAck) -> str:
+        """내부 ACK 객체를 외부 전송용 JSON으로 직렬화한다."""
+
+        return to_ack_message(ack).model_dump_json(exclude_none=True)
+
+    def publish_telemetry(self, snapshot: SimulatorSnapshot) -> None:
+        """연결된 상태에서만 telemetry를 발행한다."""
+
         if not self.connected:
             return
-        topic = self.build_topic(snapshot["plant_id"], snapshot["device_id"], "telemetry")
-        self.client.publish(topic, self.serialize_telemetry(snapshot))
+        topic = self.build_topic(snapshot["plant_id"], snapshot["resource_type"], snapshot["device_id"], "telemetry")
+        self.client.publish(topic, self.serialize_telemetry(snapshot), qos=1)
 
-    def publish_ack(self, plant_id: str, device_id: str, ack: CommandAck) -> None:
+    def publish_ack(self, plant_id: str, resource_type: str, device_id: str, ack: CommandAck) -> None:
+        """연결된 상태에서만 ACK를 발행한다."""
+
         if not self.connected:
             return
-        topic = self.build_topic(plant_id, device_id, "ack")
-        self.client.publish(topic, self.serialize_ack(ack))
+        topic = self.build_topic(plant_id, resource_type, device_id, "ack")
+        self.client.publish(topic, self.serialize_ack(ack), qos=1)
 
-    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Any, reason_code: Any, properties: Any) -> None:
+    def _on_connect(self, _client: mqtt.Client, _userdata: Any, _flags: Any, _reason_code: Any, _properties: Any) -> None:
         self.connected = True
         print(f"[ESS][mqtt] publisher connected to {self.broker_host}:{self.broker_port}")
 
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, disconnect_flags: Any, reason_code: Any, properties: Any) -> None:
+    def _on_disconnect(self, _client: mqtt.Client, _userdata: Any, _disconnect_flags: Any, _reason_code: Any, _properties: Any) -> None:
         self.connected = False

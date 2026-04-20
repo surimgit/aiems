@@ -194,9 +194,11 @@ adapters/
 
 예상 파일:
 
+- `README.md`
 - `basic-runtime-structure.md`
 - `jira-basic-runtime-structure.md`
 - `project-structure.md`
+- `mqtt-contract-application.md`
 
 책임:
 
@@ -259,3 +261,13 @@ ESS 계산 로직은 `core/`, 통신은 `adapters/`에 둔다.
 2. EMS command / ACK 형식 고정
 3. telemetry payload 필드 정리
 4. 지라 2번 작업 진행
+
+## 상태 업데이트
+
+현재 코드 기준으로는 `2. MQTT 통신 규격 적용`까지 반영되었다.
+
+추가된 주요 포인트:
+
+- `mqtt_contract.py`로 MQTT 계약 모델 분리
+- `tests/unit`, `tests/integration`, `tests/functional` 구조 추가
+- `python -m tests`로 전체 테스트 실행 가능

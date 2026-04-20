@@ -45,13 +45,13 @@ Python 3.10 기준 환경을 고정하고, 이후 MQTT/CLI command를 연결할 
 
 ## 완료 결과
 
-- [main.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/main.py): 부트스트랩 전용으로 정리
-- [runtime_config.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/runtime_config.py): 설정 로딩/검증 분리
-- [simulator_app.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/simulator_app.py): 앱 조립 및 실행 루프 분리
-- [devices.yaml](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/config/devices.yaml): 실행 가능한 기본 설정 작성
-- [validators.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/core/validators.py): 값 검증 함수 분리
-- [calculations.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/core/calculations.py): 계산 함수 분리
-- [policies.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/core/policies.py): 정책 판단 함수 분리
+- [main.py](../main.py): 부트스트랩 전용으로 정리
+- [runtime_config.py](../runtime_config.py): 설정 로딩/검증 분리
+- [simulator_app.py](../simulator_app.py): 앱 조립 및 실행 루프 분리
+- [devices.yaml](../config/devices.yaml): 실행 가능한 기본 설정 작성
+- [validators.py](../core/validators.py): 값 검증 함수 분리
+- [calculations.py](../core/calculations.py): 계산 함수 분리
+- [policies.py](../core/policies.py): 정책 판단 함수 분리
 
 현재 구조는 지라 2번 작업인 MQTT 통신 규격 구체화 및 payload 정합성 작업으로 넘길 수 있는 상태다.
 
@@ -74,3 +74,8 @@ Python 3.10 기준 환경을 고정하고, 이후 MQTT/CLI command를 연결할 
 ## 비고
 
 현재 단계에서는 기능 구현보다 구조 고정이 우선이다.
+
+## 현재 상태 메모
+
+이 지라 작업은 완료 상태로 유지한다.
+이후 후속 작업으로 예정되어 있던 `ESS MQTT 통신 규격 적용`은 별도 문서에 반영했다.
