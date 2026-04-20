@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal, Mapping, TypedDict, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.command_handler import CommandAck, SimulatorCommand, parse_simulator_command
 
@@ -13,8 +13,14 @@ MessageType = Literal["telemetry", "event", "emergency", "command", "ack", "hear
 OperatingMode = Literal["charge", "discharge", "standby"]
 
 
-class TopicParts(BaseModel):
-    """MQTT 토픽을 분해한 결과를 담는다."""
+class ContractModel(BaseModel):
+    """문서에 정의되지 않은 필드는 허용하지 않는 MQTT 계약 모델의 공통 부모다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TopicParts(ContractModel):
+    """일반 MQTT 토픽 4세그먼트를 분해한 결과를 담는다."""
 
     plant_id: str
     resource_type: ResourceType
@@ -22,22 +28,29 @@ class TopicParts(BaseModel):
     message_type: MessageType
 
 
-class EssCommandPayload(BaseModel):
-    """ESS 제어 명령 payload를 표현한다."""
+class HeartbeatTopicParts(ContractModel):
+    """heartbeat 전용 2세그먼트 토픽을 표현한다."""
+
+    plant_id: str
+    message_type: Literal["heartbeat"]
+
+
+class EssCommandPayload(ContractModel):
+    """브로커가 요구하는 ESS 모드 변경 명령 payload다."""
 
     mode: OperatingMode
     target_power_kw: float = Field(ge=0)
 
 
-class EssCommandMessage(BaseModel):
-    """EMS에서 Edge로 보내는 ESS 명령 본문이다."""
+class EssCommandMessage(ContractModel):
+    """EMS가 ESS 시뮬레이터로 보내는 명령 본문 전체다."""
 
     command_id: str
     command_type: Literal["ess_mode"]
     payload: EssCommandPayload
 
 
-class TelemetryInstantaneousData(BaseModel):
+class TelemetryInstantaneousData(ContractModel):
     """순시 전력 계측값 묶음이다."""
 
     P: float
@@ -48,31 +61,31 @@ class TelemetryInstantaneousData(BaseModel):
     PF: float
 
 
-class TelemetryEnergyData(BaseModel):
+class TelemetryEnergyData(ContractModel):
     """누적 에너지 계측값 묶음이다."""
 
     kWh: float
     kvarh: float
 
 
-class TelemetryStatusData(BaseModel):
-    """ESS 상태 필드를 담는다."""
+class TelemetryStatusData(ContractModel):
+    """ESS 상태 필드 묶음이다."""
 
     SOC: float
     operating_mode: OperatingMode
     comms_health: Literal["ok", "error"]
 
 
-class TelemetryData(BaseModel):
-    """Telemetry의 data 블록 전체를 표현한다."""
+class TelemetryData(ContractModel):
+    """telemetry payload의 data 블록 전체다."""
 
     instantaneous: TelemetryInstantaneousData
     energy: TelemetryEnergyData
     status: TelemetryStatusData
 
 
-class TelemetryMessage(BaseModel):
-    """Edge가 EMS로 보내는 telemetry envelope이다."""
+class TelemetryMessage(ContractModel):
+    """브로커 문서에 정의된 ESS telemetry envelope이다."""
 
     device_id: str
     plant_id: str
@@ -81,8 +94,8 @@ class TelemetryMessage(BaseModel):
     data: TelemetryData
 
 
-class AckMessage(BaseModel):
-    """명령 처리 결과를 돌려주는 ACK payload이다."""
+class AckMessage(ContractModel):
+    """명령 처리 결과를 브로커 규격으로 직렬화한 ACK 모델이다."""
 
     command_id: str
     status: Literal["accepted", "rejected"]
@@ -90,7 +103,7 @@ class AckMessage(BaseModel):
 
 
 class SimulatorSnapshot(TypedDict):
-    """MQTT 직렬화에 필요한 snapshot 최소 필드만 정의한다."""
+    """시뮬레이터 내부 상태 중 MQTT 직렬화에 필요한 최소 필드 집합이다."""
 
     device_id: str
     plant_id: str
@@ -101,8 +114,18 @@ class SimulatorSnapshot(TypedDict):
     accumulated_energy_kwh: float
 
 
+class HeartbeatMessage(ContractModel):
+    """heartbeat 토픽은 장비 식별자가 없어서 payload에 최소 식별 정보를 담는다."""
+
+    plant_id: str
+    resource_type: Literal["ess"]
+    device_id: str
+    timestamp: str
+    status: Literal["alive"]
+
+
 def coerce_simulator_snapshot(raw_snapshot: Mapping[str, object]) -> SimulatorSnapshot:
-    """시뮬레이터 snapshot을 MQTT 전송용 정형 타입으로 정리한다."""
+    """내부 snapshot을 telemetry 직렬화에 쓸 정형 구조로 강제 변환한다."""
 
     return SimulatorSnapshot(
         device_id=_require_str(raw_snapshot["device_id"], "device_id"),
@@ -116,7 +139,7 @@ def coerce_simulator_snapshot(raw_snapshot: Mapping[str, object]) -> SimulatorSn
 
 
 def _require_str(value: object, field_name: str) -> str:
-    """문자열 필드를 강제 확인해 타입 오류를 초기에 드러낸다."""
+    """snapshot 필드가 문자열이 아니면 계약 위반으로 실패시킨다."""
 
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be str")
@@ -124,7 +147,7 @@ def _require_str(value: object, field_name: str) -> str:
 
 
 def _require_float(value: object, field_name: str) -> float:
-    """숫자 필드를 강제 확인해 잘못된 snapshot 입력을 막는다."""
+    """snapshot 필드가 숫자가 아니면 계약 위반으로 실패시킨다."""
 
     if not isinstance(value, (int, float)):
         raise TypeError(f"{field_name} must be numeric")
@@ -132,13 +155,19 @@ def _require_float(value: object, field_name: str) -> float:
 
 
 def build_topic(plant_id: str, resource_type: str, device_id: str, message_type: str) -> str:
-    """문서에서 정한 규격대로 MQTT 토픽 문자열을 만든다."""
+    """문서의 일반 MQTT 토픽 규격으로 4세그먼트 토픽을 만든다."""
 
     return f"{plant_id}/{resource_type}/{device_id}/{message_type}"
 
 
+def build_heartbeat_topic(plant_id: str) -> str:
+    """문서에 명시된 heartbeat 전용 2세그먼트 토픽을 만든다."""
+
+    return f"{plant_id}/heartbeat"
+
+
 def parse_topic(topic: str) -> TopicParts:
-    """4단계 토픽을 파싱하고 규격 위반이면 바로 실패시킨다."""
+    """일반 4세그먼트 MQTT 토픽을 검증하고 각 파트를 분리한다."""
 
     parts = topic.split("/")
     if len(parts) != 4:
@@ -156,8 +185,18 @@ def parse_topic(topic: str) -> TopicParts:
     )
 
 
+def parse_heartbeat_topic(topic: str) -> HeartbeatTopicParts:
+    """heartbeat 전용 2세그먼트 토픽이 문서 규격과 맞는지 검증한다."""
+
+    parts = topic.split("/")
+    if len(parts) != 2 or parts[1] != "heartbeat":
+        raise ValueError(f"Invalid heartbeat topic: {topic}")
+
+    return HeartbeatTopicParts(plant_id=parts[0], message_type="heartbeat")
+
+
 def parse_ess_command(topic: str, payload: str, plant_id: str, device_id: str) -> tuple[TopicParts, EssCommandMessage]:
-    """현재 ESS 장비를 대상으로 한 command인지 검증하고 파싱한다."""
+    """수신한 MQTT 명령이 이 ESS 장비 대상인지 확인하고 계약대로 파싱한다."""
 
     topic_parts = parse_topic(topic)
     if topic_parts.message_type != "command":
@@ -171,7 +210,7 @@ def parse_ess_command(topic: str, payload: str, plant_id: str, device_id: str) -
 
 
 def to_ack_message(ack: CommandAck) -> AckMessage:
-    """내부 명령 처리 결과를 MQTT ACK 형식으로 변환한다."""
+    """내부 ACK 모델을 브로커로 보낼 MQTT ACK 형태로 바꾼다."""
 
     return AckMessage(
         command_id=ack.command_id,
@@ -181,13 +220,13 @@ def to_ack_message(ack: CommandAck) -> AckMessage:
 
 
 def to_simulator_command(message: EssCommandMessage) -> SimulatorCommand:
-    """MQTT 명령 모델을 내부 command handler 입력 모델로 바꾼다."""
+    """MQTT 명령 모델을 내부 command handler 입력 모델로 변환한다."""
 
     return parse_simulator_command(message.model_dump())
 
 
 def snapshot_to_telemetry(snapshot: SimulatorSnapshot, *, timestamp: datetime | None = None) -> TelemetryMessage:
-    """현재 ESS snapshot을 telemetry payload 형식으로 변환한다."""
+    """ESS snapshot을 브로커 문서에 맞는 telemetry payload로 변환한다."""
 
     observed_at = timestamp or datetime.now(timezone.utc)
     power_kw = snapshot["power_kw"]
@@ -217,4 +256,23 @@ def snapshot_to_telemetry(snapshot: SimulatorSnapshot, *, timestamp: datetime | 
                 comms_health="ok",
             ),
         ),
+    )
+
+
+def build_heartbeat_message(
+    plant_id: str,
+    resource_type: Literal["ess"],
+    device_id: str,
+    *,
+    timestamp: datetime | None = None,
+) -> HeartbeatMessage:
+    """heartbeat 토픽에 실을 최소 생존 신호 payload를 만든다."""
+
+    observed_at = timestamp or datetime.now(timezone.utc)
+    return HeartbeatMessage(
+        plant_id=plant_id,
+        resource_type=resource_type,
+        device_id=device_id,
+        timestamp=observed_at.isoformat().replace("+00:00", "Z"),
+        status="alive",
     )
