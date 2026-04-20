@@ -9,7 +9,7 @@ from mqtt_contract import SimulatorSnapshot
 
 
 class ClientSpy:
-    """실제 브로커 대신 publish 호출만 기록하는 클라이언트 대역이다."""
+    """퍼블리셔가 실제 MQTT 클라이언트 대신 호출하는 테스트 더블이다."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int]] = []
@@ -33,6 +33,7 @@ class ClientSpy:
 class MqttPublisherIntegrationTest(unittest.TestCase):
     def test_publish_telemetry_uses_contract_topic_and_payload(self) -> None:
         """telemetry 발행 시 토픽과 payload 형식이 계약과 일치해야 한다."""
+
         publisher = MqttPublisher("localhost", 1883)
         client = ClientSpy()
         publisher.client = client
@@ -60,6 +61,7 @@ class MqttPublisherIntegrationTest(unittest.TestCase):
 
     def test_publish_ack_uses_ack_contract(self) -> None:
         """ACK 발행 시 topic, QoS, JSON 형식이 올바라야 한다."""
+
         publisher = MqttPublisher("localhost", 1883)
         client = ClientSpy()
         publisher.client = client
@@ -78,6 +80,26 @@ class MqttPublisherIntegrationTest(unittest.TestCase):
         self.assertEqual(topic, "PLANT-ALPHA/ess/ess-01/ack")
         self.assertEqual(qos, 1)
         self.assertEqual(body, {"command_id": "cmd-003", "status": "accepted"})
+
+    def test_publish_heartbeat_uses_heartbeat_topic_and_payload(self) -> None:
+        """heartbeat는 2세그먼트 토픽과 최소 생존 신호 payload를 사용해야 한다."""
+
+        publisher = MqttPublisher("localhost", 1883)
+        client = ClientSpy()
+        publisher.client = client
+        publisher.connected = True
+
+        publisher.publish_heartbeat("PLANT-ALPHA", "ess", "ess-01")
+
+        self.assertEqual(len(client.calls), 1)
+        topic, payload, qos = client.calls[0]
+        body = json.loads(payload)
+        self.assertEqual(topic, "PLANT-ALPHA/heartbeat")
+        self.assertEqual(qos, 1)
+        self.assertEqual(body["plant_id"], "PLANT-ALPHA")
+        self.assertEqual(body["resource_type"], "ess")
+        self.assertEqual(body["device_id"], "ess-01")
+        self.assertEqual(body["status"], "alive")
 
 
 if __name__ == "__main__":
