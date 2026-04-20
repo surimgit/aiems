@@ -1,7 +1,7 @@
 services:
   state-processor:
     build:
-      context: ./state-processor
+      context: ./ems/state-processor
       args:
         PORT: 5002
     ports:
@@ -11,7 +11,7 @@ services:
 
   db-writer:
     build:
-      context: ./db-writer
+      context: ./ems/db-writer
       args:
         PORT: 5005
     ports:
