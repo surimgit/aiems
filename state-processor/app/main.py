@@ -5,4 +5,4 @@ app = Flask(__name__)
 
 @app.get("/health")
 def health_check():
-    return jsonify({"status": "ok", "service": "ingestion"})
+    return jsonify({"status": "ok", "service": "state-processor"})

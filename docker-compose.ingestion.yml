@@ -1,0 +1,48 @@
+services:
+  ingestion:
+    build:
+      context: ./ingestion
+      args:
+        PORT: 5001
+    ports:
+      - "5001:5001"
+    env_file: .env
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: always
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+
+volumes:
+  redis_data:
+  mqtt_data:
+  mqtt_log:
