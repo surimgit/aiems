@@ -1,0 +1,39 @@
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+### Virtual Environments ###
+.venv/
+venv/
+ENV/
+
+### IDE ###
+.vscode/
+.idea/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Project Specific ###
+# 만약 로그 파일이 생성된다면 제외
+*.log
