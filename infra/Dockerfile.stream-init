@@ -1,0 +1,8 @@
+FROM python:3.10-slim
+
+RUN pip install --no-cache-dir redis==5.0.8
+
+COPY init_streams.py /app/init_streams.py
+WORKDIR /app
+
+CMD ["python", "init_streams.py"]

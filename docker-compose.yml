@@ -14,6 +14,16 @@ services:
       ai-service:
         condition: service_healthy
 
+  stream-init:
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.stream-init
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"
+
   ingestion:
     build:
       context: ./ems/ingestion
@@ -23,8 +33,8 @@ services:
       - "5001:5001"
     env_file: .env
     depends_on:
-      redis:
-        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
       mqtt:
         condition: service_started
 
@@ -39,8 +49,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
 
   control:
     build:
@@ -53,8 +63,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
 
   ai-service:
     build:
@@ -67,8 +77,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
 
   db-writer:
     build:
@@ -81,11 +91,11 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:2.15.3-pg15
     restart: always
     environment:
       POSTGRES_PASSWORD: ${TIMESCALE_ROOT_PASSWORD}
@@ -104,7 +114,7 @@ services:
       retries: 5
 
   postgres:
-    image: postgres:15
+    image: postgres:15.5
     restart: always
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
@@ -129,7 +139,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     restart: always
     ports:
       - "6379:6379"
@@ -146,13 +156,19 @@ services:
       retries: 5
 
   mqtt:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.0.18
     restart: always
     ports:
       - "1883:1883"
       - "9001:9001"
+    environment:
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
     volumes:
-      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/acl.template:/mosquitto/config/acl.template:ro
+      - ./infra/mosquitto/entrypoint.sh:/mosquitto/config/entrypoint.sh:ro
       - mqtt_data:/mosquitto/data
       - mqtt_log:/mosquitto/log
 
