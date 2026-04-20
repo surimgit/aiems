@@ -1,6 +1,6 @@
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:2.15.3-pg15
     restart: always
     environment:
       POSTGRES_PASSWORD: ${TIMESCALE_ROOT_PASSWORD}
@@ -19,7 +19,7 @@ services:
       retries: 5
 
   postgres:
-    image: postgres:15
+    image: postgres:15.5
     restart: always
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
