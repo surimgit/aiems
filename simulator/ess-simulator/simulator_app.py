@@ -7,11 +7,12 @@ from adapters.inbound.mqtt_subscriber import MqttCommandSubscriber
 from adapters.outbound.mqtt_publisher import MqttPublisher
 from core.command_handler import CommandHandler
 from core.ess import DeviceSpec, EssSimulator, SafetySpec
+from mqtt_contract import coerce_simulator_snapshot
 from runtime_config import DeviceFileConfig
 
 
 class EssSimulatorApp:
-    """Application bootstrap object that wires runtime dependencies together."""
+    """설정, 시뮬레이터, MQTT 어댑터를 한 곳에서 조립한다."""
 
     def __init__(self, config: DeviceFileConfig) -> None:
         device_spec = DeviceSpec(
@@ -41,6 +42,7 @@ class EssSimulatorApp:
             self.command_handler,
             self.publisher,
             config.plant_id,
+            config.resource_type,
             config.device_id,
             config.mqtt_broker_host,
             config.mqtt_broker_port,
@@ -49,9 +51,11 @@ class EssSimulatorApp:
         self._stop_event = asyncio.Event()
 
     def request_shutdown(self) -> None:
+        """다음 루프 반복에서 안전하게 종료하도록 신호를 남긴다."""
         self._stop_event.set()
 
     async def run(self) -> None:
+        """Publisher, subscriber, CLI 루프를 함께 시작한다."""
         snapshot = self.simulator.snapshot()
         print(
             "[ESS] Starting simulator "
@@ -71,8 +75,9 @@ class EssSimulatorApp:
             self.publisher.stop()
 
     async def _runtime_loop(self) -> None:
+        """주기적으로 tick을 수행하고 telemetry를 발행한다."""
         while not self._stop_event.is_set():
-            snapshot = self.simulator.tick()
+            snapshot = coerce_simulator_snapshot(self.simulator.tick())
             telemetry_json = self.publisher.serialize_telemetry(snapshot)
             print(f"[ESS][telemetry] {telemetry_json}")
             self.publisher.publish_telemetry(snapshot)
@@ -86,6 +91,7 @@ class EssSimulatorApp:
                 continue
 
     async def _cli_loop(self) -> None:
+        """로컬 CLI 입력을 받아 같은 command handler로 전달한다."""
         while not self._stop_event.is_set():
             try:
                 line = await asyncio.to_thread(input, "ess> ")

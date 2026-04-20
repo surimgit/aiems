@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
-from .ess import EssSimulator, OperatingMode
+from .ess import EssSimulator
 
 
 class EssModePayload(BaseModel):
@@ -25,12 +25,6 @@ class UpdateSafetySpecPayload(BaseModel):
     max_temperature_c: float | None = Field(default=None, gt=0)
 
 
-class CommandEnvelope(BaseModel):
-    command_id: str
-    command_type: Literal["ess_mode", "update_device_spec", "update_safety_spec"]
-    payload: dict[str, Any]
-
-
 class CommandAck(BaseModel):
     command_id: str
     status: Literal["accepted", "rejected"]
@@ -38,31 +32,61 @@ class CommandAck(BaseModel):
     applied: dict[str, Any] | None = None
 
 
+class EssModeCommand(BaseModel):
+    command_id: str
+    command_type: Literal["ess_mode"]
+    payload: EssModePayload
+
+
+class UpdateDeviceSpecCommand(BaseModel):
+    command_id: str
+    command_type: Literal["update_device_spec"]
+    payload: UpdateDeviceSpecPayload
+
+
+class UpdateSafetySpecCommand(BaseModel):
+    command_id: str
+    command_type: Literal["update_safety_spec"]
+    payload: UpdateSafetySpecPayload
+
+
+SimulatorCommand = Annotated[
+    EssModeCommand | UpdateDeviceSpecCommand | UpdateSafetySpecCommand,
+    Field(discriminator="command_type"),
+]
+
+SIMULATOR_COMMAND_ADAPTER = TypeAdapter(SimulatorCommand)
+
+
+def parse_simulator_command(raw_command: dict[str, Any]) -> SimulatorCommand:
+    """Validate an inbound command against the simulator command models."""
+
+    return SIMULATOR_COMMAND_ADAPTER.validate_python(raw_command)
+
+
 class CommandHandler:
     def __init__(self, simulator: EssSimulator) -> None:
         self.simulator = simulator
 
-    def handle_command(self, raw_command: dict[str, Any]) -> CommandAck:
-        command = CommandEnvelope.model_validate(raw_command)
+    def handle_command(self, command: SimulatorCommand) -> CommandAck:
+        """Apply a validated simulator command and return the result."""
 
         try:
             if command.command_type == "ess_mode":
-                payload = EssModePayload.model_validate(command.payload)
-                self.simulator.set_mode(payload.mode, payload.target_power_kw)
+                self.simulator.set_mode(command.payload.mode, command.payload.target_power_kw)
                 return CommandAck(
                     command_id=command.command_id,
                     status="accepted",
                     applied={
-                        "mode": payload.mode,
-                        "target_power_kw": payload.target_power_kw,
+                        "mode": command.payload.mode,
+                        "target_power_kw": command.payload.target_power_kw,
                     },
                 )
 
             if command.command_type == "update_device_spec":
-                payload = UpdateDeviceSpecPayload.model_validate(command.payload)
                 applied = self.simulator.update_device_spec(
-                    power_limit_kw=payload.power_limit_kw,
-                    publish_interval_sec=payload.publish_interval_sec,
+                    power_limit_kw=command.payload.power_limit_kw,
+                    publish_interval_sec=command.payload.publish_interval_sec,
                 )
                 return CommandAck(
                     command_id=command.command_id,
@@ -70,13 +94,12 @@ class CommandHandler:
                     applied=applied,
                 )
 
-            payload = UpdateSafetySpecPayload.model_validate(command.payload)
             applied = self.simulator.update_safety_spec(
-                low_soc_threshold=payload.low_soc_threshold,
-                high_soc_threshold=payload.high_soc_threshold,
-                min_safe_soc_threshold=payload.min_safe_soc_threshold,
-                max_safe_soc_threshold=payload.max_safe_soc_threshold,
-                max_temperature_c=payload.max_temperature_c,
+                low_soc_threshold=command.payload.low_soc_threshold,
+                high_soc_threshold=command.payload.high_soc_threshold,
+                min_safe_soc_threshold=command.payload.min_safe_soc_threshold,
+                max_safe_soc_threshold=command.payload.max_safe_soc_threshold,
+                max_temperature_c=command.payload.max_temperature_c,
             )
             return CommandAck(
                 command_id=command.command_id,
