@@ -2,36 +2,47 @@
 
 ## 목적
 
-2장 작업의 목표는 ESS 시뮬레이터의 MQTT 경계를 문서 기준 규격으로 고정하는 것이다.
+이 문서는 ESS 시뮬레이터에 반영된 MQTT 계약 구현 결과를 정리한다.
+기준 문서는 외부 설계 문서의 아래 항목이다.
 
-이번 작업에서는 다음을 반영했다.
+- `05-data-contracts/mqtt-contract.md`
+- `05-data-contracts/message-schema.md`
+- `08-domain-detail/telemetry-payload.md`
 
-- topic 규격 고정
+## 반영 범위
+
+현재 구현에는 아래 항목이 반영되어 있다.
+
+- 일반 MQTT topic 규격 적용
+- heartbeat 전용 topic 규격 적용
 - ESS command payload 검증
 - ESS telemetry payload 직렬화
 - ACK payload 직렬화
+- heartbeat payload 직렬화
 - MQTT subscriber / publisher 경계 분리
-- 함수 / 조립 / 기능 테스트 추가
+- snapshot -> telemetry mapper 분리
 
-## 적용한 규격
+## Topic
 
-### Topic
-
-기본 topic 형식:
+일반 토픽 규격:
 
 ```text
 {plant_id}/{resource_type}/{device_id}/{message_type}
 ```
 
-ESS 시뮬레이터에서 사용하는 topic:
+ESS 시뮬레이터가 사용하는 토픽:
 
 - command subscribe: `{plant_id}/ess/{device_id}/command`
 - telemetry publish: `{plant_id}/ess/{device_id}/telemetry`
 - ack publish: `{plant_id}/ess/{device_id}/ack`
 
-### ESS Command
+heartbeat 토픽은 문서 기준으로 예외 규격을 사용한다.
 
-현재 반영한 command 형식:
+- heartbeat publish: `{plant_id}/heartbeat`
+
+## ESS Command
+
+현재 MQTT 명령은 `ess_mode` 한 종류를 계약으로 고정했다.
 
 ```json
 {
@@ -44,11 +55,15 @@ ESS 시뮬레이터에서 사용하는 topic:
 }
 ```
 
-현재 2장 범위에서는 `ess_mode`만 MQTT 계약으로 고정했다.
+구현 정책:
 
-### Telemetry
+- `mode` 는 `charge`, `discharge`, `standby` 만 허용
+- `target_power_kw` 는 0 이상
+- 문서에 없는 필드는 거부
 
-현재 telemetry는 아래 구조로 직렬화된다.
+## Telemetry
+
+현재 telemetry 직렬화 형식은 아래와 같다.
 
 ```json
 {
@@ -78,9 +93,15 @@ ESS 시뮬레이터에서 사용하는 topic:
 }
 ```
 
-### ACK
+구현 정책:
 
-현재 ACK는 아래 구조로 발행된다.
+- `timestamp` 는 UTC ISO 8601 `Z` 형식 사용
+- ESS `P` 부호는 현재 코드 기준으로 문서 규칙을 따른다
+- telemetry는 `snapshot_to_telemetry()` 에서 일괄 변환
+
+## ACK
+
+ACK는 명령 수신 즉시 발행한다.
 
 ```json
 {
@@ -89,7 +110,7 @@ ESS 시뮬레이터에서 사용하는 topic:
 }
 ```
 
-실패 시:
+거부 시:
 
 ```json
 {
@@ -99,52 +120,68 @@ ESS 시뮬레이터에서 사용하는 topic:
 }
 ```
 
-## 코드 반영 위치
+## Heartbeat
+
+heartbeat는 시뮬레이터 생존 신호다.
+문서에 payload 상세가 강하게 정의되어 있지 않아, 현재 구현은 최소 필드만 사용한다.
+
+토픽:
+
+```text
+{plant_id}/heartbeat
+```
+
+payload:
+
+```json
+{
+  "plant_id": "PLANT-ALPHA",
+  "resource_type": "ess",
+  "device_id": "ess-01",
+  "timestamp": "2026-04-14T07:50:00Z",
+  "status": "alive"
+}
+```
+
+## 코드 위치
 
 - `mqtt_contract.py`
-  - topic 파싱 / 생성
-  - command / telemetry / ack 모델
-  - snapshot → telemetry 변환
+  - topic parser / builder
+  - command / telemetry / ack / heartbeat 모델
+  - snapshot -> telemetry 변환
 - `adapters/inbound/mqtt_subscriber.py`
   - MQTT command 검증
   - invalid payload rejected ACK 처리
 - `adapters/outbound/mqtt_publisher.py`
-  - telemetry / ack 직렬화 및 publish
-- `core/command_handler.py`
-  - 통신 모델과 분리된 내부 command 처리
-- `adapters/inbound/cli_controller.py`
-  - CLI도 같은 command handler 재사용
+  - telemetry / ack / heartbeat publish
+- `adapters/outbound/heartbeat_publisher.py`
+  - heartbeat topic / payload helper
+- `simulator_app.py`
+  - telemetry / heartbeat 주기 발행
 
-## 테스트 구조
+## 테스트 범위
 
-테스트는 아래 3계층으로 정리했다.
+테스트는 아래 3단계로 구성한다.
 
 - `tests/unit`
-  - topic, payload, mapper 단위 검증
+  - topic, payload, mapper 검증
 - `tests/integration`
-  - subscriber / publisher 조립 검증
+  - subscriber / publisher 검증
 - `tests/functional`
-  - command 수신부터 상태 반영까지 흐름 검증
+  - command 수신부터 ACK와 상태 반영까지 검증
 
-전체 실행:
+실행:
 
 ```bash
 python -m tests
 ```
 
-## 이번 작업에서 일부러 안 한 것
+## 비범위
 
-이번 2장에서는 아래 항목은 범위에서 제외했다.
+이 문서는 MQTT 경계 계약까지만 다룬다.
+아래 항목은 다음 작업 범위다.
 
-- 실제 장비 프로토콜 연동
-- Modbus / CAN / Serial 드라이버
-- ESS 상태 전이 고도화
-- 상세 reason code 표준화
-- telemetry 추가 필드 확장
-
-## 다음 작업 권장 순서
-
-1. telemetry 상태 필드 확장
-2. ACK / command result reason code 표준화
-3. 실제 기기 입력 포트 분리
-4. SOC / 상태 전이 로직 확장
+- 상태 전이 고도화
+- command result 이벤트
+- reason code 체계화
+- SOC 계산 세부 고도화
