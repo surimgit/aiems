@@ -15,13 +15,14 @@ r = redis.Redis(
 )
 
 GROUPS = [
-    ("mg:sensor:data", "monitoring-group"),
-    ("mg:sensor:data", "forecast-group"),
-    ("mg:sensor:alert", "monitoring-group"),
+    ("mg:sensor:data", "state-group"),
+    ("mg:sensor:data", "ai-group"),
+    ("mg:sensor:alert", "state-group"),
     ("mg:control:cmd", "ingestion-group"),
-    ("mg:forecast:result", "monitoring-group"),
-    ("mg:forecast:result", "report-group"),
-    ("mg:report:trigger", "report-group"),
+    ("mg:state:result", "db-writer-group"),
+    ("mg:ai:result", "control-group"),
+    ("mg:ai:result", "db-writer-group"),
+    ("mg:db:write", "db-writer-group"),
 ]
 
 for stream, group in GROUPS:

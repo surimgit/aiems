@@ -3,12 +3,40 @@ services:
     image: timescale/timescaledb:latest-pg15
     restart: always
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${TIMESCALE_ROOT_PASSWORD}
+      TIMESCALE_DB: ${TIMESCALE_DB}
+      TIMESCALE_USER: ${TIMESCALE_USER}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./infra/init_db.sh:/docker-entrypoint-initdb.d/init_db.sh
+      - timescale_data:/var/lib/postgresql/data
+      - ./infra/init_timescale.sh:/docker-entrypoint-initdb.d/init_timescale.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      STATE_DB: ${STATE_DB}
+      STATE_USER: ${STATE_USER}
+      STATE_PASSWORD: ${STATE_PASSWORD}
+      AI_DB: ${AI_DB}
+      AI_USER: ${AI_USER}
+      AI_PASSWORD: ${AI_PASSWORD}
+      CONTROL_DB: ${CONTROL_DB}
+      CONTROL_USER: ${CONTROL_USER}
+      CONTROL_PASSWORD: ${CONTROL_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -16,4 +44,5 @@ services:
       retries: 5
 
 volumes:
-  pg_data:
+  timescale_data:
+  postgres_data:
