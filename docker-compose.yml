@@ -5,52 +5,36 @@ services:
     ports:
       - "80:80"
     depends_on:
-      monitoring:
-        condition: service_healthy
       ingestion:
         condition: service_healthy
-      forecast-ai:
+      state-processor:
         condition: service_healthy
-      report:
+      control:
         condition: service_healthy
-
-  monitoring:
-    build:
-      context: ./monitoring
-      args:
-        PORT: 8000
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
+      ai-service:
         condition: service_healthy
 
   ingestion:
     build:
       context: ./ingestion
       args:
-        PORT: 8001
+        PORT: 5001
     ports:
-      - "8001:8001"
+      - "5001:5001"
     env_file: .env
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mqtt:
         condition: service_started
 
-  forecast-ai:
+  state-processor:
     build:
-      context: ./forecast-ai
+      context: ./state-processor
       args:
-        PORT: 8002
+        PORT: 5002
     ports:
-      - "8002:8002"
+      - "5002:5002"
     env_file: .env
     depends_on:
       postgres:
@@ -58,13 +42,39 @@ services:
       redis:
         condition: service_healthy
 
-  report:
+  control:
     build:
-      context: ./report
+      context: ./control
       args:
-        PORT: 8003
+        PORT: 5003
     ports:
-      - "8003:8003"
+      - "5003:5003"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ai-service:
+    build:
+      context: ./ai-service
+      args:
+        PORT: 5004
+    ports:
+      - "5004:5004"
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  db-writer:
+    build:
+      context: ./db-writer
+      args:
+        PORT: 5005
+    ports:
+      - "5005:5005"
     env_file: .env
     depends_on:
       postgres:
@@ -75,12 +85,11 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg15
     environment:
-      POSTGRES_PASSWORD: localpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      # init_db.sh 자동 실행 (첫 기동 시 1회)
       - ./infra/init_db.sh:/docker-entrypoint-initdb.d/init_db.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]

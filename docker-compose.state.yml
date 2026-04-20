@@ -1,0 +1,20 @@
+services:
+  state-processor:
+    build:
+      context: ./state-processor
+      args:
+        PORT: 5002
+    ports:
+      - "5002:5002"
+    env_file: .env
+    restart: always
+
+  db-writer:
+    build:
+      context: ./db-writer
+      args:
+        PORT: 5005
+    ports:
+      - "5005:5005"
+    env_file: .env
+    restart: always
