@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from .calculations import calculate_energy_increment, calculate_signed_power, calculate_soc_delta
@@ -50,7 +50,7 @@ class EssStatus:
     accumulated_energy_kwh: float = 0.0
     local_fault: bool = False
     emergency_stop: bool = False
-    last_updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class EssSimulator:
@@ -102,7 +102,7 @@ class EssSimulator:
         validate_positive(self.device_spec.power_limit_kw, "power_limit_kw")
         self.status.target_power_kw = max(0.0, min(requested_power, self.device_spec.power_limit_kw))
         self.status.power_kw = calculate_signed_power(self.status.operating_mode, self.status.target_power_kw)
-        self.status.last_updated_at = datetime.now(UTC)
+        self.status.last_updated_at = datetime.now(timezone.utc)
 
     # 실행 중 장치 스펙을 변경한다.
     def update_device_spec(
@@ -125,7 +125,7 @@ class EssSimulator:
             self.device_spec.publish_interval_sec = publish_interval_sec
             applied["publish_interval_sec"] = publish_interval_sec
 
-        self.status.last_updated_at = datetime.now(UTC)
+        self.status.last_updated_at = datetime.now(timezone.utc)
         return applied
 
     # 실행 중 안전 기준값을 변경한다.
@@ -165,7 +165,7 @@ class EssSimulator:
             applied["max_temperature_c"] = max_temperature_c
 
         self._apply_safety_rules()
-        self.status.last_updated_at = datetime.now(UTC)
+        self.status.last_updated_at = datetime.now(timezone.utc)
         return applied
 
     # 한 tick 동안 ESS 상태를 진행시키고 최신 스냅샷을 반환한다.
@@ -193,7 +193,7 @@ class EssSimulator:
             self.device_spec.publish_interval_sec,
         )
         self._apply_safety_rules()
-        self.status.last_updated_at = datetime.now(UTC)
+        self.status.last_updated_at = datetime.now(timezone.utc)
         return self.snapshot()
 
     # 현재 상태를 외부에 전달하기 쉬운 딕셔너리 형태로 만든다.

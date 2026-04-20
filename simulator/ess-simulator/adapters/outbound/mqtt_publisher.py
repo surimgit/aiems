@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import paho.mqtt.client as mqtt
@@ -38,7 +38,7 @@ class MqttPublisher:
             "device_id": snapshot["device_id"],
             "plant_id": snapshot["plant_id"],
             "resource_type": "ess",
-            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "data": {
                 "instantaneous": {
                     "P": snapshot["power_kw"],
