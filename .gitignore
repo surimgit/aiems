@@ -20,6 +20,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.pyc
+
 
 ### Virtual Environments ###
 .venv/
@@ -37,3 +39,7 @@ Thumbs.db
 ### Project Specific ###
 # 만약 로그 파일이 생성된다면 제외
 *.log
+
+
+# ess-simulator 가상환경
+/simulator/ess-simulator/.venv/

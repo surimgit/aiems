@@ -1,0 +1,14 @@
+plant_id: PLANT-ALPHA
+device_id: ess-01
+resource_type: ess
+publish_interval_sec: 1.0
+initial_soc: 67.3
+power_limit_kw: 50.0
+low_soc_threshold: 20.0
+high_soc_threshold: 90.0
+min_safe_soc_threshold: 10.0
+max_safe_soc_threshold: 95.0
+temperature_c: 25.0
+max_temperature_c: 45.0
+mqtt_broker_host: localhost
+mqtt_broker_port: 1883
