@@ -1,7 +1,7 @@
 services:
   ingestion:
     build:
-      context: ./ingestion
+      context: ./ems/ingestion
       args:
         PORT: 5001
     ports:

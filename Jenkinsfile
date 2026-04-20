@@ -37,12 +37,13 @@ pipeline {
                     def changes = sh(script: "git diff --name-only HEAD~1 HEAD || echo '.'", returnStdout: true).trim()
                     echo "=== 변경된 파일 ===\n${changes}"
 
-                    env.CHANGED_GATEWAY   = changes.contains('gateway/')         ? 'true' : 'false'
-                    env.CHANGED_INGESTION = changes.contains('ingestion/')        ? 'true' : 'false'
-                    env.CHANGED_STATE     = changes.contains('state-processor/')  ? 'true' : 'false'
-                    env.CHANGED_DBWRITER  = changes.contains('db-writer/')        ? 'true' : 'false'
-                    env.CHANGED_CONTROL   = changes.contains('control/')          ? 'true' : 'false'
-                    env.CHANGED_AI        = changes.contains('ai-service/')       ? 'true' : 'false'
+                    env.CHANGED_GATEWAY   = changes.contains('gateway/')              ? 'true' : 'false'
+                    env.CHANGED_INGESTION = changes.contains('ems/ingestion/')        ? 'true' : 'false'
+                    env.CHANGED_STATE     = changes.contains('ems/state-processor/')  ? 'true' : 'false'
+                    env.CHANGED_DBWRITER  = changes.contains('ems/db-writer/')        ? 'true' : 'false'
+                    env.CHANGED_CONTROL   = changes.contains('ems/control/')          ? 'true' : 'false'
+                    env.CHANGED_AI        = changes.contains('ems/ai-service/')       ? 'true' : 'false'
+                    env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
 
                     echo """
@@ -66,7 +67,7 @@ pipeline {
                     sh '''
                         sonar-scanner \
                             -Dsonar.projectKey=s14p31s305 \
-                            -Dsonar.sources=ingestion/app,state-processor/app,control/app,ai-service/app,db-writer/app
+                            -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai-service/app,ems/db-writer/app
                     '''
                 }
             }

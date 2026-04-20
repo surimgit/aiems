@@ -16,7 +16,7 @@ services:
 
   ingestion:
     build:
-      context: ./ingestion
+      context: ./ems/ingestion
       args:
         PORT: 5001
     ports:
@@ -30,7 +30,7 @@ services:
 
   state-processor:
     build:
-      context: ./state-processor
+      context: ./ems/state-processor
       args:
         PORT: 5002
     ports:
@@ -44,7 +44,7 @@ services:
 
   control:
     build:
-      context: ./control
+      context: ./ems/control
       args:
         PORT: 5003
     ports:
@@ -58,7 +58,7 @@ services:
 
   ai-service:
     build:
-      context: ./ai-service
+      context: ./ems/ai-service
       args:
         PORT: 5004
     ports:
@@ -70,7 +70,7 @@ services:
 
   db-writer:
     build:
-      context: ./db-writer
+      context: ./ems/db-writer
       args:
         PORT: 5005
     ports:
