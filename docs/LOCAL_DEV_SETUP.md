@@ -28,33 +28,30 @@ cp .env.example .env
 `.env` 파일을 열고 아래 값을 참고하여 채워주세요. 패스워드/시크릿 값은 팀 노션 또는 인프라 담당자에게 문의하세요.
 
 ```env
-# ===== DB 설정 =====
-MONITORING_DB_HOST=postgres
-MONITORING_DB_PORT=5432
-MONITORING_DB_NAME=monitoring_db
-MONITORING_DB_USER=monitoring_user
-MONITORING_DB_PASSWORD=<인프라 담당자 문의>
+# ===== TimescaleDB (시계열 데이터 전용) =====
+TIMESCALE_HOST=timescaledb
+TIMESCALE_PORT=5432
+TIMESCALE_DB=timescale_db
+TIMESCALE_USER=timescale_user
+TIMESCALE_PASSWORD=<인프라 담당자 문의>
+TIMESCALE_ROOT_PASSWORD=<인프라 담당자 문의>
 
-INGESTION_DB_HOST=postgres
-INGESTION_DB_PORT=5432
-INGESTION_DB_NAME=ingestion_db
-INGESTION_DB_USER=ingestion_user
-INGESTION_DB_PASSWORD=<인프라 담당자 문의>
+# ===== PostgreSQL (state_write / ai / control DB 논리 분리) =====
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5433
+POSTGRES_ROOT_PASSWORD=<인프라 담당자 문의>
 
-FORECAST_DB_HOST=postgres
-FORECAST_DB_PORT=5432
-FORECAST_DB_NAME=forecast_db
-FORECAST_DB_USER=forecast_user
-FORECAST_DB_PASSWORD=<인프라 담당자 문의>
+STATE_DB=state_write_db
+STATE_USER=state_user
+STATE_PASSWORD=<인프라 담당자 문의>
 
-REPORT_DB_HOST=postgres
-REPORT_DB_PORT=5432
-REPORT_DB_NAME=report_db
-REPORT_DB_USER=report_user
-REPORT_DB_PASSWORD=<인프라 담당자 문의>
+AI_DB=ai_db
+AI_USER=ai_user
+AI_PASSWORD=<인프라 담당자 문의>
 
-# ===== PostgreSQL =====
-POSTGRES_PASSWORD=<인프라 담당자 문의>
+CONTROL_DB=control_db
+CONTROL_USER=control_user
+CONTROL_PASSWORD=<인프라 담당자 문의>
 
 # ===== Redis =====
 REDIS_HOST=redis
@@ -65,8 +62,9 @@ REDIS_PASSWORD=<인프라 담당자 문의>
 STREAM_SENSOR_DATA=mg:sensor:data
 STREAM_SENSOR_ALERT=mg:sensor:alert
 STREAM_CONTROL_CMD=mg:control:cmd
-STREAM_FORECAST_RESULT=mg:forecast:result
-STREAM_REPORT_TRIGGER=mg:report:trigger
+STREAM_STATE_RESULT=mg:state:result
+STREAM_AI_RESULT=mg:ai:result
+STREAM_DB_WRITE=mg:db:write
 
 # ===== MQTT =====
 MQTT_BROKER_HOST=mqtt
@@ -90,13 +88,13 @@ docker compose up -d
 ### DB만 실행 (백엔드 개발 시 추천)
 
 ```bash
-docker compose up postgres -d
+docker compose up timescaledb postgres -d
 ```
 
 ### DB + Redis + MQTT 실행
 
 ```bash
-docker compose up postgres redis mqtt -d
+docker compose up timescaledb postgres redis mqtt -d
 ```
 
 ### 종료
@@ -109,28 +107,42 @@ docker compose down
 
 ```bash
 docker compose down -v
-docker compose up postgres -d
+docker compose up timescaledb postgres -d
 ```
 
 ---
 
 ## 4. DB 접속 정보
 
-TimescaleDB (PostgreSQL 15) 기반이며, 서비스별로 DB가 분리되어 있습니다.
+DB는 **2개 컨테이너**로 분리되어 있습니다.
 
-| 서비스     | DB명          | 유저            | 패스워드           | 포트 |
-| ---------- | ------------- | --------------- | ------------------ | ---- |
-| Monitoring | monitoring_db | monitoring_user | 인프라 담당자 문의 | 5432 |
-| Ingestion  | ingestion_db  | ingestion_user  | 인프라 담당자 문의 | 5432 |
-| Forecast   | forecast_db   | forecast_user   | 인프라 담당자 문의 | 5432 |
-| Report     | report_db     | report_user     | 인프라 담당자 문의 | 5432 |
-| 관리자     | postgres      | postgres        | 인프라 담당자 문의 | 5432 |
+### TimescaleDB (시계열 데이터 전용)
+
+| 항목 | 값 |
+| ---- | --- |
+| 컨테이너 | timescaledb |
+| 호스트 포트 | 5432 |
+| DB명 | timescale_db |
+| 유저 | timescale_user |
+| 용도 | DB-Writer 서비스가 센서 시계열 데이터 저장 |
+
+### PostgreSQL (서비스 DB, 3개 논리 분리)
+
+| 서비스 | DB명 | 유저 | 호스트 포트 |
+| ------ | ---- | ---- | ---- |
+| State-Processor | state_write_db | state_user | 5433 |
+| AI-Service | ai_db | ai_user | 5433 |
+| Control | control_db | control_user | 5433 |
+| 관리자 | postgres | postgres | 5433 |
 
 ### 터미널에서 접속
 
 ```bash
-# 예: monitoring_db 접속
-docker exec -it s14p31s305-postgres-1 psql -U monitoring_user -d monitoring_db
+# TimescaleDB
+docker exec -it s14p31s305-timescaledb-1 psql -U timescale_user -d timescale_db
+
+# PostgreSQL (예: state_write_db)
+docker exec -it s14p31s305-postgres-1 psql -U state_user -d state_write_db
 ```
 
 ### DBeaver에서 접속
@@ -138,36 +150,34 @@ docker exec -it s14p31s305-postgres-1 psql -U monitoring_user -d monitoring_db
 1. `Ctrl+Shift+N` → PostgreSQL 선택
 2. 접속 정보 입력:
     - Host: `localhost`
-    - Port: `5432`
-    - Database: 자기 서비스 DB명 (예: `monitoring_db`)
-    - Username: 자기 서비스 유저 (예: `monitoring_user`)
-    - Password: 자기 서비스 패스워드 (예: `monitoring_pw`)
-3. "Show all databases" 체크해야 DB 4개 한번에 보임
+    - Port: `5432` (TimescaleDB) 또는 `5433` (PostgreSQL)
+    - Database: 자기 서비스 DB명
+    - Username: 자기 서비스 유저
+    - Password: 자기 서비스 패스워드
+3. "Show all databases" 체크해야 DB 전체 보임
 4. Test Connection → 완료
 
 ### TimescaleDB 확장 활성화
 
-각 DB에서 최초 1회 실행해주세요.
-
-```sql
-CREATE EXTENSION IF NOT EXISTS timescaledb;
-```
+TimescaleDB 컨테이너는 `init_timescale.sh`에서 자동으로 확장을 설치합니다. 수동 실행 불필요.
 
 ---
 
 ## 5. 서비스 포트 정보
 
-| 서비스          | 포트 | 설명                 |
-| --------------- | ---- | -------------------- |
-| Gateway (Nginx) | 80   | API 진입점           |
-| Monitoring      | 8000 | 관제/상태 API        |
-| Ingestion       | 8001 | 데이터 수집          |
-| Forecast-AI     | 8002 | AI 예측              |
-| Report          | 8003 | 리포트               |
-| PostgreSQL      | 5432 | TimescaleDB          |
-| Redis           | 6379 | 캐시 + Streams       |
-| MQTT            | 1883 | 디바이스 데이터 수집 |
-| MQTT WebSocket  | 9001 | MQTT 웹소켓          |
+| 서비스 | 포트 | 설명 |
+| ------ | ---- | ---- |
+| Gateway (Nginx) | 80 | API 진입점 |
+| Ingestion | 5001 | MQTT 수집, WebSocket |
+| State-Processor | 5002 | 상태 처리 |
+| Control | 5003 | 설비 제어 |
+| AI-Service | 5004 | AI 예측 |
+| DB-Writer | 5005 | 시계열 저장 |
+| TimescaleDB | 5432 | 시계열 DB |
+| PostgreSQL | 5433 | 서비스 DB (state/ai/control) |
+| Redis | 6379 | 캐시 + Streams |
+| MQTT | 1883 | 디바이스 데이터 수집 |
+| MQTT WebSocket | 9001 | MQTT 웹소켓 |
 
 ---
 
@@ -176,17 +186,17 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 서비스 실행 후 정상 동작 확인:
 
 ```bash
-# 브라우저 또는 curl로 확인
-curl http://localhost:8000/health   # Monitoring
-curl http://localhost:8001/health   # Ingestion
-curl http://localhost:8002/health   # Forecast-AI
-curl http://localhost:8003/health   # Report
+curl http://localhost:5001/health   # Ingestion
+curl http://localhost:5002/health   # State-Processor
+curl http://localhost:5003/health   # Control
+curl http://localhost:5004/health   # AI-Service
+curl http://localhost:5005/health   # DB-Writer
 ```
 
 정상 응답 예시:
 
 ```json
-{ "status": "ok", "service": "monitoring" }
+{ "status": "ok", "service": "ingestion" }
 ```
 
 ---
@@ -198,10 +208,10 @@ curl http://localhost:8003/health   # Report
 docker compose ps
 
 # 특정 서비스 로그 보기
-docker compose logs -f monitoring
+docker compose logs -f ingestion
 
 # 특정 서비스만 재시작
-docker compose restart monitoring
+docker compose restart ingestion
 
 # Redis 접속
 docker exec -it s14p31s305-redis-1 redis-cli -a redis1234
