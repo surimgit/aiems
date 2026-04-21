@@ -13,11 +13,11 @@ def ensure_charge_allowed(
     max_temperature_c: float,
 ) -> None:
     if soc >= high_soc_threshold:
-        raise ValueError("Charging blocked: SOC is above high threshold")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
     if soc >= max_safe_soc_threshold:
-        raise ValueError("Charging blocked: SOC is above maximum safe threshold")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
     if temperature_c >= max_temperature_c:
-        raise ValueError("Charging blocked: temperature is above max temperature")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
 
 
 # 현재 SOC와 온도 기준으로 방전이 가능한지 판단한다.
@@ -30,11 +30,11 @@ def ensure_discharge_allowed(
     max_temperature_c: float,
 ) -> None:
     if soc <= low_soc_threshold:
-        raise ValueError("Discharging blocked: SOC is below low threshold")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
     if soc <= min_safe_soc_threshold:
-        raise ValueError("Discharging blocked: SOC is below minimum safe threshold")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
     if temperature_c >= max_temperature_c:
-        raise ValueError("Discharging blocked: temperature is above max temperature")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
 
 
 # 현재 상태가 안전 정지로 강제 전환되어야 하는지 판단한다.
