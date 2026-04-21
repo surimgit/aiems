@@ -10,9 +10,6 @@ SITE_ID = os.getenv("SITE_ID", "PLANT-ALPHA")
 
 CONTROL_INTERVAL_SECONDS = 1.0
 
-SOC_LOW = 20.0
-SOC_HIGH = 90.0
-
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", 5432))
 DB_NAME = os.getenv("DB_NAME", "emsdb")
