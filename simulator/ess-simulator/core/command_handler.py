@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
 from .ess import EssSimulator
+from .safety_guards import (
+    ensure_command_not_expired,
+    ensure_comms_healthy,
+    ensure_emergency_not_active,
+    ensure_interlock_clear,
+    ensure_local_safety_clear,
+)
 
 
 class EssModePayload(BaseModel):
@@ -33,20 +41,25 @@ class CommandAck(BaseModel):
     applied: dict[str, Any] | None = None
 
 
-class EssModeCommand(BaseModel):
+class CommandMeta(BaseModel):
     command_id: str
+    issued_at: datetime | None = None
+    expires_in_sec: float | None = Field(default=None, gt=0)
+    force: bool = False
+    source: str | None = None
+
+
+class EssModeCommand(CommandMeta):
     command_type: Literal["ess_mode"]
     payload: EssModePayload
 
 
-class UpdateDeviceSpecCommand(BaseModel):
-    command_id: str
+class UpdateDeviceSpecCommand(CommandMeta):
     command_type: Literal["update_device_spec"]
     payload: UpdateDeviceSpecPayload
 
 
-class UpdateSafetySpecCommand(BaseModel):
-    command_id: str
+class UpdateSafetySpecCommand(CommandMeta):
     command_type: Literal["update_safety_spec"]
     payload: UpdateSafetySpecPayload
 
@@ -83,20 +96,36 @@ class CommandHandler:
 
         if command.command_type == "ess_mode":
             return self._apply_ess_mode(command)
-
         if command.command_type == "update_device_spec":
             return self._apply_device_spec(command)
-
         return self._apply_safety_spec(command)
 
     def _apply_ess_mode(self, command: EssModeCommand) -> dict[str, Any]:
         """ESS 모드 명령을 실행하고 문서 기준 적용값을 반환한다."""
 
+        self._ensure_mode_command_allowed(command)
         self.simulator.set_mode(command.payload.mode, command.payload.target_power_kw)
         return {
             "mode": command.payload.mode,
             "target_power_kw": command.payload.target_power_kw,
         }
+
+    def _ensure_mode_command_allowed(self, command: EssModeCommand) -> None:
+        """운전 명령에만 적용되는 안전 차단 조건을 순서대로 검사한다."""
+
+        now = datetime.now(timezone.utc)
+        ensure_emergency_not_active(
+            emergency_stop=self.simulator.status.emergency_stop,
+            current_state=self.simulator.status.state,
+        )
+        ensure_interlock_clear(interlock_active=self.simulator.status.interlock_active)
+        ensure_comms_healthy(comms_healthy=self.simulator.status.comms_healthy)
+        ensure_command_not_expired(
+            issued_at=command.issued_at,
+            expires_in_sec=command.expires_in_sec,
+            current_time=now,
+        )
+        ensure_local_safety_clear(local_fault=self.simulator.status.local_fault)
 
     def _apply_device_spec(self, command: UpdateDeviceSpecCommand) -> dict[str, float]:
         """장비 스펙 변경을 simulator에 위임하고 반영값을 그대로 돌려준다."""
