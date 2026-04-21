@@ -78,6 +78,31 @@ class MqttContractUnitTest(unittest.TestCase):
         self.assertEqual(command.payload.mode, "charge")
         self.assertEqual(command.payload.target_power_kw, 30.0)
 
+    def test_parse_ess_command_accepts_optional_control_metadata(self) -> None:
+        """203 안전 제약에 필요한 추가 command metadata는 허용되어야 한다."""
+
+        payload = """
+        {
+          "command_id": "cmd-044",
+          "command_type": "ess_mode",
+          "issued_at": "2026-04-14T07:49:00Z",
+          "expires_in_sec": 30.0,
+          "force": false,
+          "source": "control-service",
+          "payload": {
+            "mode": "charge",
+            "target_power_kw": 20.0
+          }
+        }
+        """
+
+        _, message = parse_ess_command("PLANT-ALPHA/ess/ess-01/command", payload, "PLANT-ALPHA", "ess-01")
+        command = to_simulator_command(message)
+
+        self.assertEqual(command.command_id, "cmd-044")
+        self.assertEqual(command.expires_in_sec, 30.0)
+        self.assertEqual(command.source, "control-service")
+
     def test_parse_ess_command_rejects_extra_fields_outside_contract(self) -> None:
         """문서에 없는 필드는 브로커 계약 위반으로 거부해야 한다."""
 

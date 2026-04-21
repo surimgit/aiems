@@ -39,6 +39,8 @@ class EssStatus:
     accumulated_energy_kwh: float = 0.0
     local_fault: bool = False
     emergency_stop: bool = False
+    interlock_active: bool = False
+    comms_healthy: bool = True
     last_updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -171,6 +173,8 @@ class EssSimulator:
             "accumulated_energy_kwh": round(self.status.accumulated_energy_kwh, 3),
             "local_fault": self.status.local_fault,
             "emergency_stop": self.status.emergency_stop,
+            "interlock_active": self.status.interlock_active,
+            "comms_healthy": self.status.comms_healthy,
             "low_soc_threshold": self.safety_spec.low_soc_threshold,
             "high_soc_threshold": self.safety_spec.high_soc_threshold,
             "min_safe_soc_threshold": self.safety_spec.min_safe_soc_threshold,
@@ -178,6 +182,25 @@ class EssSimulator:
             "max_temperature_c": self.safety_spec.max_temperature_c,
             "timestamp": self.status.last_updated_at.isoformat(),
         }
+
+    def set_interlock_active(self, active: bool) -> None:
+        """인터락 상태를 갱신한다."""
+
+        self.status.interlock_active = active
+        self.status.last_updated_at = datetime.now(timezone.utc)
+
+    def set_comms_health(self, healthy: bool) -> None:
+        """통신 상태를 갱신한다."""
+
+        self.status.comms_healthy = healthy
+        self.status.last_updated_at = datetime.now(timezone.utc)
+
+    def set_emergency_stop(self, active: bool) -> None:
+        """비상 정지 상태를 갱신한다."""
+
+        self.status.emergency_stop = active
+        self.status.last_updated_at = datetime.now(timezone.utc)
+        self._apply_safety_rules()
 
     # 충전/방전 명령 전 필요한 정책 검사를 수행한다.
     def _ensure_mode_allowed(self, mode: OperatingMode) -> None:

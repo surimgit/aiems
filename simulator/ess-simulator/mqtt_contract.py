@@ -47,6 +47,10 @@ class EssCommandMessage(ContractModel):
 
     command_id: str
     command_type: Literal["ess_mode"]
+    issued_at: str | None = None
+    expires_in_sec: float | None = Field(default=None, gt=0)
+    force: bool = False
+    source: str | None = None
     payload: EssCommandPayload
 
 
