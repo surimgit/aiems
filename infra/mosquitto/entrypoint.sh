@@ -12,8 +12,12 @@ ACL_TEMPLATE=/mosquitto/config/acl.template
 ACL_FILE=/mosquitto/config/acl
 
 mosquitto_passwd -b -c "${PASSWD_FILE}" "${MQTT_USER}" "${MQTT_PASSWORD}"
-chmod 0700 "${PASSWD_FILE}"
 
 sed "s|\${MQTT_USER}|${MQTT_USER}|g" "${ACL_TEMPLATE}" > "${ACL_FILE}"
+
+# mosquitto 프로세스는 기동 후 mosquitto 유저로 권한을 낮추므로
+# passwd/acl 은 해당 유저가 읽을 수 있어야 함.
+chown mosquitto:mosquitto "${PASSWD_FILE}" "${ACL_FILE}"
+chmod 0640 "${PASSWD_FILE}" "${ACL_FILE}"
 
 exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf

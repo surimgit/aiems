@@ -7,6 +7,8 @@ services:
     ports:
       - "5001:5001"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     restart: always
     depends_on:
       redis:

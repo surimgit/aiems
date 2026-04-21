@@ -7,6 +7,8 @@ services:
     ports:
       - "5002:5002"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     restart: always
 
   db-writer:
@@ -17,4 +19,6 @@ services:
     ports:
       - "5005:5005"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     restart: always
