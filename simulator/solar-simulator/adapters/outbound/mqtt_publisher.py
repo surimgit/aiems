@@ -3,24 +3,24 @@ import paho.mqtt.client as mqtt
 from core.models import TelemetryMessage, EventMessage, CommandAckMessage
 
 class SolarMQTTPublisher:
-    def __init__(self, client: mqtt.Client, plant_id: str, device_id: str):
+    def __init__(self, client: mqtt.Client, plant_id: str):
         self.client = client
         self.plant_id = plant_id
-        self.device_id = device_id
-        
-        self.base_topic = f"{plant_id}/solar/{device_id}"
-        self.telemetry_topic = f"{self.base_topic}/telemetry"
-        self.event_topic = f"{self.base_topic}/event"
-        self.emergency_topic = f"{self.base_topic}/emergency"
-        self.ack_topic = f"{self.base_topic}/ack"
+
+    def _get_base_topic(self, device_id: str) -> str:
+        return f"{self.plant_id}/solar/{device_id}"
 
     def publish_telemetry(self, telemetry: TelemetryMessage):
-        self.client.publish(self.telemetry_topic, telemetry.json())
+        topic = f"{self._get_base_topic(telemetry.device_id)}/telemetry"
+        self.client.publish(topic, telemetry.json())
 
     def publish_event(self, event: EventMessage):
         # 명세서 2.1: 비상 상황(EMERGENCY severity)은 emergency 토픽으로 분기 가능
-        target_topic = self.emergency_topic if event.severity == "EMERGENCY" else self.event_topic
+        base_topic = self._get_base_topic(event.device_id)
+        target_topic = f"{base_topic}/emergency" if event.severity == "EMERGENCY" else f"{base_topic}/event"
         self.client.publish(target_topic, event.json())
 
-    def publish_ack(self, ack: CommandAckMessage):
-        self.client.publish(self.ack_topic, ack.json())
+    def publish_ack(self, device_id: str, ack: CommandAckMessage):
+        # Ack는 파라미터로 받은 device_id를 통해 전송
+        topic = f"{self._get_base_topic(device_id)}/ack"
+        self.client.publish(topic, ack.json())

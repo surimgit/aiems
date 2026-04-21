@@ -7,18 +7,18 @@ from core.interpolator import TimeSeriesInterpolator
 from adapters.inbound.mqtt_subscriber import SolarMQTTSubscriber
 from adapters.outbound.mqtt_publisher import SolarMQTTPublisher
 from adapters.outbound.heartbeat_publisher import HeartbeatPublisher
+from core.device_manager import DeviceManager
 
 # Configuration (In real scenario, load from yaml)
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 PLANT_ID = os.getenv("PLANT_ID", "PLANT-ALPHA")
-DEVICE_ID = os.getenv("DEVICE_ID", "solar-01")
+DEVICE_IDS = os.getenv("DEVICE_IDS", "solar-01,solar-02").split(",")
 DATA_FILE = os.getenv("DATA_FILE", "data/normalized_solar_data.jsonl")
 
 def main():
-    print(f"Starting Solar Simulator: {DEVICE_ID} for {PLANT_ID}")
+    print(f"Starting Solar Edge Simulator for {PLANT_ID} with devices: {DEVICE_IDS}")
     
-    # 1. Initialize Core Logic
     # Note: data path should be adjusted based on Docker volume mapping
     data_path = os.path.join(os.path.dirname(__file__), DATA_FILE)
     if not os.path.exists(data_path):
@@ -26,19 +26,26 @@ def main():
         data_path = "C:/ssafy/2자율프로젝트/simulator/edge_sim/data/normalized_solar_data.jsonl"
 
     interpolator = TimeSeriesInterpolator(data_path)
-    device = SolarDevice(PLANT_ID, DEVICE_ID, interpolator)
+    
+    # 1. Initialize Device Manager & Load Devices
+    manager = DeviceManager()
+    for d_id in DEVICE_IDS:
+        d_id = d_id.strip()
+        if d_id:
+            device = SolarDevice(PLANT_ID, d_id, interpolator)
+            manager.register_device(device)
 
     # 2. Initialize MQTT Client & Adapters
     mqtt_client = mqtt.Client()
     
-    publisher = SolarMQTTPublisher(mqtt_client, PLANT_ID, DEVICE_ID)
-    heartbeat_publisher = HeartbeatPublisher(mqtt_client, PLANT_ID, DEVICE_ID, "solar")
-    subscriber = SolarMQTTSubscriber(mqtt_client, PLANT_ID, DEVICE_ID)
+    publisher = SolarMQTTPublisher(mqtt_client, PLANT_ID)
+    heartbeat_publisher = HeartbeatPublisher(mqtt_client, PLANT_ID, "solar")
+    subscriber = SolarMQTTSubscriber(mqtt_client, PLANT_ID)
     
-    def on_command_received(payload):
-        print(f"Received Command: {payload}")
-        ack = device.execute_command(payload, datetime.now(timezone.utc))
-        publisher.publish_ack(ack)
+    def on_command_received(target_device_id: str, payload: dict):
+        print(f"Received Command for {target_device_id}: {payload}")
+        ack = manager.route_command(target_device_id, payload, datetime.now(timezone.utc))
+        publisher.publish_ack(target_device_id, ack)
 
     subscriber.set_command_callback(on_command_received)
     
@@ -57,7 +64,7 @@ def main():
         return
 
     real_start_time = time.time()
-    time_speed_multiplier = 3600 # 현실 1초당 시뮬레이션 1초 (필요시 조절)
+    time_speed_multiplier = 3600 # 현실 1초당 시뮬레이션 1초 (필요시 조절) -> 3600 (유저 수정본 유지)
 
     # 3. Simulation Loop
     try:
@@ -70,27 +77,27 @@ def main():
             sim_time = data_start_time.timestamp() + (elapsed_real_seconds * time_speed_multiplier)
             sim_datetime = datetime.fromtimestamp(sim_time, tz=timezone.utc)
             
-            # Update device state (데이터 재생은 sim_datetime 기준)
-            event = device.tick(sim_datetime, real_current_time)
+            # Update all devices state via Manager
+            telemetries, events = manager.tick_all(sim_datetime, real_current_time)
             
-            # Publish Data
-            if event:
+            # Publish Data for all devices
+            for event in events:
                 publisher.publish_event(event)
             
-            # 텔레메트리에 시뮬레이션 시간(sim_datetime)을 담아 전송
-            telemetry = device.get_telemetry(sim_datetime)
-            publisher.publish_telemetry(telemetry)
+            for telemetry in telemetries:
+                publisher.publish_telemetry(telemetry)
             
             # Publish Heartbeat every 10 seconds (approx)
             # 0.1초 주기이므로 100번마다 한 번씩 보냄
             if int(elapsed_real_seconds * 10) % 100 == 0:
-                heartbeat_publisher.publish()
+                for d_id in manager.devices.keys():
+                    heartbeat_publisher.publish(d_id)
 
             # 수집 주기 명세 반영: 0.1초 (100ms)
             time.sleep(0.1)
             
     except KeyboardInterrupt:
-        print("Stopping Solar Simulator...")
+        print("Stopping Solar Simulator Edge...")
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
 
