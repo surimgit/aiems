@@ -16,11 +16,13 @@ class CalculationsUnitTest(unittest.TestCase):
     def test_calculate_interval_hours_converts_seconds_to_hours(self) -> None:
         """tick 간격은 초에서 시간으로 정확히 변환되어야 한다."""
         self.assertAlmostEqual(calculate_interval_hours(900.0), 0.25)
+        self.assertAlmostEqual(calculate_interval_hours(0.1), 0.1 / 3600.0)
 
     def test_calculate_energy_delta_kwh_uses_absolute_power(self) -> None:
         """충전과 방전 모두 이동 에너지량은 절대값 기준으로 계산한다."""
         self.assertAlmostEqual(calculate_energy_delta_kwh(-50.0, 3600.0), 50.0)
         self.assertAlmostEqual(calculate_energy_delta_kwh(20.0, 1800.0), 10.0)
+        self.assertAlmostEqual(calculate_energy_delta_kwh(40.0, 0.1), 40.0 * 0.1 / 3600.0)
 
     def test_calculate_soc_delta_uses_capacity_kwh(self) -> None:
         """SOC 변화율은 이동 에너지와 배터리 용량으로 계산해야 한다."""

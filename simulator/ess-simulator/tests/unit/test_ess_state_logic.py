@@ -13,7 +13,7 @@ class EssStateLogicUnitTest(unittest.TestCase):
                 plant_id="PLANT-ALPHA",
                 device_id="ess-01",
                 resource_type="ess",
-                publish_interval_sec=1.0,
+                publish_interval_sec=0.1,
                 power_limit_kw=40.0,
                 capacity_kwh=500.0,
             ),
@@ -68,7 +68,9 @@ class EssStateLogicUnitTest(unittest.TestCase):
 
         snapshot = self.simulator.tick()
 
-        self.assertAlmostEqual(snapshot["soc"], 50.002, places=3)
+        self.assertAlmostEqual(self.simulator.status.soc, 50.0002222222, places=6)
+        self.assertAlmostEqual(self.simulator.status.accumulated_energy_kwh, 0.0011111111, places=6)
+        self.assertEqual(snapshot["publish_interval_sec"], 0.1)
 
     def test_update_device_spec_changes_capacity_kwh(self) -> None:
         """장치 스펙 변경 명령으로 배터리 용량을 바꿀 수 있어야 한다."""
