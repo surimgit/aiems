@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from dataclasses import dataclass
 
 from adapters.inbound.cli_controller import CliController, CliExitRequested
@@ -9,7 +10,7 @@ from adapters.outbound.mqtt_publisher import MqttPublisher
 from core.command_handler import CommandHandler
 from core.ess import DeviceSpec, EssSimulator, SafetySpec
 from mqtt_contract import coerce_simulator_snapshot
-from runtime_config import DeviceFileConfig
+from runtime_config import DeviceConfig, RuntimeConfig
 
 
 @dataclass
@@ -19,96 +20,98 @@ class RuntimePublishBatch:
     heartbeat_json: str
 
 
+def build_profile(device: DeviceConfig):
+    profile_module = importlib.import_module(device.profile.module)
+    profile_class = getattr(profile_module, device.profile.class_name)
+    return profile_class(seed=device.profile.seed)
+
+
 class EssSimulatorApp:
-    """설정, 도메인 로직, MQTT 입출력을 한 곳에서 조립하는 앱 계층이다."""
-
-    def __init__(self, config: DeviceFileConfig) -> None:
-        """실행 설정을 기반으로 시뮬레이터와 어댑터를 모두 초기화한다."""
-
-        device_spec = DeviceSpec(
-            plant_id=config.plant_id,
-            device_id=config.device_id,
-            resource_type=config.resource_type,
-            publish_interval_sec=config.publish_interval_sec,
-            power_limit_kw=config.power_limit_kw,
-            capacity_kwh=config.capacity_kwh,
-        )
-        safety_spec = SafetySpec(
-            low_soc_threshold=config.low_soc_threshold,
-            high_soc_threshold=config.high_soc_threshold,
-            min_safe_soc_threshold=config.min_safe_soc_threshold,
-            max_safe_soc_threshold=config.max_safe_soc_threshold,
-            max_temperature_c=config.max_temperature_c,
-        )
-
-        self.simulator = EssSimulator(
-            device_spec=device_spec,
-            safety_spec=safety_spec,
-            initial_soc=config.initial_soc,
-            temperature_c=config.temperature_c,
-        )
-        self.command_handler = CommandHandler(self.simulator)
+    def __init__(self, config: RuntimeConfig, *, interactive: bool = True) -> None:
+        self.config = config
+        self.interactive = interactive
         self.publisher = MqttPublisher(config.mqtt_broker_host, config.mqtt_broker_port)
+        self.simulators: dict[str, EssSimulator] = {}
+        self.command_handlers: dict[str, CommandHandler] = {}
+        self.cli = CliController(self)
         self.mqtt_subscriber = MqttCommandSubscriber(
-            self.command_handler,
+            self.command_handlers,
             self.publisher,
             config.plant_id,
-            config.resource_type,
-            config.device_id,
+            "ess",
             config.mqtt_broker_host,
             config.mqtt_broker_port,
         )
-        self.cli = CliController(self.command_handler, self.publisher)
         self._stop_event = asyncio.Event()
+        self._build_simulators()
+
+    def _build_simulators(self) -> None:
+        for device in self.config.devices:
+            simulator = EssSimulator(
+                device_spec=DeviceSpec(
+                    plant_id=self.config.plant_id,
+                    device_id=device.device_id,
+                    resource_type=device.resource_type,
+                    publish_interval_sec=device.publish_interval_sec,
+                    power_limit_kw=device.power_limit_kw,
+                    capacity_kwh=device.capacity_kwh,
+                ),
+                safety_spec=SafetySpec(
+                    low_soc_threshold=device.low_soc_threshold,
+                    high_soc_threshold=device.high_soc_threshold,
+                    min_safe_soc_threshold=device.min_safe_soc_threshold,
+                    max_safe_soc_threshold=device.max_safe_soc_threshold,
+                    max_temperature_c=device.max_temperature_c,
+                ),
+                initial_soc=device.initial_soc,
+                temperature_c=device.temperature_c,
+                profile=build_profile(device),
+            )
+            self.simulators[device.device_id] = simulator
+            self.command_handlers[device.device_id] = CommandHandler(simulator)
 
     def request_shutdown(self) -> None:
-        """다른 루프들이 종료를 감지할 수 있도록 stop 이벤트를 세팅한다."""
-
         self._stop_event.set()
 
     async def run(self) -> None:
-        """publisher, subscriber, CLI 루프를 동시에 실행하고 종료 시 정리한다."""
-
-        snapshot = self.simulator.snapshot()
-        print(
-            "[ESS] Starting simulator "
-            f"(plant={snapshot['plant_id']}, device={snapshot['device_id']}, interval={snapshot['publish_interval_sec']}s)"
-        )
-        print("[ESS] Commands: mode <charge|discharge|standby> [power], set-spec <field> <value>, set-safety <field> <value>, show, quit")
+        print(f"[ESS] Starting simulator fleet (plant={self.config.plant_id}, devices={len(self.simulators)})")
+        if self.interactive:
+            print("[ESS] Commands: show, show <device_id>, mode <device_id> <charge|discharge|standby> [power], quit")
+        else:
+            print("[ESS] Interactive CLI disabled; runtime loop only")
         self.publisher.start()
         self.mqtt_subscriber.start()
 
         try:
-            await asyncio.gather(
-                self._runtime_loop(),
-                self._cli_loop(),
-            )
+            if self.interactive:
+                await asyncio.gather(self._runtime_loop(), self._cli_loop())
+            else:
+                await self._runtime_loop()
         finally:
             self.mqtt_subscriber.stop()
             self.publisher.stop()
 
-    # 한 번의 tick 결과를 문서 규격 telemetry/heartbeat payload로 조립한다.
-    def build_publish_batch(self) -> RuntimePublishBatch:
-        snapshot = coerce_simulator_snapshot(self.simulator.tick())
-        telemetry_json = self.publisher.serialize_telemetry(snapshot)
-        heartbeat_json = self.publisher.serialize_heartbeat(
-            snapshot["plant_id"],
-            snapshot["resource_type"],
-            snapshot["device_id"],
-        )
-        return RuntimePublishBatch(
-            snapshot=snapshot,
-            telemetry_json=telemetry_json,
-            heartbeat_json=heartbeat_json,
-        )
+    def build_publish_batches(self) -> list[RuntimePublishBatch]:
+        batches: list[RuntimePublishBatch] = []
+        for simulator in self.simulators.values():
+            snapshot = coerce_simulator_snapshot(simulator.tick())
+            batches.append(
+                RuntimePublishBatch(
+                    snapshot=snapshot,
+                    telemetry_json=self.publisher.serialize_telemetry(snapshot),
+                    heartbeat_json=self.publisher.serialize_heartbeat(
+                        snapshot["plant_id"],
+                        snapshot["resource_type"],
+                        snapshot["device_id"],
+                    ),
+                )
+            )
+        return batches
 
-    # 조립된 payload를 콘솔에 남겨 현재 발행 내용을 바로 확인할 수 있게 한다.
     @staticmethod
     def log_publish_batch(batch: RuntimePublishBatch) -> None:
-        print(f"[ESS][telemetry] {batch.telemetry_json}")
-        print(f"[ESS][heartbeat] {batch.heartbeat_json}")
+        print(f"[ESS][{batch.snapshot['device_id']}][telemetry] {batch.telemetry_json}")
 
-    # 조립된 payload를 MQTT publisher를 통해 실제 토픽으로 발행한다.
     def publish_batch(self, batch: RuntimePublishBatch) -> None:
         self.publisher.publish_telemetry(batch.snapshot)
         self.publisher.publish_heartbeat(
@@ -117,30 +120,23 @@ class EssSimulatorApp:
             batch.snapshot["device_id"],
         )
 
-    # 주기 발행 한 사이클을 실행하고 테스트에서 검증 가능한 결과를 반환한다.
-    def run_publish_cycle(self) -> RuntimePublishBatch:
-        batch = self.build_publish_batch()
-        self.log_publish_batch(batch)
-        self.publish_batch(batch)
-        return batch
+    def run_publish_cycle(self) -> list[RuntimePublishBatch]:
+        batches = self.build_publish_batches()
+        for batch in batches:
+            self.log_publish_batch(batch)
+            self.publish_batch(batch)
+        return batches
 
     async def _runtime_loop(self) -> None:
-        """주기마다 시뮬레이터를 한 tick 진행하고 telemetry와 heartbeat를 함께 발행한다."""
-
+        interval = min(sim.device_spec.publish_interval_sec for sim in self.simulators.values())
         while not self._stop_event.is_set():
-            batch = self.run_publish_cycle()
-
+            self.run_publish_cycle()
             try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(),
-                    timeout=float(batch.snapshot["publish_interval_sec"]),
-                )
+                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 continue
 
     async def _cli_loop(self) -> None:
-        """사용자 입력을 받아 command handler로 넘기고 결과를 콘솔에 출력한다."""
-
         while not self._stop_event.is_set():
             try:
                 line = await asyncio.to_thread(input, "ess> ")
@@ -160,7 +156,5 @@ class EssSimulatorApp:
                 print(f"[ESS][cli] error: {exc}")
                 continue
 
-            if result is None:
-                continue
-
-            print(result)
+            if result is not None:
+                print(result)
