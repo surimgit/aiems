@@ -31,6 +31,7 @@ class EssMqttFlowFunctionalTest(unittest.TestCase):
                 resource_type="ess",
                 publish_interval_sec=1.0,
                 power_limit_kw=40.0,
+                capacity_kwh=500.0,
             ),
             safety_spec=SafetySpec(
                 low_soc_threshold=20.0,

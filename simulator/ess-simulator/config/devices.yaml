@@ -4,6 +4,7 @@ resource_type: ess
 publish_interval_sec: 1.0
 initial_soc: 67.3
 power_limit_kw: 50.0
+capacity_kwh: 500.0
 low_soc_threshold: 20.0
 high_soc_threshold: 90.0
 min_safe_soc_threshold: 10.0

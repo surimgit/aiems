@@ -23,6 +23,7 @@ class EssSimulatorApp:
             resource_type=config.resource_type,
             publish_interval_sec=config.publish_interval_sec,
             power_limit_kw=config.power_limit_kw,
+            capacity_kwh=config.capacity_kwh,
         )
         safety_spec = SafetySpec(
             low_soc_threshold=config.low_soc_threshold,
