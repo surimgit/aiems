@@ -1,8 +1,10 @@
 import asyncio
+import threading
 from adapters.state_reader import StateReader
 from adapters.mqtt_commander import MqttCommander
 from adapters.db_writer import ControlDBWriter
 from domain.rule_engine import run
+from api import run_api
 from config import CONTROL_INTERVAL_SECONDS
 
 _pending: dict[str, str] = {}
@@ -41,4 +43,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    api_thread = threading.Thread(target=run_api, kwargs={"port": 5001}, daemon=True)
+    api_thread.start()
+    print("[control] Flask API 시작: port 5001")
     asyncio.run(main())
