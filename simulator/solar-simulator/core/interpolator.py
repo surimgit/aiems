@@ -9,66 +9,99 @@ class SolarDataProvider(ABC):
     def get_value(self, target_time: datetime) -> float:
         pass
 
-# --- 3번 방식: 수학적 모델 기반 동적 생성기 ---
-class SolarModelGenerator(SolarDataProvider):
-    def __init__(self, max_capacity_kw: float = 500.0):
+# --- 물리 기반 태양광 발전 동적 생성기 ---
+class PhysicsSolarGenerator(SolarDataProvider):
+    def __init__(self, max_capacity_kw: float = 500.0, latitude: float = 37.5665):
         self.max_capacity_kw = max_capacity_kw
-        self.sunrise_hour = 6.0  # 일출 (오전 6시)
-        self.sunset_hour = 19.0   # 일몰 (오후 7시)
+        self.latitude = math.radians(latitude)
         
-        # 날씨 변화 시뮬레이션을 위한 내부 상태
-        self.weather_factor = 1.0  # 1.0=맑음, 0.5=흐림, 0.1=비
-        self.last_update_hour = -1
+        # 외부에서 동적으로 제어할 수 있는 상태 변수 (명령어/MCP를 통한 조작 대상)
+        self.cloud_cover = 0.0     # 운량 (0.0=맑음 ~ 1.0=흐림)
+        self.temperature_c = 15.0  # 대기 온도 (섭씨)
+        self.efficiency_multiplier = 1.0 # 인위적 출력 제한 등 외부 효율 강제 적용 계수
 
-    def _update_weather_randomly(self, current_hour: float):
-        """매 시간마다 날씨가 조금씩 변할 확률을 둡니다."""
-        if int(current_hour) != self.last_update_hour:
-            # 20% 확률로 날씨가 변함
-            if random.random() < 0.2:
-                self.weather_factor = random.uniform(0.3, 1.0)
-            self.last_update_hour = int(current_hour)
+    def set_conditions(self, cloud_cover: float = None, temperature_c: float = None, efficiency: float = None):
+        """MCP나 외부 텍스트 명령어로 호출하여 발전 환경을 실시간으로 변경합니다."""
+        if cloud_cover is not None:
+            # 운량은 0.0 ~ 1.0 사이로 제한
+            self.cloud_cover = max(0.0, min(1.0, cloud_cover))
+        if temperature_c is not None:
+            self.temperature_c = temperature_c
+        if efficiency is not None:
+            self.efficiency_multiplier = max(0.0, efficiency)
 
     def get_value(self, target_time: datetime) -> float:
-        # 시간 단위로 변환 (예: 14시 30분 -> 14.5)
+        # 1. 시각 계산 (0 ~ 24)
         current_hour = target_time.hour + (target_time.minute / 60.0) + (target_time.second / 3600.0)
+        
+        # 2. 1년 중 특성 (계절별 태양 고도 반영용 적위 계산)
+        # Julian Day 식별 (1월 1일 = 1)
+        day_of_year = target_time.timetuple().tm_yday
+        # 태양 적위 곡선 (Solar Declination): -23.45 ~ +23.45 도
+        declination = math.radians(23.45 * math.sin(math.radians((360 / 365.25) * (day_of_year - 81))))
+        
+        # 3. 시간각 (Hour Angle): 정오(12시)를 0으로 기준, 시간당 15도씩 회전
+        hour_angle = math.radians(15.0 * (current_hour - 12.0))
+        
+        # 4. 태양 고도각 (Elevation Angle) 연산. 음수면 해가 진 것.
+        # sin(El) = sin(Lat)*sin(Dec) + cos(Lat)*cos(Dec)*cos(HA)
+        sin_elevation = (math.sin(self.latitude) * math.sin(declination) +
+                         math.cos(self.latitude) * math.cos(declination) * math.cos(hour_angle))
+        
+        # math.asin domain error 방지
+        sin_elevation = max(-1.0, min(1.0, sin_elevation))
+        elevation = math.asin(sin_elevation)
+        elevation_deg = math.degrees(elevation)
 
-        # 해가 떠있는 시간이 아니면 0.0 (밤)
-        if current_hour < self.sunrise_hour or current_hour > self.sunset_hour:
-            return 0.0
+        if elevation_deg <= 0:
+            return 0.0  # 야간
+        
+        # 5. Clear Sky 기반 기본 발전비율 계산 (고도각에 비례)
+        # 고도각이 높을수록 1.0에 가까워짐
+        base_power_ratio = math.sin(elevation)
+        
+        # 6. 날씨 변수 페널티 (Weather Derating)
+        # 6.1 구름(운량) 감쇠: 구름이 1.0(100%) 껴도 산란광 등으로 약 20%는 발전됨
+        cloud_factor = 1.0 - (self.cloud_cover * 0.8)
+        
+        # 6.2 온도 저하 (Temperature Derating)
+        # 패널 온도 수식: 패널 표면 온도 = 대기온도 + (고도각비례 일사량 * 30)
+        cell_temperature = self.temperature_c + (base_power_ratio * 30.0)
+        temp_factor = 1.0
+        if cell_temperature > 25.0:
+            # 25도 초과 시 1도당 효율 0.4% 하락 (기본적인 결정질 실리콘 온도계수)
+            temp_factor -= (cell_temperature - 25.0) * 0.004
+            temp_factor = max(0.5, temp_factor) # 페널티 하한선 설정
+            
+        # 7. 노이즈 및 최종 출력 결합
+        noise_factor = random.uniform(0.98, 1.02)
+        power_ratio = base_power_ratio * cloud_factor * temp_factor * self.efficiency_multiplier * noise_factor
 
-        # 일조 시간을 0 ~ 1 사이의 진행률로 계산
-        daylight_duration = self.sunset_hour - self.sunrise_hour
-        progress = (current_hour - self.sunrise_hour) / daylight_duration
+        return self.max_capacity_kw * max(0.0, power_ratio)
 
-        # 사인 곡선: 정오(progress=0.5)일 때 sin(pi/2) = 1 (최대값)
-        # 약간의 가우시안 효과를 위해 제곱을 사용하여 곡선을 더 현실적으로(뾰족하게) 만듦
-        base_curve = math.sin(progress * math.pi) ** 1.5
 
-        # 랜덤 노이즈 추가 (±3%)
-        noise = random.uniform(0.97, 1.03)
-
-        # 날씨 상태 업데이트
-        self._update_weather_randomly(current_hour)
-
-        # 최종 발전량 계산
-        return self.max_capacity_kw * base_curve * self.weather_factor * noise
-
-# --- 기존 코드와의 호환성을 위한 래퍼 클래스 ---
+# --- 기존 코드와의 호환성 및 제어 권한을 제공하는 래퍼 클래스 ---
 class TimeSeriesInterpolator:
     """
-    기존 main.py에서 호출하는 인터페이스를 유지하면서 
-    내부적으로 Generator를 사용하여 무한 데이터를 생성합니다.
+    내부적으로 PhysicsSolarGenerator를 사용하여 동적으로 전력을 생성하고,
+    생성기 상태(구름, 온도)를 조절할 수 있는 인터페이스를 개방합니다.
     """
     def __init__(self, _unused_path: str = None):
-        # 나중에 실제 데이터로 바꾸고 싶으면 다른 Provider로 교체만 하면 됩니다.
-        self.provider = SolarModelGenerator(max_capacity_kw=800.0)
+        self.provider = PhysicsSolarGenerator(
+            max_capacity_kw=800.0,
+            latitude=37.5665 # 서울 중심 위도
+        )
+
+    def set_environment(self, cloud_cover: float = None, temperature_c: float = None, efficiency: float = None):
+        """
+        [새로운 기능] 외부(예: command_handler)에서 해당 함수를 호출하여
+        시뮬레이터의 실시간 발전 조건(구름량, 온도, 효율)을 변경할 수 있습니다.
+        """
+        self.provider.set_conditions(cloud_cover, temperature_c, efficiency)
 
     def get_first_time(self) -> datetime:
-        # 동적 생성이므로 시작 시점은 '현재'를 반환하여 즉시 시작되게 합니다.
         return datetime.now()
 
     def get_interpolated_value(self, target_time: datetime) -> float:
-        # 3.3kW(3300W) 데이터 이슈를 방지하기 위해 
-        # SolarDevice.tick에서 /1000 처리를 하므로, 여기서는 Watt 단위로 반환합니다.
-        # 만약 이미 kW 단위가 필요하다면 이 값을 그대로 사용하세요.
+        # Watt 단위 반환
         return self.provider.get_value(target_time) * 1000.0

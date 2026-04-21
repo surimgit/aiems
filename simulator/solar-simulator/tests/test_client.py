@@ -3,7 +3,7 @@ import time
 import paho.mqtt.client as mqtt
 
 MQTT_HOST = "localhost"
-MQTT_PORT = 1883
+MQTT_PORT = 1884
 PLANT_ID = "PLANT-ALPHA"
 DEVICE_ID = "solar-01"
 
