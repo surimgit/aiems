@@ -24,7 +24,7 @@ async def main():
                         sent = 0
                         for cmd in commands:
                             device_id = cmd["device_id"]
-                            target_mode = cmd["payload"]["mode"]
+                            target_mode = cmd["payload"].get("mode") or cmd["payload"].get("command")
                             if _pending.get(device_id) == target_mode:
                                 continue
                             await commander.send(cmd)

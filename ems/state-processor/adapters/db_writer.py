@@ -1,5 +1,16 @@
+import json
 import asyncpg
+from datetime import datetime, timezone
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+
+
+def _parse_ts(ts: str | None) -> datetime:
+    if not ts:
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 class DBWriter:
@@ -31,7 +42,7 @@ class DBWriter:
                 """,
                 [
                     (
-                        r["time"], r["site_id"], r["device_id"], r["resource_type"],
+                        _parse_ts(r["time"]), r["site_id"], r["device_id"], r["resource_type"],
                         r.get("p_avg"), r.get("p_max"), r.get("p_min"),
                         r.get("q_avg"), r.get("v_avg"), r.get("f_avg"), r.get("pf_avg"),
                         r.get("soc"), r.get("sample_count", 1),
@@ -41,7 +52,6 @@ class DBWriter:
             )
 
     async def insert_event(self, snapshot: dict, event_type: str, severity: str, message: str) -> None:
-        import json
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -49,7 +59,7 @@ class DBWriter:
                     (time, site_id, device_id, resource_type, event_type, severity, message, payload)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
-                snapshot["timestamp"],
+                _parse_ts(snapshot.get("timestamp")),
                 snapshot["site_id"],
                 snapshot["device_id"],
                 snapshot["resource_type"],
