@@ -157,6 +157,41 @@ class CommandHandlerUnitTest(unittest.TestCase):
         self.assertEqual(ack.status, "rejected")
         self.assertEqual(ack.reason, "COMMAND_EXPIRED")
 
+    def test_handle_command_rejects_when_emergency_stop_is_active(self) -> None:
+        """emergency stop 상태에서는 모드 명령을 EMERGENCY_STOP_ACTIVE로 거부해야 한다."""
+
+        handler = build_handler()
+        handler.simulator.set_emergency_stop(True)
+        command = parse_simulator_command(
+            {
+                "command_id": "cmd-208",
+                "command_type": "ess_mode",
+                "payload": {"mode": "charge", "target_power_kw": 10.0},
+            }
+        )
+
+        ack = handler.handle_command(command)
+
+        self.assertEqual(ack.status, "rejected")
+        self.assertEqual(ack.reason, "EMERGENCY_STOP_ACTIVE")
+
+    def test_handle_command_applies_safety_spec_updates(self) -> None:
+        """safety spec 변경 명령은 simulator에 반영되고 applied 값을 반환해야 한다."""
+
+        handler = build_handler()
+        command = parse_simulator_command(
+            {
+                "command_id": "cmd-209",
+                "command_type": "update_safety_spec",
+                "payload": {"low_soc_threshold": 25.0, "max_temperature_c": 50.0},
+            }
+        )
+
+        ack = handler.handle_command(command)
+
+        self.assertEqual(ack.status, "accepted")
+        self.assertEqual(ack.applied, {"low_soc_threshold": 25.0, "max_temperature_c": 50.0})
+
 
 if __name__ == "__main__":
     unittest.main()
