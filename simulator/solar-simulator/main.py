@@ -64,7 +64,9 @@ def main():
         return
 
     real_start_time = time.time()
+
     time_speed_multiplier = 3600 # 현실 1초당 시뮬레이션 1초 (필요시 조절) -> 3600 (유저 수정본 유지)
+
 
     # 3. Simulation Loop
     try:

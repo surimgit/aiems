@@ -3,56 +3,53 @@
 ## Summary
 
 이 문서는 `simulator/ess-simulator` 작업 상태를 Jira 기준으로 정리한다.
-현재 기준으로 `S14P31S305-202`와 `S14P31S305-203`은 완료 처리한다.
+현재 기준으로 `S14P31S305-204`까지 구현과 테스트 반영이 끝난 상태다.
 
 ## Jira Status
 
-| Jira | 작업 | 상태 | 비고 |
+| Jira | 설명 | 상태 | 메모 |
 | --- | --- | --- | --- |
 | `S14P31S305-200` | ESS 상태 모델 및 상태 전이 로직 구현 | 완료 | 기존 반영 |
 | `S14P31S305-201` | ESS 충방전 및 SOC 계산 로직 구현 | 완료 | 기존 반영 |
-| `S14P31S305-202` | ESS 명령 처리기 구현 | 완료 | 반영 완료 |
-| `S14P31S305-203` | ESS 안전 제약 및 차단 로직 구현 | 완료 | 이번 브랜치 반영 |
-| `S14P31S305-204` | ESS Telemetry 주기 발행 기능 구현 | 진행 중 | 기존 일부 반영, 보강 필요 |
-| `S14P31S305-205` | ESS 시뮬레이터 테스트 코드 작성 | 진행 중 | 테스트 확장 진행 중 |
-| `S14P31S305-206` | ESS 시뮬레이터 상태 확인용 TUI 구현 | 진행 전 | 미구현 |
+| `S14P31S305-202` | ESS 명령 처리기 구현 | 완료 | 기존 반영 |
+| `S14P31S305-203` | ESS 안전 제약 및 차단 로직 구현 | 완료 | 기존 반영 |
+| `S14P31S305-204` | ESS Telemetry 주기 발행 기능 구현 | 완료 | 기본 주기 0.1초, publish cycle 함수 분리, 단위 테스트 추가 |
+| `S14P31S305-205` | ESS 시뮬레이터 테스트 코드 작성 | 진행 전 | 일부 기반 테스트는 선반영 |
+| `S14P31S305-206` | ESS 시뮬레이터 상태 확인용 TUI 구현 | 진행 전 | 미착수 |
 
 ## 202 Done
 
-- MQTT command contract 검증 후 내부 command 모델로 변환하는 흐름 정리
-- `core/command_handler.py`를 함수 중심 구조로 분리
-- accepted / rejected ACK 생성 경로 정리
-- 명령 처리 단위 테스트 추가
+- MQTT command contract 기준 command payload 검증 반영
+- `core/command_handler.py` 중심의 처리 흐름 분리
+- accepted / rejected ACK 생성 반영
+- 명령 처리 테스트 보강
 
 ## 203 Done
 
-- `core/safety_guards.py` 추가
-- interlock 차단 추가
-- command expiry 차단 추가
-- comms failure 차단 추가
-- emergency stop 차단 추가
-- local safety / local fault 차단 추가
-- reason code 기반 rejected ACK 정리
-- `EssStatus`에 `interlock_active`, `comms_healthy` 상태 추가
-- command metadata `issued_at`, `expires_in_sec`, `force`, `source` 허용
-- 안전 차단 단위 테스트 및 command handler 테스트 확장
+- `core/safety_guards.py` 반영
+- interlock 차단 반영
+- command expiry 차단 반영
+- comms failure 차단 반영
+- emergency stop 차단 반영
+- local safety / local fault 차단 반영
+- reason code 포함 rejected ACK 반영
+- `EssStatus`에 `interlock_active`, `comms_healthy` 상태 반영
+- command metadata `issued_at`, `expires_in_sec`, `force`, `source` 반영
 
-주요 반영 파일:
+## 204 Done
 
-- `core/command_handler.py`
-- `core/safety_guards.py`
-- `core/ess.py`
-- `mqtt_contract.py`
-- `tests/unit/test_safety_guards.py`
-- `tests/unit/test_command_handler.py`
-- `tests/unit/test_mqtt_contract.py`
+- `config/devices.yaml` 기본 `publish_interval_sec`를 `0.1`로 조정
+- `simulator_app.py`에서 주기 발행 흐름을 `build_publish_batch()`, `log_publish_batch()`, `publish_batch()`, `run_publish_cycle()`로 분리
+- telemetry 와 heartbeat 조립, 로그 출력, 발행 단계를 각각 함수로 분리해 테스트하기 쉽게 구성
+- `tests/unit/test_simulator_app.py` 추가로 broker 없이도 한 번의 publish cycle을 검증 가능하게 보강
+- `tests/unit/test_calculations.py`, `tests/unit/test_ess_state_logic.py`에 0.1초 기준 계산 검증 추가
 
 ## Verification
 
 ```bash
-python -m unittest tests.unit.test_safety_guards tests.unit.test_command_handler tests.unit.test_mqtt_contract tests.unit.test_state_machine tests.unit.test_ess_state_logic tests.functional.test_ess_mqtt_flow tests.integration.test_mqtt_subscriber tests.integration.test_mqtt_publisher
+python -m unittest tests.unit.test_simulator_app tests.unit.test_safety_guards tests.unit.test_command_handler tests.unit.test_mqtt_contract tests.unit.test_state_machine tests.unit.test_calculations tests.unit.test_ess_state_logic tests.functional.test_ess_mqtt_flow tests.integration.test_mqtt_subscriber tests.integration.test_mqtt_publisher
 ```
 
 ## Next Boundary
 
-다음 우선순위는 `S14P31S305-204`, `S14P31S305-205`, `S14P31S305-206`이다.
+다음 작업 범위는 `S14P31S305-205`, `S14P31S305-206`이다.
