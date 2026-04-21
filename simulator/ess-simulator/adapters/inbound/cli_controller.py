@@ -55,7 +55,7 @@ class CliController:
 
         if command == "set-spec":
             if len(tokens) != 3:
-                raise ValueError("Usage: set-spec <power_limit_kw|publish_interval_sec> <value>")
+                raise ValueError("Usage: set-spec <power_limit_kw|publish_interval_sec|capacity_kwh> <value>")
             ack = self.command_handler.handle_command(parse_simulator_command(
                 {
                     "command_id": self._next_command_id(),

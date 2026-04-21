@@ -15,6 +15,7 @@ class DeviceFileConfig(BaseModel):
     publish_interval_sec: float = Field(gt=0)
     initial_soc: float = Field(ge=0, le=100)
     power_limit_kw: float = Field(gt=0)
+    capacity_kwh: float = Field(gt=0)
     low_soc_threshold: float = Field(ge=0, le=100)
     high_soc_threshold: float = Field(ge=0, le=100)
     min_safe_soc_threshold: float = Field(ge=0, le=100)
