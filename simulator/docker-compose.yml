@@ -3,10 +3,10 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-broker
     ports:
-      - "1884:1883"
-    command: |
-      sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf && 
-             echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf && 
+      - "1883:1883"
+    command: >
+      sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
+             echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
              /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
     healthcheck:
       test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-h", "localhost"]
@@ -23,33 +23,13 @@ services:
         condition: service_healthy
     command: mosquitto_sub -h mqtt-broker -t "#" -v
 
-  diesel-simulator:
+  ess-simulator:
     build:
-      context: ./diesel-simulator
+      context: ./ess-simulator
       dockerfile: Dockerfile
-    container_name: diesel-simulator
+    container_name: ess-simulator
     restart: always
-    environment:
-      - MQTT_HOST=mqtt-broker
-      - MQTT_PORT=1883
-      - PLANT_ID=PLANT-ALPHA
-      - DEVICE_ID=diesel-01
-    depends_on:
-      mqtt-broker:
-        condition: service_healthy
-
-  solar-simulator:
-    build:
-      context: ./solar-simulator
-      dockerfile: Dockerfile
-    container_name: solar-simulator
-    restart: always
-    environment:
-      - MQTT_HOST=mqtt-broker
-      - MQTT_PORT=1883
-      - PLANT_ID=PLANT-ALPHA
-      - DEVICE_ID=solar-01
-      - DATA_FILE=unused # 현재 interpolator가 수학 모델을 사용함
+    command: ["python", "main.py", "--no-cli", "--config", "/app/config/devices.docker.yaml"]
     depends_on:
       mqtt-broker:
         condition: service_healthy

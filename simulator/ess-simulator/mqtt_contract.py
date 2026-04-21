@@ -39,7 +39,7 @@ class EssCommandPayload(ContractModel):
     """브로커가 요구하는 ESS 모드 변경 명령 payload다."""
 
     mode: OperatingMode
-    target_power_kw: float = Field(ge=0)
+    target_power_kw: float | None = Field(default=None, ge=0)
 
 
 class EssCommandMessage(ContractModel):
@@ -199,7 +199,7 @@ def parse_heartbeat_topic(topic: str) -> HeartbeatTopicParts:
     return HeartbeatTopicParts(plant_id=parts[0], message_type="heartbeat")
 
 
-def parse_ess_command(topic: str, payload: str, plant_id: str, device_id: str) -> tuple[TopicParts, EssCommandMessage]:
+def parse_ess_command(topic: str, payload: str, plant_id: str) -> tuple[TopicParts, EssCommandMessage]:
     """수신한 MQTT 명령이 이 ESS 장비 대상인지 확인하고 계약대로 파싱한다."""
 
     topic_parts = parse_topic(topic)
@@ -207,7 +207,7 @@ def parse_ess_command(topic: str, payload: str, plant_id: str, device_id: str) -
         raise ValueError(f"Unsupported message type: {topic_parts.message_type}")
     if topic_parts.resource_type != "ess":
         raise ValueError(f"Unsupported resource type: {topic_parts.resource_type}")
-    if topic_parts.plant_id != plant_id or topic_parts.device_id != device_id:
+    if topic_parts.plant_id != plant_id:
         raise ValueError(f"Command target does not match this simulator: {topic}")
 
     return topic_parts, EssCommandMessage.model_validate_json(payload)

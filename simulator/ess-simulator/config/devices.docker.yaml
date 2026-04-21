@@ -1,5 +1,5 @@
 plant_id: PLANT-ALPHA
-mqtt_broker_host: localhost
+mqtt_broker_host: mqtt-broker
 mqtt_broker_port: 1883
 devices:
   - device_id: ess-01
