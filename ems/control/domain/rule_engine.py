@@ -1,7 +1,8 @@
-from config import SOC_LOW, SOC_HIGH
+def run(states: dict, policy) -> list[dict]:
+    """policy: PolicyReader 인스턴스 — control_policy DB 값 조회용"""
+    soc_low = policy.get("SOC_LOW")
+    soc_high = policy.get("SOC_HIGH")
 
-
-def run(states: dict) -> list[dict]:
     solar_p = 0.0
     load_p = 0.0
     ess_devices = []
@@ -28,8 +29,7 @@ def run(states: dict) -> list[dict]:
             continue
 
         if net_power < 0:
-            # 전력 부족 → 방전
-            if soc > SOC_LOW and ess["mode"] != "discharge":
+            if soc > soc_low and ess["mode"] != "discharge":
                 commands.append({
                     "device_id": ess["device_id"],
                     "resource_type": "ess",
@@ -38,8 +38,7 @@ def run(states: dict) -> list[dict]:
                     "reason": f"net_power={net_power:.1f}kW, SOC={soc}%",
                 })
         elif net_power > 0:
-            # 잉여 전력 → 충전
-            if soc < SOC_HIGH and ess["mode"] != "charge":
+            if soc < soc_high and ess["mode"] != "charge":
                 commands.append({
                     "device_id": ess["device_id"],
                     "resource_type": "ess",
@@ -48,7 +47,6 @@ def run(states: dict) -> list[dict]:
                     "reason": f"net_power={net_power:.1f}kW, SOC={soc}%",
                 })
         else:
-            # 균형 → 대기
             if ess["mode"] not in ("standby",):
                 commands.append({
                     "device_id": ess["device_id"],
