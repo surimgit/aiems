@@ -9,3 +9,5 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 REDIS_NORMAL_STREAM = "ems:normal"
 REDIS_EMERGENCY_STREAM = "ems:emergency"
+
+STREAM_MAXLEN = int(os.getenv("STREAM_MAXLEN", 10000))

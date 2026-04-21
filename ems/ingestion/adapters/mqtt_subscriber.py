@@ -11,6 +11,7 @@ TOPICS = [
     f"{SITE_ID}/+/+/event",
     f"{SITE_ID}/+/+/emergency",
     f"{SITE_ID}/+/+/ack",
+    f"{SITE_ID}/+/+/heartbeat",
 ]
 
 
@@ -25,6 +26,10 @@ async def run(publisher: RedisPublisher) -> None:
             try:
                 parts = topic.split("/")
                 message_type = parts[3]
+
+                if message_type == "heartbeat":
+                    print(f"[ingestion] heartbeat: {topic}")
+                    continue
 
                 envelope = normalize(topic, message.payload)
                 stream = classify(message_type)

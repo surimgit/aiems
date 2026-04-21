@@ -27,6 +27,9 @@ class MqttCommander:
             "command_id": command_id,
             "command_type": command["command_type"],
             "payload": command["payload"],
+            "source": command.get("issued_by", "rule"),
+            "expires_in_sec": command.get("expires_in_sec", 30),
+            "force": command.get("force", False),
         }
         await self._client.publish(topic, json.dumps(payload, ensure_ascii=False))
         print(f"[control] → {topic} | {command['command_type']} {command['payload']} | {command['reason']}")
