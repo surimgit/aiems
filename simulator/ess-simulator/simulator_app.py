@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 from adapters.inbound.cli_controller import CliController, CliExitRequested
 from adapters.inbound.mqtt_subscriber import MqttCommandSubscriber
@@ -9,6 +10,13 @@ from core.command_handler import CommandHandler
 from core.ess import DeviceSpec, EssSimulator, SafetySpec
 from mqtt_contract import coerce_simulator_snapshot
 from runtime_config import DeviceFileConfig
+
+
+@dataclass
+class RuntimePublishBatch:
+    snapshot: dict[str, object]
+    telemetry_json: str
+    heartbeat_json: str
 
 
 class EssSimulatorApp:
@@ -79,31 +87,53 @@ class EssSimulatorApp:
             self.mqtt_subscriber.stop()
             self.publisher.stop()
 
+    # 한 번의 tick 결과를 문서 규격 telemetry/heartbeat payload로 조립한다.
+    def build_publish_batch(self) -> RuntimePublishBatch:
+        snapshot = coerce_simulator_snapshot(self.simulator.tick())
+        telemetry_json = self.publisher.serialize_telemetry(snapshot)
+        heartbeat_json = self.publisher.serialize_heartbeat(
+            snapshot["plant_id"],
+            snapshot["resource_type"],
+            snapshot["device_id"],
+        )
+        return RuntimePublishBatch(
+            snapshot=snapshot,
+            telemetry_json=telemetry_json,
+            heartbeat_json=heartbeat_json,
+        )
+
+    # 조립된 payload를 콘솔에 남겨 현재 발행 내용을 바로 확인할 수 있게 한다.
+    @staticmethod
+    def log_publish_batch(batch: RuntimePublishBatch) -> None:
+        print(f"[ESS][telemetry] {batch.telemetry_json}")
+        print(f"[ESS][heartbeat] {batch.heartbeat_json}")
+
+    # 조립된 payload를 MQTT publisher를 통해 실제 토픽으로 발행한다.
+    def publish_batch(self, batch: RuntimePublishBatch) -> None:
+        self.publisher.publish_telemetry(batch.snapshot)
+        self.publisher.publish_heartbeat(
+            batch.snapshot["plant_id"],
+            batch.snapshot["resource_type"],
+            batch.snapshot["device_id"],
+        )
+
+    # 주기 발행 한 사이클을 실행하고 테스트에서 검증 가능한 결과를 반환한다.
+    def run_publish_cycle(self) -> RuntimePublishBatch:
+        batch = self.build_publish_batch()
+        self.log_publish_batch(batch)
+        self.publish_batch(batch)
+        return batch
+
     async def _runtime_loop(self) -> None:
         """주기마다 시뮬레이터를 한 tick 진행하고 telemetry와 heartbeat를 함께 발행한다."""
 
         while not self._stop_event.is_set():
-            snapshot = coerce_simulator_snapshot(self.simulator.tick())
-            telemetry_json = self.publisher.serialize_telemetry(snapshot)
-            print(f"[ESS][telemetry] {telemetry_json}")
-            self.publisher.publish_telemetry(snapshot)
-
-            heartbeat_json = self.publisher.serialize_heartbeat(
-                snapshot["plant_id"],
-                snapshot["resource_type"],
-                snapshot["device_id"],
-            )
-            print(f"[ESS][heartbeat] {heartbeat_json}")
-            self.publisher.publish_heartbeat(
-                snapshot["plant_id"],
-                snapshot["resource_type"],
-                snapshot["device_id"],
-            )
+            batch = self.run_publish_cycle()
 
             try:
                 await asyncio.wait_for(
                     self._stop_event.wait(),
-                    timeout=self.simulator.device_spec.publish_interval_sec,
+                    timeout=float(batch.snapshot["publish_interval_sec"]),
                 )
             except asyncio.TimeoutError:
                 continue
