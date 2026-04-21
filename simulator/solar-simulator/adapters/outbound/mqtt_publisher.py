@@ -1,6 +1,6 @@
 import json
 import paho.mqtt.client as mqtt
-from core.models import TelemetryMessage, EventMessage, CommandAckMessage
+from domain.edge.models import TelemetryMessage, EventMessage, CommandAckMessage
 
 class SolarMQTTPublisher:
     def __init__(self, client: mqtt.Client, plant_id: str):

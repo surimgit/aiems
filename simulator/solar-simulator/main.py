@@ -2,12 +2,12 @@ import time
 import os
 import paho.mqtt.client as mqtt
 from datetime import datetime, timezone
-from core.solar import SolarDevice
-from core.interpolator import TimeSeriesInterpolator
+from domain.device.solar_device import SolarDevice
+from domain.device.interpolator import TimeSeriesInterpolator
 from adapters.inbound.mqtt_subscriber import SolarMQTTSubscriber
 from adapters.outbound.mqtt_publisher import SolarMQTTPublisher
 from adapters.outbound.heartbeat_publisher import HeartbeatPublisher
-from core.device_manager import DeviceManager
+from domain.edge.device_manager import DeviceManager
 
 # Configuration (In real scenario, load from yaml)
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
