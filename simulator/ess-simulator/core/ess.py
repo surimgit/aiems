@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from .calculations import calculate_energy_increment, calculate_signed_power, calculate_soc_delta
+from .calculations import apply_soc_delta, calculate_energy_delta_kwh, calculate_energy_increment, calculate_signed_power, calculate_soc_delta, clamp_soc
 from .policies import ensure_charge_allowed, ensure_discharge_allowed, evaluate_safety_transition
 from .state_machine import EssState, OperatingMode, resolve_safety_state, sync_state_with_mode, validate_mode_transition
 from .validators import validate_percent_range, validate_positive, validate_threshold_pair
@@ -16,6 +16,7 @@ class DeviceSpec:
     resource_type: str
     publish_interval_sec: float
     power_limit_kw: float
+    capacity_kwh: float
 
 
 @dataclass
@@ -76,6 +77,7 @@ class EssSimulator:
         *,
         power_limit_kw: float | None = None,
         publish_interval_sec: float | None = None,
+        capacity_kwh: float | None = None,
     ) -> dict[str, float]:
         applied: dict[str, float] = {}
         if power_limit_kw is not None:
@@ -90,6 +92,11 @@ class EssSimulator:
             validate_positive(publish_interval_sec, "publish_interval_sec")
             self.device_spec.publish_interval_sec = publish_interval_sec
             applied["publish_interval_sec"] = publish_interval_sec
+
+        if capacity_kwh is not None:
+            validate_positive(capacity_kwh, "capacity_kwh")
+            self.device_spec.capacity_kwh = capacity_kwh
+            applied["capacity_kwh"] = capacity_kwh
 
         self.status.last_updated_at = datetime.now(timezone.utc)
         return applied
@@ -138,6 +145,7 @@ class EssSimulator:
     def tick(self) -> dict[str, object]:
         validate_positive(self.device_spec.publish_interval_sec, "publish_interval_sec")
         validate_positive(self.device_spec.power_limit_kw, "power_limit_kw")
+        validate_positive(self.device_spec.capacity_kwh, "capacity_kwh")
 
         self._advance_soc()
         self._accumulate_energy()
@@ -153,6 +161,7 @@ class EssSimulator:
             "resource_type": self.device_spec.resource_type,
             "publish_interval_sec": self.device_spec.publish_interval_sec,
             "power_limit_kw": self.device_spec.power_limit_kw,
+            "capacity_kwh": self.device_spec.capacity_kwh,
             "soc": round(self.status.soc, 3),
             "power_kw": round(self.status.power_kw, 3),
             "target_power_kw": round(self.status.target_power_kw, 3),
@@ -213,22 +222,23 @@ class EssSimulator:
 
     # 현재 운전 모드에 맞춰 SOC를 증감시킨다.
     def _advance_soc(self) -> None:
-        if self.status.operating_mode == "charge":
-            soc_delta = calculate_soc_delta(
-                self.status.power_kw,
-                self.device_spec.publish_interval_sec,
-                self.device_spec.power_limit_kw,
-            )
-            self.status.soc = min(100.0, self.status.soc + soc_delta)
+        if self.status.operating_mode == "standby":
             return
 
-        if self.status.operating_mode == "discharge":
-            soc_delta = calculate_soc_delta(
-                self.status.power_kw,
-                self.device_spec.publish_interval_sec,
-                self.device_spec.power_limit_kw,
-            )
-            self.status.soc = max(0.0, self.status.soc - soc_delta)
+        energy_delta_kwh = calculate_energy_delta_kwh(
+            self.status.power_kw,
+            self.device_spec.publish_interval_sec,
+        )
+        soc_delta = calculate_soc_delta(
+            energy_delta_kwh,
+            self.device_spec.capacity_kwh,
+        )
+        next_soc = apply_soc_delta(
+            self.status.soc,
+            soc_delta,
+            self.status.operating_mode,
+        )
+        self.status.soc = clamp_soc(next_soc)
 
     # 누적 에너지는 절대량으로 더한다.
     def _accumulate_energy(self) -> None:

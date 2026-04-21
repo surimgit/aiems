@@ -15,6 +15,7 @@ class EssModePayload(BaseModel):
 class UpdateDeviceSpecPayload(BaseModel):
     power_limit_kw: float | None = Field(default=None, gt=0)
     publish_interval_sec: float | None = Field(default=None, gt=0)
+    capacity_kwh: float | None = Field(default=None, gt=0)
 
 
 class UpdateSafetySpecPayload(BaseModel):
@@ -87,6 +88,7 @@ class CommandHandler:
                 applied = self.simulator.update_device_spec(
                     power_limit_kw=command.payload.power_limit_kw,
                     publish_interval_sec=command.payload.publish_interval_sec,
+                    capacity_kwh=command.payload.capacity_kwh,
                 )
                 return CommandAck(
                     command_id=command.command_id,

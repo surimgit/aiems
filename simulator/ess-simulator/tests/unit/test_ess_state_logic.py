@@ -15,6 +15,7 @@ class EssStateLogicUnitTest(unittest.TestCase):
                 resource_type="ess",
                 publish_interval_sec=1.0,
                 power_limit_kw=40.0,
+                capacity_kwh=500.0,
             ),
             safety_spec=SafetySpec(
                 low_soc_threshold=20.0,
@@ -38,6 +39,7 @@ class EssStateLogicUnitTest(unittest.TestCase):
     def test_tick_enters_safe_stop_when_soc_reaches_minimum_safe_threshold(self) -> None:
         """방전 중 최소 안전 SOC를 넘기면 SAFE_STOP으로 떨어져야 한다."""
         self.simulator.status.soc = 10.01
+        self.simulator.device_spec.capacity_kwh = 1.0
         self.simulator.status.state = "DISCHARGING"
         self.simulator.status.operating_mode = "discharge"
         self.simulator.status.target_power_kw = 40.0
@@ -59,6 +61,22 @@ class EssStateLogicUnitTest(unittest.TestCase):
         self.assertEqual(snapshot["state"], "FAULT")
         self.assertTrue(snapshot["local_fault"])
         self.assertEqual(snapshot["operating_mode"], "standby")
+
+    def test_tick_updates_soc_from_capacity_based_energy_model(self) -> None:
+        """SOC는 power limit이 아니라 capacity_kwh 기준으로 변해야 한다."""
+        self.simulator.set_mode("charge", 40.0)
+
+        snapshot = self.simulator.tick()
+
+        self.assertAlmostEqual(snapshot["soc"], 50.002, places=3)
+
+    def test_update_device_spec_changes_capacity_kwh(self) -> None:
+        """장치 스펙 변경 명령으로 배터리 용량을 바꿀 수 있어야 한다."""
+        applied = self.simulator.update_device_spec(capacity_kwh=250.0)
+        snapshot = self.simulator.snapshot()
+
+        self.assertEqual(applied, {"capacity_kwh": 250.0})
+        self.assertEqual(snapshot["capacity_kwh"], 250.0)
 
 
 if __name__ == "__main__":
