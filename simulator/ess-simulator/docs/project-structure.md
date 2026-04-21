@@ -15,14 +15,13 @@ ess-simulator/
 ├─ core/
 ├─ docs/
 ├─ tests/
-├─ tui/
 ├─ main.py
 ├─ mqtt_contract.py
 ├─ runtime_config.py
 └─ simulator_app.py
 ```
 
-## 런타임 진입점
+## 진입 계층
 
 ### `main.py`
 
@@ -40,7 +39,7 @@ ess-simulator/
 - 필수 값 검증
 - 런타임 설정 모델 제공
 
-## 앱 조립 계층
+## 조립 계층
 
 ### `simulator_app.py`
 
@@ -51,7 +50,7 @@ ess-simulator/
 - telemetry / heartbeat 주기 발행
 - CLI 루프 실행
 
-현재 기준으로 `_runtime_loop()` 에서 아래 순서가 수행된다.
+현재 기준으로 `_runtime_loop()` 에서는 아래 순서가 반복된다.
 
 1. simulator tick
 2. telemetry 직렬화 및 publish
@@ -61,31 +60,34 @@ ess-simulator/
 
 ### `core/`
 
-도메인 규칙과 시뮬레이터 상태 계산을 담당한다.
+ESS의 순수 규칙과 상태 계산을 담당한다.
 
 주요 파일:
 
 - `ess.py`
-  - ESS 상태, spec, tick, snapshot
+  - ESS 상태, spec, tick, snapshot 조립
+- `state_machine.py`
+  - 상태 목록, 상태 전이표, 전이 검증 함수
 - `calculations.py`
-  - 전력, SOC, 에너지 계산 함수
+  - 전력, SOC, 누적 에너지 계산 함수
 - `policies.py`
-  - 충방전 허용 여부, 안전 제약 판단
+  - 충전/방전 허용 여부, 안전 제약 판단
 - `validators.py`
   - 입력값 검증
 - `command_handler.py`
   - 내부 command 적용과 ACK 결과 생성
 
-원칙:
+현재 구조의 핵심은 아래와 같다.
 
-- MQTT, CLI, UI를 모른다
-- 순수 계산과 상태 전이만 담당한다
+- `state_machine.py` 는 순수 상태 전이 규칙만 가진다.
+- `ess.py` 는 상태 머신과 계산 함수를 조립한다.
+- MQTT, CLI, UI와는 직접 결합하지 않는다.
 
 ## 계약 계층
 
 ### `mqtt_contract.py`
 
-브로커와 주고받는 MQTT 계약을 한 곳에 모아둔 파일이다.
+브로커와 주고받는 MQTT 계약을 모아둔 파일이다.
 
 포함 내용:
 
@@ -97,16 +99,14 @@ ess-simulator/
 - heartbeat 모델
 - snapshot -> telemetry 변환
 
-현재 모델은 `extra="forbid"` 를 사용해 문서에 없는 필드를 거부한다.
-
-## 입구 어댑터
+## 입력 어댑터
 
 ### `adapters/inbound/mqtt_subscriber.py`
 
 역할:
 
 - command topic subscribe
-- 수신 payload 디코딩
+- 수신 payload 디코드
 - 계약 검증
 - 내부 command handler 호출
 - rejected ACK 생성
@@ -119,7 +119,7 @@ ess-simulator/
 - 내부 command handler 재사용
 - 디버그용 상태 조회 지원
 
-## 출구 어댑터
+## 출력 어댑터
 
 ### `adapters/outbound/mqtt_publisher.py`
 
@@ -161,7 +161,7 @@ ess-simulator/
 테스트는 3단계로 나뉜다.
 
 - `unit`
-  - topic / payload / mapper 검증
+  - 상태 머신, 계산 함수, topic / payload / mapper 검증
 - `integration`
   - publisher / subscriber 동작 검증
 - `functional`
@@ -177,15 +177,15 @@ python -m tests
 
 ### `docs/`
 
-레포 내부 구현 기준 문서를 유지한다.
+배포 전 구현 기준 문서를 유지한다.
 
 - `README.md`
   - 현재 구현 상태 요약
 - `basic-runtime-structure.md`
   - 1장 기준 정리
 - `jira-basic-runtime-structure.md`
-  - 1장 지라 정리
-- `project-structure.md`
-  - 현재 구조 설명
+  - 1장 Jira 정리
 - `mqtt-contract-application.md`
-  - MQTT 계약 반영 결과
+  - 2장, 3장 MQTT 계약 반영 결과
+- `ess-state-model-application.md`
+  - 4장 상태 모델, 상태 전이 반영 결과
