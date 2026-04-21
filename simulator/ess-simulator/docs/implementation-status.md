@@ -3,19 +3,19 @@
 ## Summary
 
 이 문서는 `simulator/ess-simulator` 작업 상태를 Jira 기준으로 정리한다.
-현재 기준으로 `S14P31S305-204`까지 구현과 테스트 반영이 끝난 상태다.
+현재 기준으로 `S14P31S305-205`까지 구현과 테스트 반영이 끝난 상태다.
 
 ## Jira Status
 
-| Jira | 설명 | 상태 | 메모 |
-| --- | --- | --- | --- |
-| `S14P31S305-200` | ESS 상태 모델 및 상태 전이 로직 구현 | 완료 | 기존 반영 |
-| `S14P31S305-201` | ESS 충방전 및 SOC 계산 로직 구현 | 완료 | 기존 반영 |
-| `S14P31S305-202` | ESS 명령 처리기 구현 | 완료 | 기존 반영 |
-| `S14P31S305-203` | ESS 안전 제약 및 차단 로직 구현 | 완료 | 기존 반영 |
-| `S14P31S305-204` | ESS Telemetry 주기 발행 기능 구현 | 완료 | 기본 주기 0.1초, publish cycle 함수 분리, 단위 테스트 추가 |
-| `S14P31S305-205` | ESS 시뮬레이터 테스트 코드 작성 | 진행 전 | 일부 기반 테스트는 선반영 |
-| `S14P31S305-206` | ESS 시뮬레이터 상태 확인용 TUI 구현 | 진행 전 | 미착수 |
+| Jira             | 설명                        | 상태   | 메모                                                   |
+|------------------|---------------------------|------|------------------------------------------------------|
+| `S14P31S305-200` | ESS 상태 모델 및 상태 전이 로직 구현   | 완료   | 기존 반영                                                |
+| `S14P31S305-201` | ESS 충방전 및 SOC 계산 로직 구현    | 완료   | 기존 반영                                                |
+| `S14P31S305-202` | ESS 명령 처리기 구현             | 완료   | 기존 반영                                                |
+| `S14P31S305-203` | ESS 안전 제약 및 차단 로직 구현      | 완료   | 기존 반영                                                |
+| `S14P31S305-204` | ESS Telemetry 주기 발행 기능 구현 | 완료   | 기본 주기 0.1초, publish cycle 함수 분리                      |
+| `S14P31S305-205` | ESS 시뮬레이터 테스트 코드 작성       | 완료   | 계산, 안전, MQTT 계약, subscriber 예외, publish cycle 테스트 확장 |
+| `S14P31S305-206` | ESS 시뮬레이터 상태 확인용 TUI 구현   | 진행 전 | 미착수                                                  |
 
 ## 202 Done
 
@@ -44,6 +44,21 @@
 - `tests/unit/test_simulator_app.py` 추가로 broker 없이도 한 번의 publish cycle을 검증 가능하게 보강
 - `tests/unit/test_calculations.py`, `tests/unit/test_ess_state_logic.py`에 0.1초 기준 계산 검증 추가
 
+## 205 Done
+
+- `tests/unit/test_command_handler.py`
+  - `EMERGENCY_STOP_ACTIVE` 거부 테스트 추가
+  - `update_safety_spec` 적용 테스트 추가
+- `tests/unit/test_mqtt_contract.py`
+  - 충전 시 `P < 0` 직렬화 검증
+  - 전류 절대값 계산 검증
+  - 다른 device 대상 command 거부 검증
+- `tests/integration/test_mqtt_subscriber.py`
+  - 깨진 JSON payload가 `unknown` command_id의 rejected ACK로 처리되는지 검증
+- `tests/unit/test_simulator_app.py`
+  - publish cycle 연속 실행 시 tick/publish 호출 누적 검증 추가
+- 계산, 안전, MQTT 계약, subscriber 예외 처리, publish cycle 반복성을 테스트로 고정
+
 ## Verification
 
 ```bash
@@ -52,4 +67,4 @@ python -m unittest tests.unit.test_simulator_app tests.unit.test_safety_guards t
 
 ## Next Boundary
 
-다음 작업 범위는 `S14P31S305-205`, `S14P31S305-206`이다.
+다음 작업 범위는 `S14P31S305-206`이다.

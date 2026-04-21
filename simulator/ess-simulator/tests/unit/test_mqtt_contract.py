@@ -144,6 +144,45 @@ class MqttContractUnitTest(unittest.TestCase):
         self.assertEqual(message.data.status.SOC, 67.3)
         self.assertEqual(message.data.status.operating_mode, "discharge")
 
+    def test_snapshot_to_telemetry_keeps_charge_sign_and_absolute_current(self) -> None:
+        """충전 telemetry는 P 음수, 전류는 절대값 기준으로 직렬화해야 한다."""
+
+        snapshot: SimulatorSnapshot = {
+            "plant_id": "PLANT-ALPHA",
+            "device_id": "ess-01",
+            "resource_type": "ess",
+            "soc": 72.5,
+            "power_kw": -38.0,
+            "operating_mode": "charge",
+            "accumulated_energy_kwh": 900.0,
+        }
+
+        message = snapshot_to_telemetry(
+            snapshot,
+            timestamp=datetime(2026, 4, 14, 7, 50, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(message.data.instantaneous.P, -38.0)
+        self.assertAlmostEqual(message.data.instantaneous.I, 0.1, places=3)
+        self.assertEqual(message.data.status.operating_mode, "charge")
+
+    def test_parse_ess_command_rejects_command_for_other_device(self) -> None:
+        """다른 device 대상 명령은 현재 simulator에서 바로 거부해야 한다."""
+
+        payload = """
+        {
+          "command_id": "cmd-045",
+          "command_type": "ess_mode",
+          "payload": {
+            "mode": "charge",
+            "target_power_kw": 20.0
+          }
+        }
+        """
+
+        with self.assertRaises(ValueError):
+            parse_ess_command("PLANT-ALPHA/ess/ess-02/command", payload, "PLANT-ALPHA", "ess-01")
+
 
 if __name__ == "__main__":
     unittest.main()

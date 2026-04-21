@@ -18,7 +18,7 @@
 - ACK payload 직렬화
 - heartbeat payload 직렬화
 - MQTT subscriber / publisher 연결
-- snapshot -> telemetry 변환
+- snapshot → telemetry 변환
 - 주기 발행 cycle 조립 함수 분리
 
 ## Topic
@@ -147,7 +147,7 @@ S305 `Edge_Simulator_System.md` 기준에 맞춰 ESS 시뮬레이터의 기본 t
 - `mqtt_contract.py`
   - topic parser / builder
   - command / telemetry / ack / heartbeat 모델
-  - snapshot -> telemetry 변환
+  - snapshot → telemetry 변환
 - `adapters/inbound/mqtt_subscriber.py`
   - MQTT command 검증
   - invalid payload rejected ACK 처리

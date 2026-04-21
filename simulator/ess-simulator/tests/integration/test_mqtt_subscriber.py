@@ -101,6 +101,34 @@ class MqttSubscriberIntegrationTest(unittest.TestCase):
         self.assertEqual(ack.command_id, "cmd-002")
         self.assertEqual(ack.status, "rejected")
 
+    def test_on_message_marks_unknown_command_id_for_invalid_json(self) -> None:
+        """깨진 JSON payload는 unknown command_id의 rejected ACK로 떨어져야 한다."""
+
+        publisher = PublisherSpy()
+        subscriber = MqttCommandSubscriber(
+            build_handler(),
+            publisher,
+            "PLANT-ALPHA",
+            "ess",
+            "ess-01",
+            "localhost",
+            1883,
+        )
+
+        subscriber._on_message(
+            None,
+            None,
+            MessageStub(
+                "PLANT-ALPHA/ess/ess-01/command",
+                '{"command_id":"cmd-003","command_type":"ess_mode","payload":',
+            ),
+        )
+
+        self.assertEqual(len(publisher.calls), 1)
+        _, _, _, ack = publisher.calls[0]
+        self.assertEqual(ack.command_id, "unknown")
+        self.assertEqual(ack.status, "rejected")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -68,6 +68,19 @@ class EssSimulatorAppUnitTest(unittest.TestCase):
             ("PLANT-ALPHA", "ess", "ess-01"),
         )
 
+    # 여러 cycle을 연속 실행하면 tick과 publish 호출 횟수가 같이 누적되어야 한다.
+    def test_run_publish_cycle_accumulates_calls_across_cycles(self) -> None:
+        app = EssSimulatorApp.__new__(EssSimulatorApp)
+        app.simulator = SimulatorStub()
+        app.publisher = PublisherSpy()
+
+        app.run_publish_cycle()
+        app.run_publish_cycle()
+
+        self.assertEqual(app.simulator.tick_count, 2)
+        self.assertEqual(len(app.publisher.telemetry_inputs), 2)
+        self.assertEqual(len(app.publisher.heartbeat_inputs), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
