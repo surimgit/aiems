@@ -64,3 +64,10 @@ docker compose up -d --build
 - master 브랜치에 직접 푸시 금지
 - 타 서비스 DB 직접 접근 금지 (API 호출 또는 Redis Streams 사용)
 - Redis Streams 토픽 이름은 한번 정하면 변경 금지 (.env로 관리)
+
+## 앱 ↔ 인프라 계약
+
+**Flask 앱 엔트리포인트 계약**: 모든 서비스는 `app/main.py` 에 `app = Flask(__name__)` 로 노출한다.
+- `docker-compose*.yml` 의 `environment.FLASK_APP` 은 `app.main:app` 로 고정
+- 앱 구조 변경 시 (예: `create_app()` factory 전환, 파일 이동) `docker-compose*.yml` 의 `FLASK_APP` 값을 함께 갱신해야 함
+- Dockerfile 은 런타임 환경만 정의 (Python 버전, port, healthcheck) — `FLASK_APP` 은 compose 단에서 주입

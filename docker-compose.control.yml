@@ -7,6 +7,8 @@ services:
     ports:
       - "5003:5003"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     restart: always
 
   ai-service:
@@ -17,4 +19,6 @@ services:
     ports:
       - "5004:5004"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     restart: always

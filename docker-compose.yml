@@ -32,6 +32,8 @@ services:
     ports:
       - "5001:5001"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     depends_on:
       stream-init:
         condition: service_completed_successfully
@@ -46,6 +48,8 @@ services:
     ports:
       - "5002:5002"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +64,8 @@ services:
     ports:
       - "5003:5003"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +80,8 @@ services:
     ports:
       - "5004:5004"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,6 +96,8 @@ services:
     ports:
       - "5005:5005"
     env_file: .env
+    environment:
+      FLASK_APP: app.main:app
     depends_on:
       timescaledb:
         condition: service_healthy
