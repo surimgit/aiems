@@ -77,7 +77,7 @@ def ensure_emergency_inactive(emergency_stop: bool, current_state: EssState) -> 
 # 로컬 fault 상태에서는 상태 전이를 차단한다.
 def ensure_fault_inactive(local_fault: bool, current_state: EssState) -> None:
     if local_fault or current_state == "FAULT":
-        raise ValueError("LOCAL_FAULT_ACTIVE")
+        raise ValueError("LOCAL_SAFETY_BLOCKED")
 
 
 # 이미 같은 상태로 운전 중이면 중복 명령으로 본다.
