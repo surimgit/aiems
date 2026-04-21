@@ -43,3 +43,6 @@ Thumbs.db
 
 # ess-simulator 가상환경
 /simulator/ess-simulator/.venv/
+
+# 설계문서
+설계문서/
