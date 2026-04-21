@@ -12,8 +12,11 @@ class WindowAggregator:
         self._buffers[key].append(snapshot)
 
     def flush(self) -> list[dict]:
+        # 버퍼를 atomic하게 교체 - 교체 후 add()는 새 버퍼에 쌓여 유실 없음
+        current, self._buffers = self._buffers, defaultdict(list)
+
         results = []
-        for device_id, snapshots in self._buffers.items():
+        for device_id, snapshots in current.items():
             if not snapshots:
                 continue
             p_values = [s["reported_state"].get("P") for s in snapshots if s["reported_state"].get("P") is not None]
@@ -39,7 +42,6 @@ class WindowAggregator:
                 "soc": soc_values[-1] if soc_values else None,
                 "sample_count": len(snapshots),
             })
-        self._buffers.clear()
         return results
 
 
