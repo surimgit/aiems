@@ -1,0 +1,37 @@
+# CI/CD 서버 (SSAFY 기본지급 Lightsail) 전용 compose
+# - Jenkins 단독 기동 (SonarQube 는 Phase 3 에 추가 예정)
+# - 배포 대상 EMS 서비스들과는 완전히 분리된 스택
+#
+# 실행:
+#   docker compose -f docker-compose.cicd.yml up -d
+#
+# Jenkins 초기 관리자 비밀번호:
+#   docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: jenkins
+    restart: always
+    ports:
+      - "8080:8080"     # Jenkins 웹 UI
+      - "50000:50000"   # Jenkins inbound agent 통신
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      # Jenkins 가 호스트 Docker 를 호출해 EMS 이미지 빌드/배포 (DooD 패턴)
+      - /var/run/docker.sock:/var/run/docker.sock
+    # docker.sock 접근 권한 위해 root 로 실행
+    user: root
+    environment:
+      TZ: Asia/Seoul
+      # 리버스 프록시 뒤에 두는 게 아니라 직접 노출하므로 기본 컨텍스트 경로 사용
+      JAVA_OPTS: "-Duser.timezone=Asia/Seoul"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  jenkins_home:
