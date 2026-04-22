@@ -4,7 +4,7 @@ priority 큰 룰이 같은 device를 더 먼저 잡는다 (safety > ess > diesel
 """
 
 from .power_flow import compute as compute_flow
-from .rules import safety, ess, diesel
+from .rules import safety, ess, diesel, solar, load
 
 
 def run(states: dict, policy) -> list[dict]:
@@ -14,6 +14,8 @@ def run(states: dict, policy) -> list[dict]:
     candidates.extend(safety.evaluate(states, policy))
     candidates.extend(ess.evaluate(flow, policy))
     candidates.extend(diesel.evaluate(flow, policy, states))
+    candidates.extend(solar.evaluate(flow, policy, states))
+    candidates.extend(load.evaluate(flow, policy, states))
 
     return _resolve(candidates)
 
