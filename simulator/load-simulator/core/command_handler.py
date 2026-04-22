@@ -7,6 +7,13 @@ from core.load import LoadDevice, LoadFleet
 
 
 @dataclass(slots=True)
+class CommandAck:
+    command_id: str
+    status: str
+    reason: str | None = None
+
+
+@dataclass(slots=True)
 class CommandResolution:
     accepted: bool
     device_id: str
@@ -42,4 +49,49 @@ class LoadCommandHandler:
             accepted=True,
             device_id=device_id,
             payload=payload,
+        )
+
+    def handle_command(self, *, device_id: str, payload: dict[str, Any]) -> CommandAck:
+        command_id = str(payload.get("command_id", "unknown"))
+        resolution = self.preview(device_id=device_id, payload=payload)
+        if not resolution.accepted:
+            return CommandAck(
+                command_id=command_id,
+                status="rejected",
+                reason=resolution.reason,
+            )
+
+        command_type = str(payload.get("command_type", "")).strip()
+        if command_type != "load_shed":
+            return CommandAck(
+                command_id=command_id,
+                status="rejected",
+                reason=f"UNSUPPORTED_COMMAND_TYPE: {command_type or 'unknown'}",
+            )
+
+        payload_body = payload.get("payload", {})
+        if not isinstance(payload_body, dict):
+            return CommandAck(
+                command_id=command_id,
+                status="rejected",
+                reason="INVALID_COMMAND_PAYLOAD",
+            )
+
+        reduction_ratio = payload_body.get("reduction_ratio")
+        if not isinstance(reduction_ratio, (int, float)):
+            return CommandAck(
+                command_id=command_id,
+                status="rejected",
+                reason="INVALID_REDUCTION_RATIO",
+            )
+        if not 0.0 <= float(reduction_ratio) <= 1.0:
+            return CommandAck(
+                command_id=command_id,
+                status="rejected",
+                reason="INVALID_REDUCTION_RATIO",
+            )
+
+        return CommandAck(
+            command_id=command_id,
+            status="accepted",
         )
