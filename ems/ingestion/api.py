@@ -1,12 +1,34 @@
+import asyncio
+import threading
+
 from flask import Flask, jsonify
 
-app = Flask(__name__)
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+
+    @app.route("/health")
+    def health():
+        return jsonify({"status": "ok"})
+
+    _start_worker()
+    return app
 
 
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
+def _start_worker() -> None:
+    from adapters.mqtt_subscriber import run
+    from adapters.redis_publisher import RedisPublisher
+
+    async def _run():
+        publisher = RedisPublisher()
+        try:
+            await run(publisher)
+        finally:
+            await publisher.close()
+
+    thread = threading.Thread(target=asyncio.run, args=(_run(),), daemon=True)
+    thread.start()
+    print("[ingestion] MQTT worker 시작")
 
 
-def run_api(port: int = 5000):
-    app.run(host="0.0.0.0", port=port, use_reloader=False)
+app = create_app()
