@@ -10,7 +10,11 @@
 
 services:
   jenkins:
-    image: jenkins/jenkins:lts-jdk17
+    # jenkins/jenkins:lts-jdk17 + docker CE CLI (DooD 패턴)
+    # 자세한 이유는 infra/jenkins/Dockerfile 주석 참고.
+    build:
+      context: ./infra/jenkins
+    image: ems-jenkins:lts-jdk17
     container_name: jenkins
     restart: always
     ports:
