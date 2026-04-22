@@ -1,4 +1,6 @@
+import asyncio
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -10,161 +12,279 @@ from marshmallow import Schema, fields, validate
 
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
-app = Flask(__name__)
-app.config["API_TITLE"] = "Control API"
-app.config["API_VERSION"] = "1.0"
-app.config["OPENAPI_VERSION"] = "3.0.3"
-app.config["OPENAPI_URL_PREFIX"] = "/"
-app.config["OPENAPI_JSON_PATH"] = "openapi.json"
-app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
-app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
 
-api = Api(app)
+def create_app() -> Flask:
+    app = Flask(__name__)
+    app.config["API_TITLE"] = "Control API"
+    app.config["API_VERSION"] = "1.0"
+    app.config["OPENAPI_VERSION"] = "3.0.3"
+    app.config["OPENAPI_URL_PREFIX"] = "/"
+    app.config["OPENAPI_JSON_PATH"] = "openapi.json"
+    app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
+    app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
 
-_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+    _register_routes(app)
+    _start_worker()
+    return app
 
 
-def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
-    global _pool
-    if _pool is None:
-        _pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1, maxconn=5,
-            host=DB_HOST, port=DB_PORT,
-            dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
+def _start_worker() -> None:
+    from adapters.state_reader import StateReader
+    from adapters.mqtt_commander import MqttCommander
+    from adapters.db_writer import ControlDBWriter
+    from adapters.event_publisher import EventPublisher
+    from adapters.policy_reader import PolicyReader
+    from domain.rule_engine import run
+    from config import CONTROL_INTERVAL_SECONDS
+
+    _pending: dict[str, str] = {}
+    _POLICY_REFRESH_INTERVAL = 30
+
+    def _dedupe_key(cmd: dict) -> str:
+        payload = cmd.get("payload", {})
+        parts = [cmd["command_type"]]
+        if "mode" in payload:
+            parts.append(str(payload["mode"]))
+        if "target_kw" in payload:
+            parts.append(str(payload["target_kw"]))
+        return ":".join(parts)
+
+    async def _refresh_policy_loop(policy: PolicyReader) -> None:
+        while True:
+            await asyncio.sleep(_POLICY_REFRESH_INTERVAL)
+            try:
+                await policy.refresh()
+            except Exception as e:
+                print(f"[control] policy refresh 실패: {e}")
+
+    async def _run():
+        reader = StateReader()
+        db = ControlDBWriter()
+        event_pub = EventPublisher()
+        policy = PolicyReader()
+        await db.connect()
+        await event_pub.connect()
+        await policy.connect()
+        print(f"[control] 시작: {CONTROL_INTERVAL_SECONDS}초 주기 판단")
+
+        refresh_task = asyncio.create_task(_refresh_policy_loop(policy))
+
+        try:
+            async with MqttCommander(db) as commander:
+                while True:
+                    try:
+                        states = await reader.get_all()
+                        if states:
+                            commands, events = run(states, policy)
+                            sent = 0
+                            for cmd in commands:
+                                device_id = cmd["device_id"]
+                                key = _dedupe_key(cmd)
+                                if _pending.get(device_id) == key:
+                                    continue
+                                await commander.send(cmd)
+                                _pending[device_id] = key
+                                sent += 1
+                            if sent == 0:
+                                print(f"[control] 판단 완료: 명령 없음 (장치 {len(states)}개)")
+                            for evt in events:
+                                await event_pub.publish(evt)
+                    except Exception as e:
+                        print(f"[control] 오류: {e}")
+
+                    await asyncio.sleep(CONTROL_INTERVAL_SECONDS)
+        finally:
+            refresh_task.cancel()
+            await db.close()
+            await event_pub.close()
+            await policy.close()
+
+    thread = threading.Thread(target=asyncio.run, args=(_run(),), daemon=True)
+    thread.start()
+    print("[control] 제어 루프 시작")
+
+
+def _register_routes(app: Flask) -> None:
+    api = Api(app)
+
+    # ── DB helper ─────────────────────────────────────────────────────────────
+
+    _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+
+    def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+        nonlocal _pool
+        if _pool is None:
+            _pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1, maxconn=5,
+                host=DB_HOST, port=DB_PORT,
+                dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
+            )
+        return _pool
+
+    # ── Schemas ───────────────────────────────────────────────────────────────
+
+    class OperatorCommandRequestSchema(Schema):
+        site_id = fields.String(required=True)
+        device_id = fields.String(required=True)
+        resource_type = fields.String(required=True)
+        action = fields.String(
+            required=True,
+            validate=validate.OneOf([
+                "START_CHARGE", "STOP_CHARGE",
+                "START_DISCHARGE", "STOP_DISCHARGE",
+                "START_GENERATOR", "STOP_GENERATOR",
+                "OPEN_SWITCH", "CLOSE_SWITCH",
+                "SHED_LOAD", "RESTORE_LOAD",
+                "SET_POWER_LIMIT", "STANDBY",
+            ]),
         )
-    return _pool
+        requested_by = fields.String(required=True)
+        reason = fields.String(load_default="")
+        source_recommendation_id = fields.String(load_default=None, allow_none=True)
 
+    class CommandAcceptedResponseSchema(Schema):
+        command_id = fields.String()
+        status = fields.String()
+        site_id = fields.String()
+        device_id = fields.String()
+        action = fields.String()
+        created_at = fields.DateTime()
 
-blp = Blueprint("control", "control", url_prefix="/api/control")
+    class CommandHistorySchema(Schema):
+        command_id = fields.String()
+        site_id = fields.String()
+        device_id = fields.String()
+        resource_type = fields.String()
+        command_type = fields.String()
+        payload = fields.Dict()
+        reason = fields.String()
+        issued_by = fields.String()
+        ack_status = fields.String()
+        time = fields.DateTime()
 
+    # ── Blueprint & Routes ────────────────────────────────────────────────────
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+    blp = Blueprint("control", "control", url_prefix="/api/control")
 
-class OperatorCommandRequestSchema(Schema):
-    site_id = fields.String(required=True)
-    device_id = fields.String(required=True)
-    resource_type = fields.String(required=True)
-    action = fields.String(
-        required=True,
-        validate=validate.OneOf([
-            "START_CHARGE", "STOP_CHARGE",
-            "START_DISCHARGE", "STOP_DISCHARGE",
-            "START_GENERATOR", "STOP_GENERATOR",
-            "OPEN_SWITCH", "CLOSE_SWITCH",
-            "SHED_LOAD", "RESTORE_LOAD",
-            "SET_POWER_LIMIT", "STANDBY",
-        ]),
-    )
-    requested_by = fields.String(required=True)
-    reason = fields.String(load_default="")
-    source_recommendation_id = fields.String(load_default=None, allow_none=True)
+    @blp.route("/operator-commands")
+    class OperatorCommandResource(MethodView):
+        @blp.arguments(OperatorCommandRequestSchema)
+        @blp.response(202, CommandAcceptedResponseSchema)
+        def post(self, payload):
+            command_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc)
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO control_history
+                            (time, command_id, site_id, device_id, resource_type,
+                             command_type, payload, reason, issued_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            now,
+                            command_id,
+                            payload["site_id"],
+                            payload["device_id"],
+                            payload["resource_type"].upper(),
+                            payload["action"],
+                            json.dumps({"action": payload["action"]}),
+                            payload.get("reason", ""),
+                            payload["requested_by"],
+                        ),
+                    )
+                conn.commit()
+            finally:
+                pool.putconn(conn)
 
+            return {
+                "command_id": command_id,
+                "status": "ACCEPTED",
+                "site_id": payload["site_id"],
+                "device_id": payload["device_id"],
+                "action": payload["action"],
+                "created_at": now,
+            }
 
-class CommandAcceptedResponseSchema(Schema):
-    command_id = fields.String()
-    status = fields.String()
-    site_id = fields.String()
-    device_id = fields.String()
-    action = fields.String()
-    created_at = fields.DateTime()
+    @blp.route("/commands")
+    class CommandListResource(MethodView):
+        @blp.response(200, CommandHistorySchema(many=True))
+        def get(self):
+            device_id = request.args.get("device_id")
+            limit = min(int(request.args.get("limit", 100)), 1000)
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    if device_id:
+                        cur.execute(
+                            """
+                            SELECT command_id, site_id, device_id, resource_type,
+                                   command_type, payload, reason, issued_by, ack_status, time
+                            FROM control_history
+                            WHERE device_id = %s
+                            ORDER BY time DESC LIMIT %s
+                            """,
+                            (device_id, limit),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT command_id, site_id, device_id, resource_type,
+                                   command_type, payload, reason, issued_by, ack_status, time
+                            FROM control_history
+                            ORDER BY time DESC LIMIT %s
+                            """,
+                            (limit,),
+                        )
+                    rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
 
+            return [
+                {
+                    "command_id": str(r[0]),
+                    "site_id": r[1],
+                    "device_id": r[2],
+                    "resource_type": r[3],
+                    "command_type": r[4],
+                    "payload": r[5] if isinstance(r[5], dict) else json.loads(r[5]),
+                    "reason": r[6],
+                    "issued_by": r[7],
+                    "ack_status": r[8],
+                    "time": r[9],
+                }
+                for r in rows
+            ]
 
-class CommandHistorySchema(Schema):
-    command_id = fields.String()
-    site_id = fields.String()
-    device_id = fields.String()
-    resource_type = fields.String()
-    command_type = fields.String()
-    payload = fields.Dict()
-    reason = fields.String()
-    issued_by = fields.String()
-    ack_status = fields.String()
-    time = fields.DateTime()
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@blp.route("/operator-commands")
-class OperatorCommandResource(MethodView):
-    @blp.arguments(OperatorCommandRequestSchema)
-    @blp.response(202, CommandAcceptedResponseSchema)
-    def post(self, payload):
-        command_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
-        pool = get_pool()
-        conn = pool.getconn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO control_history
-                        (time, command_id, site_id, device_id, resource_type,
-                         command_type, payload, reason, issued_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        now,
-                        command_id,
-                        payload["site_id"],
-                        payload["device_id"],
-                        payload["resource_type"].upper(),
-                        payload["action"],
-                        json.dumps({"action": payload["action"]}),
-                        payload.get("reason", ""),
-                        payload["requested_by"],
-                    ),
-                )
-            conn.commit()
-        finally:
-            pool.putconn(conn)
-
-        return {
-            "command_id": command_id,
-            "status": "ACCEPTED",
-            "site_id": payload["site_id"],
-            "device_id": payload["device_id"],
-            "action": payload["action"],
-            "created_at": now,
-        }
-
-
-@blp.route("/commands")
-class CommandListResource(MethodView):
-    @blp.response(200, CommandHistorySchema(many=True))
-    def get(self):
-        device_id = request.args.get("device_id")
-        limit = min(int(request.args.get("limit", 100)), 1000)
-        pool = get_pool()
-        conn = pool.getconn()
-        try:
-            with conn.cursor() as cur:
-                if device_id:
+    @blp.route("/commands/<command_id>")
+    class CommandDetailResource(MethodView):
+        @blp.response(200, CommandHistorySchema)
+        def get(self, command_id):
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
                     cur.execute(
                         """
                         SELECT command_id, site_id, device_id, resource_type,
                                command_type, payload, reason, issued_by, ack_status, time
                         FROM control_history
-                        WHERE device_id = %s
-                        ORDER BY time DESC LIMIT %s
+                        WHERE command_id = %s
                         """,
-                        (device_id, limit),
+                        (command_id,),
                     )
-                else:
-                    cur.execute(
-                        """
-                        SELECT command_id, site_id, device_id, resource_type,
-                               command_type, payload, reason, issued_by, ack_status, time
-                        FROM control_history
-                        ORDER BY time DESC LIMIT %s
-                        """,
-                        (limit,),
-                    )
-                rows = cur.fetchall()
-        finally:
-            pool.putconn(conn)
+                    r = cur.fetchone()
+            finally:
+                pool.putconn(conn)
 
-        return [
-            {
+            if not r:
+                abort(404)
+
+            return {
                 "command_id": str(r[0]),
                 "site_id": r[1],
                 "device_id": r[2],
@@ -176,55 +296,12 @@ class CommandListResource(MethodView):
                 "ack_status": r[8],
                 "time": r[9],
             }
-            for r in rows
-        ]
+
+    api.register_blueprint(blp)
+
+    @app.route("/health")
+    def health():
+        return jsonify({"status": "ok"})
 
 
-@blp.route("/commands/<command_id>")
-class CommandDetailResource(MethodView):
-    @blp.response(200, CommandHistorySchema)
-    def get(self, command_id):
-        pool = get_pool()
-        conn = pool.getconn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT command_id, site_id, device_id, resource_type,
-                           command_type, payload, reason, issued_by, ack_status, time
-                    FROM control_history
-                    WHERE command_id = %s
-                    """,
-                    (command_id,),
-                )
-                r = cur.fetchone()
-        finally:
-            pool.putconn(conn)
-
-        if not r:
-            abort(404)
-
-        return {
-            "command_id": str(r[0]),
-            "site_id": r[1],
-            "device_id": r[2],
-            "resource_type": r[3],
-            "command_type": r[4],
-            "payload": r[5] if isinstance(r[5], dict) else json.loads(r[5]),
-            "reason": r[6],
-            "issued_by": r[7],
-            "ack_status": r[8],
-            "time": r[9],
-        }
-
-
-api.register_blueprint(blp)
-
-
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
-
-
-def run_api(port: int = 5001):
-    app.run(host="0.0.0.0", port=port, use_reloader=False)
+app = create_app()
