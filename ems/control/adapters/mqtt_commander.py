@@ -13,25 +13,32 @@ _ACK_TIMEOUT_SEC = 30.0
 
 class MqttCommander:
     def __init__(self, db: ControlDBWriter, pending_acks: dict | None = None):
-        self._client = None
+        self._pub_client = None   # 명령 발행 전용
+        self._sub_client = None   # ACK 구독 전용
         self._db = db
-        # 외부에서 shared dict를 주입받으면 그걸 씀 (operator API와 공유)
         self._pending_acks: dict[str, tuple[float, str, str]] = pending_acks if pending_acks is not None else {}
         self._ack_task: asyncio.Task | None = None
+        self._timeout_task: asyncio.Task | None = None
 
     async def __aenter__(self):
-        self._client = aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT)
-        await self._client.__aenter__()
-        # ACK 토픽 구독
-        await self._client.subscribe(f"{SITE_ID}/+/+/ack")
+        self._pub_client = aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT)
+        await self._pub_client.__aenter__()
+
+        self._sub_client = aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT)
+        await self._sub_client.__aenter__()
+        await self._sub_client.subscribe(f"{SITE_ID}/+/+/ack")
+
         self._ack_task = asyncio.create_task(self._ack_listener())
-        asyncio.create_task(self._timeout_checker())
+        self._timeout_task = asyncio.create_task(self._timeout_checker())
         return self
 
     async def __aexit__(self, *args):
         if self._ack_task:
             self._ack_task.cancel()
-        await self._client.__aexit__(*args)
+        if self._timeout_task:
+            self._timeout_task.cancel()
+        await self._sub_client.__aexit__(*args)
+        await self._pub_client.__aexit__(*args)
 
     async def send(self, command: dict) -> None:
         device_id = command["device_id"]
@@ -46,18 +53,17 @@ class MqttCommander:
             "expires_in_sec": command.get("expires_in_sec", 30),
             "force": command.get("force", False),
         }
-        await self._client.publish(topic, json.dumps(payload, ensure_ascii=False))
+        await self._pub_client.publish(topic, json.dumps(payload, ensure_ascii=False))
         print(f"[control] → {topic} | {command['command_type']} {command['payload']} | {command['reason']}")
 
         command["site_id"] = SITE_ID
         await self._db.insert_command(command, command_id)
 
-        # ACK 대기 목록에 등록
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
 
     async def _ack_listener(self) -> None:
         try:
-            async for msg in self._client.messages:
+            async for msg in self._sub_client.messages:
                 topic = str(msg.topic)
                 if not topic.endswith("/ack"):
                     continue
