@@ -1,12 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Optional
-from .models import (
+from typing import Optional, Tuple, Dict, Any
+from domain.device.models import (
     SolarData, Instantaneous, Energy, Status, 
-    DeviceState, ControlMode, TelemetryMessage, 
-    EventMessage, CommandAckMessage
+    DeviceState, ControlMode
 )
-from .interpolator import TimeSeriesInterpolator
+from domain.device.interpolator import TimeSeriesInterpolator
 
 class SolarDevice:
     def __init__(self, plant_id: str, device_id: str, interpolator: TimeSeriesInterpolator):
@@ -28,11 +27,7 @@ class SolarDevice:
         self.last_update_time = None
         self.max_current_a = 10000.0
 
-    def _format_utc_timestamp(self, dt: datetime) -> str:
-        # ISO 8601 UTC 형식 (Z 접미사) 보장
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    def tick(self, sim_time: datetime, real_time: datetime) -> Optional[EventMessage]:
+    def tick(self, sim_time: datetime, real_time: datetime) -> Optional[Tuple[str, str, str, Dict[str, Any]]]:
         # 발전량 계산 (W -> kW)
         raw_p = self.interpolator.get_interpolated_value(sim_time) / 1000.0
         
@@ -51,19 +46,16 @@ class SolarDevice:
         v_val = 380.0
         i_val = (actual_p * 1000.0) / v_val if actual_p > 0 else 0.0
 
-        event_msg = None
+        event_data = None
         if not self.local_fault and not self.emergency_stop:
             if i_val > self.max_current_a:
                 self.local_fault = True
                 self.reported_state = DeviceState.FAULT
-                event_msg = EventMessage(
-                    device_id=self.device_id,
-                    plant_id=self.plant_id,
-                    timestamp=self._format_utc_timestamp(real_time),
-                    event_type="OVER_CURRENT",
-                    severity="EMERGENCY",
-                    message=f"과전류({i_val:.2f}A) 발생으로 차단되었습니다.",
-                    data={"current_a": i_val, "threshold_a": self.max_current_a}
+                event_data = (
+                    "OVER_CURRENT",
+                    "EMERGENCY",
+                    f"과전류({i_val:.2f}A) 발생으로 차단되었습니다.",
+                    {"current_a": i_val, "threshold_a": self.max_current_a}
                 )
                 actual_p = 0.0
                 i_val = 0.0
@@ -79,10 +71,9 @@ class SolarDevice:
         self.data.instantaneous.I = round(i_val, 3)
         self.data.instantaneous.S = round(actual_p, 2)
         
-        return event_msg
+        return event_data
 
-    def execute_command(self, cmd: dict, current_time: datetime) -> CommandAckMessage:
-        cmd_id = cmd.get("command_id", str(uuid.uuid4()))
+    def execute_command(self, cmd: dict, current_time: datetime) -> Tuple[str, Optional[str]]:
         cmd_type = cmd.get("command_type")
         payload = cmd.get("payload", {})
         
@@ -109,16 +100,7 @@ class SolarDevice:
         else:
             reason = f"UNKNOWN_COMMAND_TYPE: {cmd_type}"
 
-        return CommandAckMessage(
-            command_id=cmd_id,
-            status=result,
-            reason=reason
-        )
+        return result, reason
 
-    def get_telemetry(self, current_time: datetime) -> TelemetryMessage:
-        return TelemetryMessage(
-            device_id=self.device_id,
-            plant_id=self.plant_id,
-            timestamp=self._format_utc_timestamp(current_time),
-            data=self.data
-        )
+    def get_telemetry(self, current_time: datetime) -> SolarData:
+        return self.data

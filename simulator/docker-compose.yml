@@ -1,9 +1,39 @@
+# ================================================================
+# EMS Edge Simulator - Docker Compose
+#
+# [사용법]
+# 전체 실행:
+#   docker compose up -d
+#   docker compose --profile all up -d
+#
+# 특정 시뮬레이터만 실행:
+#   docker compose --profile solar up -d      # 태양광만
+#   docker compose --profile diesel up -d     # 디젤만
+#   docker compose --profile solar --profile diesel up -d  # 둘 다
+#
+# 빌드 포함 실행 (코드 변경 후):
+#   docker compose up -d --build
+#
+# 로그 확인 (MQTT 수신 메시지 실시간):
+#   docker compose logs -f mqtt-logger
+#
+# [Edge 추가 방법]
+# 동일 build 이미지를 새 서비스로 선언하고
+# PLANT_ID / DEVICE_IDS 환경변수만 다르게 설정하면 됩니다.
+# ================================================================
+
 services:
+
+  # ----------------------------------------------------------------
+  # MQTT 브로커 (공유 인프라 - 항상 실행)
+  # 외부 접근: localhost:1883 (MQTT 클라이언트 직접 연결 시)
+  # ----------------------------------------------------------------
   mqtt-broker:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-broker
     ports:
-      - "1883:1883"
+      - "1883:1883"   # 외부 MQTT 클라이언트 접속용 (MQTTX 등)
+
     command: >
       sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
              echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
@@ -14,6 +44,10 @@ services:
       timeout: 5s
       retries: 10
 
+  # ----------------------------------------------------------------
+  # MQTT 메시지 전체 로거 (디버깅용 - 항상 실행)
+  # 확인: docker compose logs -f mqtt-logger
+  # ----------------------------------------------------------------
   mqtt-logger:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-logger
@@ -23,6 +57,65 @@ services:
         condition: service_healthy
     command: mosquitto_sub -h mqtt-broker -t "#" -v
 
+  # ================================================================
+  # SOLAR EDGE (태양광 시뮬레이터)
+  # profile: solar
+  #
+  # DEVICE_IDS: 이 Edge가 관리할 장치 ID 목록 (comma 구분)
+  #   - 1대: DEVICE_IDS=solar-01
+  #   - 3대: DEVICE_IDS=solar-01,solar-02,solar-03
+  #
+  # Edge를 여러 개 띄우려면:
+  #   이 블록을 복사 → 서비스명/container_name/PLANT_ID or DEVICE_IDS 변경
+  # ================================================================
+
+  # --- Solar Edge: PLANT-ALPHA (장치 2대) ---
+  solar-edge-alpha:
+    build:
+      context: ./solar-simulator
+      dockerfile: Dockerfile
+    container_name: solar-edge-alpha
+    restart: always
+    profiles:
+      - solar
+      - all
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - PLANT_ID=PLANT-ALPHA
+      - DEVICE_IDS=solar-01,solar-02   # ← 여기서 장치 수/ID 결정
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+
+  # ================================================================
+  # DIESEL EDGE (디젤 발전기 시뮬레이터)
+  # profile: diesel
+  #
+  # DEVICE_IDS: 이 Edge가 관리할 발전기 ID 목록 (comma 구분)
+  #   - 1대: DEVICE_IDS=diesel-01
+  #   - 2대: DEVICE_IDS=diesel-01,diesel-02
+  # ================================================================
+
+  # --- Diesel Edge: PLANT-ALPHA (발전기 1대) ---
+  diesel-edge-alpha:
+    build:
+      context: ./diesel-simulator
+      dockerfile: Dockerfile
+    container_name: diesel-edge-alpha
+    restart: always
+    profiles:
+      - diesel
+      - all
+    environment:
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - PLANT_ID=PLANT-ALPHA
+      - DEVICE_IDS=diesel-01           # ← 여기서 장치 수/ID 결정
+
+  # ================================================================
+  # ESS SIMULATOR (에너지 저장 장치 시뮬레이터)
+  # ================================================================
   ess-simulator:
     build:
       context: ./ess-simulator
@@ -34,6 +127,3 @@ services:
       mqtt-broker:
         condition: service_healthy
 
-volumes:
-  mosquitto-data:
-  mosquitto-log:

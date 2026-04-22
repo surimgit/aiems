@@ -47,26 +47,3 @@ class DieselData(BaseModel):
     fuel: FuelSystem = Field(default_factory=FuelSystem)
     engine: EngineMetrics = Field(default_factory=EngineMetrics)
     status: Status = Field(default_factory=Status)
-
-# --- Message Envelopes ---
-class TelemetryMessage(BaseModel):
-    device_id: str
-    plant_id: str
-    resource_type: str = "diesel"
-    timestamp: str 
-    data: DieselData
-
-class EventMessage(BaseModel):
-    device_id: str
-    plant_id: str
-    resource_type: str = "diesel"
-    timestamp: str
-    event_type: str
-    severity: str # INFO, WARNING, ALARM, EMERGENCY
-    message: str
-    data: Optional[Dict[str, Any]] = None
-
-class CommandAckMessage(BaseModel):
-    command_id: str
-    status: str  # accepted, rejected
-    reason: Optional[str] = None
