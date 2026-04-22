@@ -46,6 +46,7 @@ class MqttSubscriberIntegrationTest(unittest.TestCase):
 
         self.assertEqual(device_id, "load-02")
         self.assertEqual(ack.status, "accepted")
+        self.assertEqual(self.fleet.get("load-02").state.shed_ratio, 0.3)
 
     def test_on_message_publishes_rejected_ack_for_invalid_payload(self) -> None:
         publisher = PublisherSpy()
@@ -73,6 +74,32 @@ class MqttSubscriberIntegrationTest(unittest.TestCase):
         self.assertEqual(ack.command_id, "cmd-002")
         self.assertEqual(ack.status, "rejected")
         self.assertEqual(ack.reason, "INVALID_REDUCTION_RATIO")
+
+    def test_on_message_rejects_disabled_device(self) -> None:
+        publisher = PublisherSpy()
+        subscriber = MqttCommandSubscriber(
+            LoadCommandHandler(self.fleet),
+            publisher,
+            "PLANT-ALPHA",
+            "load",
+            "localhost",
+            1883,
+        )
+
+        subscriber._on_message(
+            None,
+            None,
+            MessageStub(
+                "PLANT-ALPHA/load/load-03/command",
+                '{"command_id":"cmd-003","command_type":"load_shed","payload":{"reduction_ratio":0.2}}',
+            ),
+        )
+
+        self.assertEqual(len(publisher.calls), 1)
+        _, _, device_id, ack = publisher.calls[0]
+        self.assertEqual(device_id, "load-03")
+        self.assertEqual(ack.status, "rejected")
+        self.assertEqual(ack.reason, "DEVICE_DISABLED")
 
 
 if __name__ == "__main__":

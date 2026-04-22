@@ -22,11 +22,6 @@ class CommandResolution:
 
 
 class LoadCommandHandler:
-    """Task 1 only defines the per-panel routing boundary.
-
-    Real load shedding execution belongs to the next Jira task.
-    """
-
     def __init__(self, fleet: LoadFleet) -> None:
         self.fleet = fleet
 
@@ -38,12 +33,18 @@ class LoadCommandHandler:
 
     def preview(self, *, device_id: str, payload: dict[str, Any]) -> CommandResolution:
         try:
-            self.resolve_device(device_id)
+            device = self.resolve_device(device_id)
         except ValueError as error:
             return CommandResolution(
                 accepted=False,
                 device_id=device_id,
                 reason=str(error),
+            )
+        if not device.state.enabled:
+            return CommandResolution(
+                accepted=False,
+                device_id=device_id,
+                reason="DEVICE_DISABLED",
             )
         return CommandResolution(
             accepted=True,
@@ -61,6 +62,7 @@ class LoadCommandHandler:
                 reason=resolution.reason,
             )
 
+        device = self.resolve_device(device_id)
         command_type = str(payload.get("command_type", "")).strip()
         if command_type != "load_shed":
             return CommandAck(
@@ -91,6 +93,10 @@ class LoadCommandHandler:
                 reason="INVALID_REDUCTION_RATIO",
             )
 
+        device.set_shed_ratio(
+            float(reduction_ratio),
+            command_id=command_id,
+        )
         return CommandAck(
             command_id=command_id,
             status="accepted",
