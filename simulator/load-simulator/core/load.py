@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from core.state_machine import LoadOperatingState, resolve_initial_state
+from core.state_machine import LoadOperatingState, resolve_initial_state, resolve_runtime_state
 
 
 def _utc_now() -> datetime:
@@ -173,6 +173,7 @@ class LoadDevice:
     def apply_measurement(self, measurement: LoadMeasurement, *, updated_at: datetime | None = None) -> None:
         self.measurement = measurement
         self.state.last_updated_at = updated_at or _utc_now()
+        self.refresh_operating_state()
 
     def set_shed_ratio(
         self,
@@ -186,6 +187,16 @@ class LoadDevice:
         self.state.shed_ratio = shed_ratio
         self.state.last_command_id = command_id
         self.state.last_updated_at = updated_at or _utc_now()
+        self.refresh_operating_state()
+
+    def refresh_operating_state(self, *, has_fault: bool = False) -> LoadOperatingState:
+        self.state.operating_state = resolve_runtime_state(
+            enabled=self.state.enabled,
+            has_fault=has_fault,
+            shed_ratio=self.state.shed_ratio,
+            has_measurement=self.measurement.p_kw > 0,
+        )
+        return self.state.operating_state
 
     def snapshot(self) -> dict[str, Any]:
         return {
