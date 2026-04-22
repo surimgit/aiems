@@ -40,6 +40,22 @@ docker compose up -d --build
 # 모든 서비스가 순서대로 기동됩니다.
 ```
 
+## CI/CD 서버 (별도 Lightsail 인스턴스)
+EMS 앱과 분리된 **Jenkins 전용 서버**. 레포를 clone 한 뒤 아래 compose 로 기동한다.
+```bash
+# CI/CD 서버에서
+git clone <레포 URL> ~/S14P31S305
+cd ~/S14P31S305
+docker compose -f docker-compose.cicd.yml up -d
+
+# Jenkins 초기 관리자 비밀번호 확인
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+# 브라우저 접속
+# http://<CI/CD 서버 공인 IP>:8080
+```
+SonarQube 는 Phase 3 에서 동일 compose 파일에 추가 예정.
+
 ## Redis Streams 토픽 목록
 | Stream 이름 | Producer | Consumer | 데이터 내용 |
 |-------------|----------|----------|-------------|
