@@ -1,0 +1,36 @@
+site_id: PLANT-ALPHA
+edge_id: edge-01
+
+loads:
+  - device_id: load-01
+    panel_id: panel-01
+    name: office-panel
+    rated_kw: 120.0
+    base_kw: 80.0
+    power_factor: 0.98
+    voltage_v: 380.0
+    frequency_hz: 60.0
+    enabled: true
+    scenario_profile: office-day
+
+  - device_id: load-02
+    panel_id: panel-02
+    name: hvac-panel
+    rated_kw: 90.0
+    base_kw: 45.0
+    power_factor: 0.96
+    voltage_v: 380.0
+    frequency_hz: 60.0
+    enabled: true
+    scenario_profile: hvac-heavy
+
+  - device_id: load-03
+    panel_id: panel-03
+    name: utility-panel
+    rated_kw: 75.0
+    base_kw: 20.0
+    power_factor: 0.99
+    voltage_v: 380.0
+    frequency_hz: 60.0
+    enabled: false
+    scenario_profile: off-hours
