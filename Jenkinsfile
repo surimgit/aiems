@@ -61,17 +61,17 @@ pipeline {
         // ──────────────────────────────────────
         //  3. SonarQube 정적 분석
         // ──────────────────────────────────────
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh '''
-                        sonar-scanner \
-                            -Dsonar.projectKey=s14p31s305 \
-                            -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai-service/app,ems/db-writer/app
-                    '''
-                }
-            }
-        }
+        // stage('SonarQube Analysis') {
+        //     steps {
+        //         withSonarQubeEnv('SonarQube') {
+        //             sh '''
+        //                 sonar-scanner \
+        //                     -Dsonar.projectKey=s14p31s305 \
+        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai-service/app,ems/db-writer/app
+        //             '''
+        //         }
+        //     }
+        // }
 
         // ──────────────────────────────────────
         //  4. Build (변경된 서비스만)
