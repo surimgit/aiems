@@ -7,17 +7,20 @@ from .power_flow import compute as compute_flow
 from .rules import safety, ess, diesel, solar, load
 
 
-def run(states: dict, policy) -> list[dict]:
+def run(states: dict, policy) -> tuple[list[dict], list[dict]]:
+    """(commands, events) 튜플 반환. commands는 장치 제어, events는 이상 감지."""
     flow = compute_flow(states)
 
     candidates: list[dict] = []
-    candidates.extend(safety.evaluate(states, policy))
     candidates.extend(ess.evaluate(flow, policy))
     candidates.extend(diesel.evaluate(flow, policy, states))
     candidates.extend(solar.evaluate(flow, policy, states))
     candidates.extend(load.evaluate(flow, policy, states))
+    commands = _resolve(candidates)
 
-    return _resolve(candidates)
+    events = safety.evaluate(flow, states, policy)
+
+    return commands, events
 
 
 def _resolve(candidates: list[dict]) -> list[dict]:

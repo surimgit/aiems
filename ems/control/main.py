@@ -3,6 +3,7 @@ import threading
 from adapters.state_reader import StateReader
 from adapters.mqtt_commander import MqttCommander
 from adapters.db_writer import ControlDBWriter
+from adapters.event_publisher import EventPublisher
 from adapters.policy_reader import PolicyReader
 from domain.rule_engine import run
 from api import run_api
@@ -37,8 +38,10 @@ async def _refresh_policy_loop(policy: PolicyReader) -> None:
 async def main():
     reader = StateReader()
     db = ControlDBWriter()
+    event_pub = EventPublisher()
     policy = PolicyReader()
     await db.connect()
+    await event_pub.connect()
     await policy.connect()
     print(f"[control] 시작: {CONTROL_INTERVAL_SECONDS}초 주기 판단")
 
@@ -50,7 +53,7 @@ async def main():
                 try:
                     states = await reader.get_all()
                     if states:
-                        commands = run(states, policy)
+                        commands, events = run(states, policy)
                         sent = 0
                         for cmd in commands:
                             device_id = cmd["device_id"]
@@ -62,6 +65,8 @@ async def main():
                             sent += 1
                         if sent == 0:
                             print(f"[control] 판단 완료: 명령 없음 (장치 {len(states)}개)")
+                        for evt in events:
+                            await event_pub.publish(evt)
                 except Exception as e:
                     print(f"[control] 오류: {e}")
 
@@ -69,6 +74,7 @@ async def main():
     finally:
         refresh_task.cancel()
         await db.close()
+        await event_pub.close()
         await policy.close()
 
 
