@@ -19,6 +19,17 @@ class ControlDBWriter:
         if self._pool:
             await self._pool.close()
 
+    async def update_ack(self, command_id: str, status: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE control_history
+                SET ack_status = $1, ack_time = NOW()
+                WHERE command_id = $2::uuid
+                """,
+                status, command_id,
+            )
+
     async def insert_command(self, command: dict, command_id: str) -> None:
         async with self._pool.acquire() as conn:
             await conn.execute(

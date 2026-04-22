@@ -163,6 +163,26 @@ def _register_routes(app: Flask) -> None:
         ack_status = fields.String()
         time = fields.DateTime()
 
+    class PolicySchema(Schema):
+        key = fields.String()
+        value = fields.Float()
+        unit = fields.String(allow_none=True)
+        description = fields.String(allow_none=True)
+        updated_at = fields.DateTime()
+        updated_by = fields.String()
+
+    class PolicyUpdateRequestSchema(Schema):
+        value = fields.Float(required=True)
+        updated_by = fields.String(load_default="operator")
+
+    class PolicyHistorySchema(Schema):
+        id = fields.Integer()
+        key = fields.String()
+        old_value = fields.Float(allow_none=True)
+        new_value = fields.Float()
+        changed_at = fields.DateTime()
+        changed_by = fields.String()
+
     # ── Action 변환 ───────────────────────────────────────────────────────────
 
     _ACTION_MAP = {
@@ -337,6 +357,96 @@ def _register_routes(app: Flask) -> None:
                 "ack_status": r[8],
                 "time": r[9],
             }
+
+    # ── Policy Routes ─────────────────────────────────────────────────────────
+
+    @blp.route("/policies")
+    class PolicyListResource(MethodView):
+        @blp.response(200, PolicySchema(many=True))
+        def get(self):
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT key, value, unit, description, updated_at, updated_by "
+                        "FROM control_policy ORDER BY key"
+                    )
+                    rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
+            return [
+                {"key": r[0], "value": r[1], "unit": r[2], "description": r[3],
+                 "updated_at": r[4], "updated_by": r[5]}
+                for r in rows
+            ]
+
+    @blp.route("/policies/<string:key>")
+    class PolicyDetailResource(MethodView):
+        @blp.response(200, PolicySchema)
+        def get(self, key):
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT key, value, unit, description, updated_at, updated_by "
+                        "FROM control_policy WHERE key = %s",
+                        (key,),
+                    )
+                    r = cur.fetchone()
+            finally:
+                pool.putconn(conn)
+            if not r:
+                abort(404)
+            return {"key": r[0], "value": r[1], "unit": r[2], "description": r[3],
+                    "updated_at": r[4], "updated_by": r[5]}
+
+        @blp.arguments(PolicyUpdateRequestSchema)
+        @blp.response(200, PolicySchema)
+        def patch(self, body, key):
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE control_policy SET value = %s, updated_by = %s, updated_at = NOW() "
+                        "WHERE key = %s RETURNING key, value, unit, description, updated_at, updated_by",
+                        (body["value"], body["updated_by"], key),
+                    )
+                    r = cur.fetchone()
+                conn.commit()
+            finally:
+                pool.putconn(conn)
+            if not r:
+                abort(404)
+            print(f"[control][policy] {key} = {body['value']} (by {body['updated_by']})")
+            return {"key": r[0], "value": r[1], "unit": r[2], "description": r[3],
+                    "updated_at": r[4], "updated_by": r[5]}
+
+    @blp.route("/policies/<string:key>/history")
+    class PolicyHistoryResource(MethodView):
+        @blp.response(200, PolicyHistorySchema(many=True))
+        def get(self, key):
+            limit = min(int(request.args.get("limit", 20)), 100)
+            pool = get_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, key, old_value, new_value, changed_at, changed_by "
+                        "FROM control_policy_history WHERE key = %s "
+                        "ORDER BY changed_at DESC LIMIT %s",
+                        (key, limit),
+                    )
+                    rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
+            return [
+                {"id": r[0], "key": r[1], "old_value": r[2], "new_value": r[3],
+                 "changed_at": r[4], "changed_by": r[5]}
+                for r in rows
+            ]
 
     api.register_blueprint(blp)
 
