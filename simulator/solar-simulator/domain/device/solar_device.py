@@ -6,6 +6,7 @@ from domain.device.models import (
     DeviceState, ControlMode
 )
 from domain.device.interpolator import TimeSeriesInterpolator
+from domain.device.local_safety import SolarLocalSafetyGuard
 
 class SolarDevice:
     def __init__(self, plant_id: str, device_id: str, interpolator: TimeSeriesInterpolator):
@@ -27,7 +28,19 @@ class SolarDevice:
         self.last_update_time = None
         self.max_current_a = 10000.0
 
+        # 로컬 안전 판단 (rule-engine-spec.md §5.3)
+        self.safety_guard = SolarLocalSafetyGuard()
+
     def tick(self, sim_time: datetime, real_time: datetime) -> Optional[Tuple[str, str, str, Dict[str, Any]]]:
+        # ── [1] 로컬 안전 판단 (최우선, rule-engine-spec.md §5.3) ────────────
+        # safety_guard.check()는 위반 감지 시 device 상태를 직접 변경하고 이벤트를 반환
+        safety_event = self.safety_guard.check(self, sim_time, real_time)
+        if safety_event:
+            # 안전 위반 이벤트가 있으면 물리 계산 생략 후 즉시 반환
+            # (실제 P값은 safety_guard 내부에서 curtailment_limit 조정으로 반영됨)
+            return safety_event
+
+        # ── [2] 물리 발전량 계산 ─────────────────────────────────────────────
         # 발전량 계산 (W -> kW)
         raw_p = self.interpolator.get_interpolated_value(sim_time) / 1000.0
         
@@ -46,6 +59,7 @@ class SolarDevice:
         v_val = 380.0
         i_val = (actual_p * 1000.0) / v_val if actual_p > 0 else 0.0
 
+        # ── [3] 과전류 감지 (기존 로직 유지) ─────────────────────────────────
         event_data = None
         if not self.local_fault and not self.emergency_stop:
             if i_val > self.max_current_a:
@@ -77,6 +91,14 @@ class SolarDevice:
         cmd_type = cmd.get("command_type")
         payload = cmd.get("payload", {})
         
+        # ── 로컬 안전 선검증 (rule-engine-spec.md §5.3 마지막 조건) ──────────
+        # RESET 명령은 안전 차단 대상에서 제외 (복구 목적)
+        if cmd_type != "mode_change" and (self.local_fault or self.emergency_stop):
+            return "rejected", (
+                f"LOCAL_SAFETY_BLOCKED: device is in {self.reported_state.value} state. "
+                "Send mode_change/RESET to recover."
+            )
+
         result = "rejected"
         reason = None
 
@@ -88,7 +110,7 @@ class SolarDevice:
             else:
                 reason = "MISSING_LIMIT_KW"
         
-        # 공통 명령어 처리 (필요시)
+        # 공통 명령어 처리
         elif cmd_type == "mode_change":
             action = payload.get("action")
             if action == "RESET":
@@ -96,6 +118,10 @@ class SolarDevice:
                 self.emergency_stop = False
                 self.curtailment_limit_kw = float('inf')
                 self.reported_state = DeviceState.STANDBY
+                # 로컬 안전 가드 내부 상태도 초기화
+                self.safety_guard._freq_curtail_active = False
+                self.safety_guard._comms_timeout_reported = False
+                self.safety_guard._night_standby_reported = False
                 result = "accepted"
         else:
             reason = f"UNKNOWN_COMMAND_TYPE: {cmd_type}"

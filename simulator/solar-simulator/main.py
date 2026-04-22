@@ -48,6 +48,9 @@ def main():
         publisher.publish_ack(target_device_id, ack)
 
     subscriber.set_command_callback(on_command_received)
+
+    # command 수신 자체를 EMS 통신 생존 증거로 활용 (rule-engine-spec §5.3 COMMS_TIMEOUT)
+    subscriber.set_comms_alive_callback(manager.notify_comms_alive)
     
     def on_connect(client, userdata, flags, rc):
         print(f"Connected to MQTT Broker with result code {rc}")
@@ -65,7 +68,7 @@ def main():
 
     real_start_time = time.time()
 
-    time_speed_multiplier = 3600 # 현실 1초당 시뮬레이션 1초 (필요시 조절) -> 3600 (유저 수정본 유지)
+    time_speed_multiplier = 1 # 현실 1초당 시뮬레이션 1초 (필요시 조절) -> 3600 (유저 수정본 유지)
 
 
     # 3. Simulation Loop

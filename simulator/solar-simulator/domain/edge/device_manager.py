@@ -50,6 +50,29 @@ class DeviceManager:
             
         return telemetries, events
 
+    def notify_comms_alive(self, device_id: str) -> None:
+        """
+        EMS와의 통신이 살아있음을 해당 device의 safety_guard에 알린다.
+        MQTT command 수신 시에 subscriber가 호출한다.
+        """
+        device = self.get_device(device_id)
+        if device:
+            device.safety_guard.notify_comms_alive()
+
+    def update_grid_state(self, device_id: Optional[str], freq_hz: float, voltage_v: float) -> None:
+        """
+        계통 주파수와 전압 최신값을 해당 device의 safety_guard에 갱신한다.
+        device_id가 None이면 전체 device에 일괄 적용한다.
+        """
+        if device_id is None:
+            for device in self.devices.values():
+                device.safety_guard.update_grid_state(freq_hz, voltage_v)
+        else:
+            device = self.get_device(device_id)
+            if device:
+                device.safety_guard.update_grid_state(freq_hz, voltage_v)
+
+
     def route_command(self, device_id: str, cmd_payload: dict, current_time: datetime) -> CommandAckMessage:
         """EMS로부터 들어온 명령을 타겟 디바이스에 라우팅합니다."""
         cmd_id = cmd_payload.get("command_id", "unknown")
