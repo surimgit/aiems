@@ -1,31 +1,42 @@
 # EMS Edge Simulator
 
-현재 `simulator/` 기준 기본 실행 대상은 ESS 시뮬레이터입니다.
+`simulator/` contains the local MQTT broker and edge simulators used for EMS integration testing.
 
-## Docker 구성
-
-현재 [docker-compose.yml](/C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/docker-compose.yml) 은 다음 서비스만 올립니다.
+## Included Services
 
 - `mqtt-broker`
 - `mqtt-logger`
 - `ess-simulator`
+- `load-simulator`
 
-즉, ESS 런타임은 Docker로 실행하고 TUI는 로컬 터미널에서 따로 실행하는 구조입니다.
+## Docker Compose
 
-## 실행
-
-브로커 + ESS 런타임:
+Use [docker-compose.yml](/C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/docker-compose.yml) to start the local test stack.
 
 ```powershell
 cd C:\Users\SSAFY\PycharmProjects\S14P31S305\simulator
 docker compose up --build
 ```
 
-TUI:
+## Local Runtime
+
+Load simulator:
 
 ```powershell
-cd C:\Users\SSAFY\PycharmProjects\S14P31S305\simulator\ess-simulator
-python tui\app.py
+cd C:\Users\SSAFY\PycharmProjects\S14P31S305\simulator\load-simulator
+python main.py
 ```
 
-상세 문서는 [ess-simulator/docs/README.md](/C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/docs/README.md) 를 보면 됩니다.
+Run a short smoke cycle:
+
+```powershell
+python main.py --cycles 3
+```
+
+ESS simulator details:
+
+- [ess-simulator/docs/README.md](/C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/ess-simulator/docs/README.md)
+
+Load simulator details:
+
+- [load-simulator/docs/README.md](/C:/Users/SSAFY/PycharmProjects/S14P31S305/simulator/load-simulator/docs/README.md)

@@ -22,15 +22,18 @@ class CommandResolution:
 
 
 class LoadCommandHandler:
+    # 장치 묶음을 기반으로 명령 처리기를 초기화한다.
     def __init__(self, fleet: LoadFleet) -> None:
         self.fleet = fleet
 
+    # device_id로 대상 분전함을 찾아 반환한다.
     def resolve_device(self, device_id: str) -> LoadDevice:
         device = self.fleet.get(device_id)
         if device is None:
             raise ValueError(f"DEVICE_NOT_FOUND: {device_id}")
         return device
 
+    # 명령 적용 전에 대상 장치와 기본 수용 가능 여부를 점검한다.
     def preview(self, *, device_id: str, payload: dict[str, Any]) -> CommandResolution:
         try:
             device = self.resolve_device(device_id)
@@ -52,6 +55,7 @@ class LoadCommandHandler:
             payload=payload,
         )
 
+    # load_shed 명령을 검증하고 실제 분전함 상태에 반영한다.
     def handle_command(self, *, device_id: str, payload: dict[str, Any]) -> CommandAck:
         command_id = str(payload.get("command_id", "unknown"))
         resolution = self.preview(device_id=device_id, payload=payload)
