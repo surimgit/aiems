@@ -13,6 +13,11 @@ from marshmallow import Schema, fields, validate
 
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID
 
+# operator 명령의 ACK 추적을 위해 asyncio 루프와 공유하는 pending dict
+# command_id → (sent_at, device_id, resource_type)
+import time as _time
+_shared_pending_acks: dict[str, tuple[float, str, str]] = {}
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -71,7 +76,7 @@ def _start_worker() -> None:
         refresh_task = asyncio.create_task(_refresh_policy_loop(policy))
 
         try:
-            async with MqttCommander(db) as commander:
+            async with MqttCommander(db, _shared_pending_acks) as commander:
                 while True:
                     try:
                         states = await reader.get_all()
@@ -258,6 +263,8 @@ def _register_routes(app: Flask) -> None:
                 client.publish(topic, mqtt_payload)
                 client.disconnect()
                 print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
+                # ACK 추적 등록 (asyncio 루프의 _ack_listener가 공유 dict를 감시)
+                _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)
             except Exception as e:
                 print(f"[control][operator] MQTT 전송 실패: {e}")
 

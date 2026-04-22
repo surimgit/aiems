@@ -12,11 +12,11 @@ _ACK_TIMEOUT_SEC = 30.0
 
 
 class MqttCommander:
-    def __init__(self, db: ControlDBWriter):
+    def __init__(self, db: ControlDBWriter, pending_acks: dict | None = None):
         self._client = None
         self._db = db
-        # command_id → (sent_at, device_id, resource_type)
-        self._pending_acks: dict[str, tuple[float, str, str]] = {}
+        # 외부에서 shared dict를 주입받으면 그걸 씀 (operator API와 공유)
+        self._pending_acks: dict[str, tuple[float, str, str]] = pending_acks if pending_acks is not None else {}
         self._ack_task: asyncio.Task | None = None
 
     async def __aenter__(self):
