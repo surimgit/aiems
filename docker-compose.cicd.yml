@@ -14,8 +14,9 @@ services:
     container_name: jenkins
     restart: always
     ports:
+      # SSAFY 지침: 외부 노출 포트는 8000~8999 범위만 허용.
+      # Jenkins inbound agent 포트(50000)는 DooD 패턴이라 불필요하여 제거.
       - "8080:8080"     # Jenkins 웹 UI
-      - "50000:50000"   # Jenkins inbound agent 통신
     volumes:
       - jenkins_home:/var/jenkins_home
       # Jenkins 가 호스트 Docker 를 호출해 EMS 이미지 빌드/배포 (DooD 패턴)
