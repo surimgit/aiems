@@ -19,12 +19,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=str(Path(__file__).resolve().parent / "config" / "devices.yaml"),
         help="Path to ESS device config file",
     )
+    parser.add_argument(
+        "--no-cli",
+        action="store_true",
+        help="Disable interactive CLI input loop",
+    )
     return parser
 
 
-async def async_main(config_path: Path) -> None:
+async def async_main(config_path: Path, *, interactive: bool) -> None:
     config = load_config(config_path)
-    app = EssSimulatorApp(config)
+    app = EssSimulatorApp(config, interactive=interactive)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -45,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     config_path = Path(args.config).resolve()
 
     try:
-        asyncio.run(async_main(config_path))
+        asyncio.run(async_main(config_path, interactive=not args.no_cli))
     except ValidationError as exc:
         print(f"[ESS] Invalid config:\n{exc}")
     except FileNotFoundError as exc:

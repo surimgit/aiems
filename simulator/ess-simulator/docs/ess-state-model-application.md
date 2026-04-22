@@ -77,15 +77,15 @@
 
 현재 구현 기준 핵심 전이 규칙은 아래와 같다.
 
-| 현재 상태 | 다음 상태 | 설명 |
-| --- | --- | --- |
-| `STANDBY` | `CHARGING` | 충전 명령 수락 시 |
-| `STANDBY` | `DISCHARGING` | 방전 명령 수락 시 |
-| `CHARGING` | `DISCHARGING` | 상태 전이 허용 + 방전 조건 만족 시 |
-| `DISCHARGING` | `CHARGING` | 상태 전이 허용 + 충전 조건 만족 시 |
-| `ANY` | `SAFE_STOP` | 안전 임계 위반 시 |
-| `ANY` | `FAULT` | 과온 등 로컬 fault 시 |
-| `ANY` | `EMERGENCY_STOP` | 비상 정지 상태일 때 최우선 |
+| 현재 상태         | 다음 상태            | 설명                    |
+|---------------|------------------|-----------------------|
+| `STANDBY`     | `CHARGING`       | 충전 명령 수락 시            |
+| `STANDBY`     | `DISCHARGING`    | 방전 명령 수락 시            |
+| `CHARGING`    | `DISCHARGING`    | 상태 전이 허용 + 방전 조건 만족 시 |
+| `DISCHARGING` | `CHARGING`       | 상태 전이 허용 + 충전 조건 만족 시 |
+| `ANY`         | `SAFE_STOP`      | 안전 임계 위반 시            |
+| `ANY`         | `FAULT`          | 과온 등 로컬 fault 시       |
+| `ANY`         | `EMERGENCY_STOP` | 비상 정지 상태일 때 최우선       |
 
 보조 규칙:
 

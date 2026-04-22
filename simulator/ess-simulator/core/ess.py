@@ -3,8 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from .calculations import apply_soc_delta, calculate_energy_delta_kwh, calculate_energy_increment, calculate_signed_power, calculate_soc_delta, clamp_soc
+from .calculations import (
+    apply_soc_delta,
+    calculate_energy_delta_kwh,
+    calculate_energy_increment,
+    calculate_signed_power,
+    calculate_soc_delta,
+    clamp_soc,
+)
 from .policies import ensure_charge_allowed, ensure_discharge_allowed, evaluate_safety_transition
+from .profile_engine import EssProfile, ProfileContext
 from .state_machine import EssState, OperatingMode, resolve_safety_state, sync_state_with_mode, validate_mode_transition
 from .validators import validate_percent_range, validate_positive, validate_threshold_pair
 
@@ -45,22 +53,19 @@ class EssStatus:
 
 
 class EssSimulator:
-    # ESS 시뮬레이터의 스펙과 현재 상태를 초기화한다.
     def __init__(
         self,
         device_spec: DeviceSpec,
         safety_spec: SafetySpec,
         initial_soc: float,
         temperature_c: float = 25.0,
+        profile: EssProfile | None = None,
     ) -> None:
         self.device_spec = device_spec
         self.safety_spec = safety_spec
-        self.status = EssStatus(
-            soc=initial_soc,
-            temperature_c=temperature_c,
-        )
+        self.profile = profile
+        self.status = EssStatus(soc=initial_soc, temperature_c=temperature_c)
 
-    # 외부 명령을 상태 머신과 안전 검사에 통과시킨 뒤 적용한다.
     def set_mode(self, mode: OperatingMode, target_power_kw: float | None = None) -> None:
         target_state = validate_mode_transition(
             current_state=self.status.state,
@@ -73,7 +78,6 @@ class EssSimulator:
         self._enter_in_progress_state()
         self._apply_mode_state(target_state, mode, target_power_kw)
 
-    # 실행 중 장치 스펙을 변경한다.
     def update_device_spec(
         self,
         *,
@@ -103,7 +107,6 @@ class EssSimulator:
         self.status.last_updated_at = datetime.now(timezone.utc)
         return applied
 
-    # 실행 중 안전 기준값을 변경하고 즉시 재평가한다.
     def update_safety_spec(
         self,
         *,
@@ -143,19 +146,18 @@ class EssSimulator:
         self.status.last_updated_at = datetime.now(timezone.utc)
         return applied
 
-    # 한 tick 동안 SOC와 누적 에너지를 갱신하고 안전 상태를 반영한다.
     def tick(self) -> dict[str, object]:
         validate_positive(self.device_spec.publish_interval_sec, "publish_interval_sec")
         validate_positive(self.device_spec.power_limit_kw, "power_limit_kw")
         validate_positive(self.device_spec.capacity_kwh, "capacity_kwh")
 
+        self._apply_profile()
         self._advance_soc()
         self._accumulate_energy()
         self._apply_safety_rules()
         self.status.last_updated_at = datetime.now(timezone.utc)
         return self.snapshot()
 
-    # 외부로 내보낼 최신 스냅샷을 평탄한 구조로 만든다.
     def snapshot(self) -> dict[str, object]:
         return {
             "plant_id": self.device_spec.plant_id,
@@ -184,25 +186,43 @@ class EssSimulator:
         }
 
     def set_interlock_active(self, active: bool) -> None:
-        """인터락 상태를 갱신한다."""
-
         self.status.interlock_active = active
         self.status.last_updated_at = datetime.now(timezone.utc)
 
     def set_comms_health(self, healthy: bool) -> None:
-        """통신 상태를 갱신한다."""
-
         self.status.comms_healthy = healthy
         self.status.last_updated_at = datetime.now(timezone.utc)
 
     def set_emergency_stop(self, active: bool) -> None:
-        """비상 정지 상태를 갱신한다."""
-
         self.status.emergency_stop = active
         self.status.last_updated_at = datetime.now(timezone.utc)
         self._apply_safety_rules()
 
-    # 충전/방전 명령 전 필요한 정책 검사를 수행한다.
+    def _apply_profile(self) -> None:
+        if self.profile is None:
+            return
+
+        generated = self.profile.generate(
+            ProfileContext(
+                sim_time=self.status.last_updated_at,
+                publish_interval_sec=self.device_spec.publish_interval_sec,
+                soc=self.status.soc,
+                power_limit_kw=self.device_spec.power_limit_kw,
+                capacity_kwh=self.device_spec.capacity_kwh,
+                temperature_c=self.status.temperature_c,
+                device_id=self.device_spec.device_id,
+            )
+        )
+        self.status.power_kw = generated.power_kw
+        self.status.target_power_kw = abs(generated.power_kw)
+        self.status.temperature_c = generated.temperature_c
+        if generated.power_kw > 0:
+            self.status.operating_mode = "discharge"
+        elif generated.power_kw < 0:
+            self.status.operating_mode = "charge"
+        else:
+            self.status.operating_mode = "standby"
+
     def _ensure_mode_allowed(self, mode: OperatingMode) -> None:
         if mode == "charge":
             ensure_charge_allowed(
@@ -223,11 +243,9 @@ class EssSimulator:
                 max_temperature_c=self.safety_spec.max_temperature_c,
             )
 
-    # 명령 반영 직전의 짧은 구간을 중간 상태로 표시한다.
     def _enter_in_progress_state(self) -> None:
         self.status.state = "IN_PROGRESS"
 
-    # 상태와 전력치를 한 번에 확정한다.
     def _apply_mode_state(
         self,
         target_state: EssState,
@@ -243,34 +261,21 @@ class EssSimulator:
         self.status.state = target_state
         self.status.last_updated_at = datetime.now(timezone.utc)
 
-    # 현재 운전 모드에 맞춰 SOC를 증감시킨다.
     def _advance_soc(self) -> None:
         if self.status.operating_mode == "standby":
             return
 
-        energy_delta_kwh = calculate_energy_delta_kwh(
-            self.status.power_kw,
-            self.device_spec.publish_interval_sec,
-        )
-        soc_delta = calculate_soc_delta(
-            energy_delta_kwh,
-            self.device_spec.capacity_kwh,
-        )
-        next_soc = apply_soc_delta(
-            self.status.soc,
-            soc_delta,
-            self.status.operating_mode,
-        )
+        energy_delta_kwh = calculate_energy_delta_kwh(self.status.power_kw, self.device_spec.publish_interval_sec)
+        soc_delta = calculate_soc_delta(energy_delta_kwh, self.device_spec.capacity_kwh)
+        next_soc = apply_soc_delta(self.status.soc, soc_delta, self.status.operating_mode)
         self.status.soc = clamp_soc(next_soc)
 
-    # 누적 에너지는 절대량으로 더한다.
     def _accumulate_energy(self) -> None:
         self.status.accumulated_energy_kwh += calculate_energy_increment(
             self.status.power_kw,
             self.device_spec.publish_interval_sec,
         )
 
-    # 안전 기준 위반 시 강제 상태를 적용하고 아니면 표시 상태를 동기화한다.
     def _apply_safety_rules(self) -> None:
         validate_percent_range(self.status.soc, "soc")
         force_safe_stop, local_fault = evaluate_safety_transition(

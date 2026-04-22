@@ -6,10 +6,13 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 
-class DeviceFileConfig(BaseModel):
-    """Validated configuration loaded from config/devices.yaml."""
+class ProfileConfig(BaseModel):
+    module: str = "core.profiles.default_profile"
+    class_name: str = "DefaultEssProfile"
+    seed: int | None = None
 
-    plant_id: str
+
+class DeviceConfig(BaseModel):
     device_id: str
     resource_type: str = Field(pattern=r"^ess$")
     publish_interval_sec: float = Field(gt=0)
@@ -22,8 +25,7 @@ class DeviceFileConfig(BaseModel):
     max_safe_soc_threshold: float = Field(ge=0, le=100)
     temperature_c: float = Field(default=25.0)
     max_temperature_c: float = Field(default=45.0)
-    mqtt_broker_host: str = Field(default="localhost")
-    mqtt_broker_port: int = Field(default=1883, ge=1, le=65535)
+    profile: ProfileConfig = Field(default_factory=ProfileConfig)
 
     @field_validator("high_soc_threshold")
     @classmethod
@@ -42,9 +44,41 @@ class DeviceFileConfig(BaseModel):
         return value
 
 
-def load_config(path: Path) -> DeviceFileConfig:
-    """Read YAML config and convert it into a validated config object."""
+class RuntimeConfig(BaseModel):
+    plant_id: str
+    mqtt_broker_host: str = Field(default="localhost")
+    mqtt_broker_port: int = Field(default=1883, ge=1, le=65535)
+    devices: list[DeviceConfig]
 
+
+def _coerce_legacy_config(raw: dict) -> dict:
+    if "devices" in raw:
+        return raw
+
+    legacy_device_keys = {
+        "device_id",
+        "resource_type",
+        "publish_interval_sec",
+        "initial_soc",
+        "power_limit_kw",
+        "capacity_kwh",
+        "low_soc_threshold",
+        "high_soc_threshold",
+        "min_safe_soc_threshold",
+        "max_safe_soc_threshold",
+        "temperature_c",
+        "max_temperature_c",
+    }
+    device = {key: value for key, value in raw.items() if key in legacy_device_keys}
+    return {
+        "plant_id": raw["plant_id"],
+        "mqtt_broker_host": raw.get("mqtt_broker_host", "localhost"),
+        "mqtt_broker_port": raw.get("mqtt_broker_port", 1883),
+        "devices": [device],
+    }
+
+
+def load_config(path: Path) -> RuntimeConfig:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
@@ -54,4 +88,4 @@ def load_config(path: Path) -> DeviceFileConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"Config file must contain a mapping: {path}")
 
-    return DeviceFileConfig.model_validate(raw)
+    return RuntimeConfig.model_validate(_coerce_legacy_config(raw))

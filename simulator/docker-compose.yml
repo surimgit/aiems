@@ -33,6 +33,7 @@ services:
     container_name: mqtt-broker
     ports:
       - "1883:1883"   # 외부 MQTT 클라이언트 접속용 (MQTTX 등)
+
     command: >
       sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
              echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
@@ -111,6 +112,17 @@ services:
       - MQTT_PORT=1883
       - PLANT_ID=PLANT-ALPHA
       - DEVICE_IDS=diesel-01           # ← 여기서 장치 수/ID 결정
+
+  # ================================================================
+  # ESS SIMULATOR (에너지 저장 장치 시뮬레이터)
+  # ================================================================
+  ess-simulator:
+    build:
+      context: ./ess-simulator
+      dockerfile: Dockerfile
+    container_name: ess-simulator
+    restart: always
+    command: ["python", "main.py", "--no-cli", "--config", "/app/config/devices.docker.yaml"]
     depends_on:
       mqtt-broker:
         condition: service_healthy

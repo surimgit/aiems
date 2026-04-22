@@ -1,3 +1,4 @@
 PyYAML==6.0.3
-pydantic==2.13.2
+pydantic==2.13.3
 paho-mqtt==2.1.0
+textual==1.0.0
