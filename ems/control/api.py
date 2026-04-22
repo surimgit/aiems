@@ -4,13 +4,14 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
+import paho.mqtt.client as mqtt_client
 import psycopg2.pool
 from flask import Flask, abort, jsonify, request
 from flask.views import MethodView
 from flask_smorest import Api, Blueprint
 from marshmallow import Schema, fields, validate
 
-from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID
 
 
 def create_app() -> Flask:
@@ -162,6 +163,26 @@ def _register_routes(app: Flask) -> None:
         ack_status = fields.String()
         time = fields.DateTime()
 
+    # ── Action 변환 ───────────────────────────────────────────────────────────
+
+    _ACTION_MAP = {
+        "START_CHARGE":    {"command_type": "ess_mode", "payload": {"mode": "charge",    "target_power_kw": 0.0}},
+        "STOP_CHARGE":     {"command_type": "ess_mode", "payload": {"mode": "standby",   "target_power_kw": 0.0}},
+        "START_DISCHARGE": {"command_type": "ess_mode", "payload": {"mode": "discharge", "target_power_kw": 0.0}},
+        "STOP_DISCHARGE":  {"command_type": "ess_mode", "payload": {"mode": "standby",   "target_power_kw": 0.0}},
+        "START_GENERATOR": {"command_type": "start",    "payload": {}},
+        "STOP_GENERATOR":  {"command_type": "stop",     "payload": {}},
+        "STANDBY":         {"command_type": "ess_mode", "payload": {"mode": "standby",   "target_power_kw": 0.0}},
+        "SHED_LOAD":       {"command_type": "load_shed",      "payload": {"reduction_ratio": 1.0}},
+        "RESTORE_LOAD":    {"command_type": "load_restore",   "payload": {}},
+        "OPEN_SWITCH":     {"command_type": "open_switch",    "payload": {}},
+        "CLOSE_SWITCH":    {"command_type": "close_switch",   "payload": {}},
+        "SET_POWER_LIMIT": {"command_type": "update_device_spec", "payload": {}},
+    }
+
+    def _translate_action(action: str) -> dict:
+        return _ACTION_MAP.get(action, {"command_type": action.lower(), "payload": {}})
+
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
     blp = Blueprint("control", "control", url_prefix="/api/control")
@@ -199,6 +220,26 @@ def _register_routes(app: Flask) -> None:
                 conn.commit()
             finally:
                 pool.putconn(conn)
+
+            # MQTT로 실제 장치에 명령 전송
+            resource_type = payload["resource_type"].lower()
+            device_id = payload["device_id"]
+            topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
+            mqtt_payload = json.dumps({
+                "command_id": command_id,
+                **_translate_action(payload["action"]),
+                "source": "operator",
+                "expires_in_sec": 30,
+                "force": True,
+            }, ensure_ascii=False)
+            try:
+                client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
+                client.connect(MQTT_HOST, MQTT_PORT, keepalive=5)
+                client.publish(topic, mqtt_payload)
+                client.disconnect()
+                print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
+            except Exception as e:
+                print(f"[control][operator] MQTT 전송 실패: {e}")
 
             return {
                 "command_id": command_id,
