@@ -8,7 +8,7 @@ class DeviceManager:
         self.devices: Dict[str, DieselDevice] = {}
 
     def _format_utc_timestamp(self, dt: datetime) -> str:
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
     def register_device(self, device: DieselDevice):
         """가상의 하드웨어(시뮬레이터)를 Manager 메모리에 등록합니다."""

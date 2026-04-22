@@ -14,7 +14,7 @@ class HeartbeatPublisher:
             "plant_id": self.plant_id,
             "resource_type": self.resource_type,
             "device_id": device_id,
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
             "status": "alive"
         }
         self.client.publish(self.heartbeat_topic, json.dumps(heartbeat))

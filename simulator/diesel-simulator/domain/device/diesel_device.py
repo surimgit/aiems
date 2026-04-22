@@ -5,6 +5,7 @@ from domain.device.models import (
     DieselData, Instantaneous, Energy, Status, 
     DeviceState, ControlMode, FuelSystem, EngineMetrics
 )
+from domain.device.local_safety import DieselLocalSafetyGuard
 
 class DieselDevice:
     def __init__(self, plant_id: str, device_id: str, max_capacity_kw: float = 1000.0):
@@ -29,6 +30,13 @@ class DieselDevice:
         self.SHUTDOWN_TIME_SEC = 5
         self.FUEL_CONS_COEFF = 0.25 # 0.25 L per kWh
         self.IDLE_FUEL_LPH = 5.0     # 5 L per hour when idling
+
+        # 로컬 안전 판단 (rule-engine-spec.md §5.4)
+        self.safety_guard = DieselLocalSafetyGuard()
+
+        # 기동 실패 카운터 (rule-engine-spec.md §5.4: 3회 연속 실패 → FAULT)
+        self._start_failure_count: int = 0
+        self._MAX_START_FAILURES: int = 3
 
     def _update_engine_metrics(self, dt_sec: float):
         """상태에 따른 엔진 물리 지표 업데이트"""
@@ -57,12 +65,17 @@ class DieselDevice:
         dt_sec = (real_time - self.last_update_time).total_seconds()
         self.last_update_time = real_time
 
-        event_data = None
+        # ── [1] 로컬 안전 판단 (최우선, rule-engine-spec.md §5.4) ────────────
+        safety_event = self.safety_guard.check(self, real_time)
+        if safety_event:
+            return safety_event
 
-        # 1. 상태 전이 로직
+        # ── [2] 상태 전이 로직 ────────────────────────────────────────────────
+        event_data = None
         if self.state == DeviceState.STARTING:
             if real_time - self.state_start_time >= timedelta(seconds=self.STARTUP_TIME_SEC):
                 self.state = DeviceState.RUNNING
+                self._start_failure_count = 0  # 기동 성공 시 실패 카운터 초기화
                 event_data = (
                     "STATE_CHANGED", "INFO",
                     "발전기가 가동 준비를 마치고 RUNNING 상태가 되었습니다.",
@@ -113,7 +126,15 @@ class DieselDevice:
         """명령을 실행하고 (status, reason) 튜플을 반환. Solar와 동일한 시그니처."""
         cmd_type = cmd.get("command_type")
         payload = cmd.get("payload", {})
-        
+
+        # ── 로컬 안전 선검증 (rule-engine-spec.md §5.4 마지막 조건) ──────────
+        # RESET 명령만 FAULT 상태에서도 허용
+        if cmd_type != "mode_change" and self.state in [DeviceState.FAULT, DeviceState.EMERGENCY_STOP]:
+            return "rejected", (
+                f"LOCAL_SAFETY_BLOCKED: device is in {self.state.value} state. "
+                "Send mode_change/RESET to recover."
+            )
+
         status = "rejected"
         reason = None
 
@@ -123,7 +144,18 @@ class DieselDevice:
                 self.state_start_time = current_time
                 status = "accepted"
             else:
-                reason = f"INVALID_STATE: Currently in {self.state}"
+                # 기동 불가 상태 → 실패 카운터 증가 (rule-engine-spec §5.4: 3회 연속 실패 → FAULT)
+                self._start_failure_count += 1
+                if self._start_failure_count >= self._MAX_START_FAILURES:
+                    self.state = DeviceState.FAULT
+                    reason = (
+                        f"START_FAILURE_LIMIT: {self._start_failure_count}회 연속 기동 실패. FAULT 전환."
+                    )
+                else:
+                    reason = (
+                        f"INVALID_STATE: Currently in {self.state} "
+                        f"(failure {self._start_failure_count}/{self._MAX_START_FAILURES})"
+                    )
         
         elif cmd_type == "stop":
             if self.state in [DeviceState.RUNNING, DeviceState.STARTING]:
@@ -143,6 +175,18 @@ class DieselDevice:
                     reason = "NOT_RUNNING"
             else:
                 reason = "MISSING_TARGET_KW"
+
+        elif cmd_type == "mode_change":
+            action = payload.get("action")
+            if action == "RESET":
+                self.state = DeviceState.OFF
+                self.target_p_kw = 0.0
+                self._start_failure_count = 0
+                # 로컬 안전 가드 내부 상태도 초기화
+                self.safety_guard._fuel_low_reported = False
+                self.safety_guard._overload_active = False
+                self.safety_guard._comms_timeout_reported = False
+                status = "accepted"
         else:
             reason = f"UNKNOWN_COMMAND_TYPE: {cmd_type}"
         
