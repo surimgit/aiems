@@ -38,6 +38,9 @@ def main():
         publisher.publish_ack(target_device_id, ack)
 
     subscriber.set_command_callback(on_command_received)
+
+    # command 수신 자체를 EMS 통신 생존 증거로 활용 (rule-engine-spec §5.4 COMMS_TIMEOUT)
+    subscriber.set_comms_alive_callback(manager.notify_comms_alive)
     
     def on_connect(client, userdata, flags, rc):
         print(f"Connected to MQTT Broker with result code {rc}")
@@ -69,8 +72,8 @@ def main():
                     heartbeat_publisher.publish(d_id)
                 last_heartbeat_time = time.time()
 
-            # 수집 주기: 1초
-            time.sleep(1.0)
+            # 수집 주기 명세 반영: 0.1초 (100ms)
+            time.sleep(0.1)
             
     except KeyboardInterrupt:
         print("Stopping Diesel Simulator Edge...")

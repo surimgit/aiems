@@ -9,7 +9,7 @@ class DeviceManager:
         self.devices: Dict[str, SolarDevice] = {}
 
     def _format_utc_timestamp(self, dt: datetime) -> str:
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
     def register_device(self, device: SolarDevice):
         """가상의 하드웨어(시뮬레이터)를 Manager 메모리에 등록합니다."""
@@ -18,6 +18,11 @@ class DeviceManager:
 
     def get_device(self, device_id: str) -> Optional[SolarDevice]:
         return self.devices.get(device_id)
+
+    def notify_comms_alive(self):
+        """가입된 모든 기기에 통신 생존 신호를 전달합니다."""
+        for device in self.devices.values():
+            device.notify_comms_alive()
 
     def tick_all(self, sim_time: datetime, real_time: datetime) -> Tuple[List[TelemetryMessage], List[EventMessage]]:
         """모든 등록된 기기를 순회하며 현장 상황을 시뮬레이션하고, 결과 데이터를 수집합니다."""
