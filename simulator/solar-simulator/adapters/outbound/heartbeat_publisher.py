@@ -1,5 +1,6 @@
 import json
 import paho.mqtt.client as mqtt
+from datetime import datetime, timezone
 
 class HeartbeatPublisher:
     def __init__(self, client: mqtt.Client, plant_id: str, resource_type: str = "solar"):
@@ -10,9 +11,10 @@ class HeartbeatPublisher:
 
     def publish(self, device_id: str):
         heartbeat = {
-            "device_id": device_id,
             "plant_id": self.plant_id,
             "resource_type": self.resource_type,
-            "status": "online"
+            "device_id": device_id,
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "status": "alive"
         }
         self.client.publish(self.heartbeat_topic, json.dumps(heartbeat))

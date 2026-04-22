@@ -1,10 +1,9 @@
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
-from .models import (
+from typing import Optional, Tuple, Dict, Any
+from domain.device.models import (
     DieselData, Instantaneous, Energy, Status, 
-    DeviceState, ControlMode, TelemetryMessage, 
-    EventMessage, CommandAckMessage, FuelSystem, EngineMetrics
+    DeviceState, ControlMode, FuelSystem, EngineMetrics
 )
 
 class DieselDevice:
@@ -31,9 +30,6 @@ class DieselDevice:
         self.FUEL_CONS_COEFF = 0.25 # 0.25 L per kWh
         self.IDLE_FUEL_LPH = 5.0     # 5 L per hour when idling
 
-    def _format_utc_timestamp(self, dt: datetime) -> str:
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
     def _update_engine_metrics(self, dt_sec: float):
         """상태에 따른 엔진 물리 지표 업데이트"""
         if self.state == DeviceState.RUNNING:
@@ -52,7 +48,8 @@ class DieselDevice:
             self.data.engine.oil_pressure = 0.0
             self.data.engine.coolant_temp = max(25.0, self.data.engine.coolant_temp - 0.02 * dt_sec)
 
-    def tick(self, sim_time: datetime, real_time: datetime) -> Optional[EventMessage]:
+    def tick(self, sim_time: datetime, real_time: datetime) -> Optional[Tuple[str, str, str, Dict[str, Any]]]:
+        """디바이스 상태를 1틱 갱신하고, 이벤트가 있으면 (event_type, severity, message, data) 튜플 반환"""
         if self.last_update_time is None:
             self.last_update_time = real_time
             return None
@@ -60,17 +57,16 @@ class DieselDevice:
         dt_sec = (real_time - self.last_update_time).total_seconds()
         self.last_update_time = real_time
 
-        event_msg = None
+        event_data = None
 
         # 1. 상태 전이 로직
         if self.state == DeviceState.STARTING:
             if real_time - self.state_start_time >= timedelta(seconds=self.STARTUP_TIME_SEC):
                 self.state = DeviceState.RUNNING
-                event_msg = EventMessage(
-                    device_id=self.device_id, plant_id=self.plant_id,
-                    timestamp=self._format_utc_timestamp(real_time),
-                    event_type="STATE_CHANGED", severity="INFO",
-                    message="발전기가 가동 준비를 마치고 RUNNING 상태가 되었습니다."
+                event_data = (
+                    "STATE_CHANGED", "INFO",
+                    "발전기가 가동 준비를 마치고 RUNNING 상태가 되었습니다.",
+                    None
                 )
         elif self.state == DeviceState.STOPPING:
             if real_time - self.state_start_time >= timedelta(seconds=self.SHUTDOWN_TIME_SEC):
@@ -94,11 +90,10 @@ class DieselDevice:
         self.current_fuel_l = max(0.0, self.current_fuel_l - fuel_consumed)
         if self.current_fuel_l <= 0 and self.state == DeviceState.RUNNING:
             self.state = DeviceState.FAULT
-            event_msg = EventMessage(
-                device_id=self.device_id, plant_id=self.plant_id,
-                timestamp=self._format_utc_timestamp(real_time),
-                event_type="FUEL_EMPTY", severity="EMERGENCY",
-                message="연료가 고갈되어 발전기가 정지되었습니다."
+            event_data = (
+                "FUEL_EMPTY", "EMERGENCY",
+                "연료가 고갈되어 발전기가 정지되었습니다.",
+                {"remaining_liters": 0.0}
             )
 
         # 3. 데이터 업데이트
@@ -112,10 +107,10 @@ class DieselDevice:
 
         self._update_engine_metrics(dt_sec)
         
-        return event_msg
+        return event_data
 
-    def execute_command(self, cmd: dict, current_time: datetime) -> CommandAckMessage:
-        cmd_id = cmd.get("command_id", str(uuid.uuid4()))
+    def execute_command(self, cmd: dict, current_time: datetime) -> Tuple[str, Optional[str]]:
+        """명령을 실행하고 (status, reason) 튜플을 반환. Solar와 동일한 시그니처."""
         cmd_type = cmd.get("command_type")
         payload = cmd.get("payload", {})
         
@@ -151,12 +146,8 @@ class DieselDevice:
         else:
             reason = f"UNKNOWN_COMMAND_TYPE: {cmd_type}"
         
-        return CommandAckMessage(command_id=cmd_id, status=status, reason=reason)
+        return status, reason
 
-    def get_telemetry(self, current_time: datetime) -> TelemetryMessage:
-        return TelemetryMessage(
-            device_id=self.device_id,
-            plant_id=self.plant_id,
-            timestamp=self._format_utc_timestamp(current_time),
-            data=self.data
-        )
+    def get_telemetry(self, current_time: datetime) -> DieselData:
+        """현재 디바이스의 telemetry 데이터를 반환. Solar와 동일한 패턴."""
+        return self.data
