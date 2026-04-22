@@ -192,6 +192,10 @@ class DieselDevice:
         
         return status, reason
 
+    def notify_comms_alive(self):
+        """EMS와의 통신이 살아있음을 알림 (LocalSafetyGuard의 타임아웃 타이머 리셋)"""
+        self.safety_guard.notify_comms_alive()
+
     def get_telemetry(self, current_time: datetime) -> DieselData:
         """현재 디바이스의 telemetry 데이터를 반환. Solar와 동일한 패턴."""
         return self.data

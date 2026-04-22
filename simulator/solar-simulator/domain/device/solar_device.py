@@ -128,5 +128,9 @@ class SolarDevice:
 
         return result, reason
 
+    def notify_comms_alive(self):
+        """EMS와의 통신이 살아있음을 알림 (LocalSafetyGuard의 타임아웃 타이머 리셋)"""
+        self.safety_guard.notify_comms_alive()
+
     def get_telemetry(self, current_time: datetime) -> SolarData:
         return self.data

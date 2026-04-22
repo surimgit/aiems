@@ -8,7 +8,7 @@ from core.load import (
     load_device_configs,
     load_fleet_from_config,
 )
-from core.scenario import ScenarioProfile, load_scenario_profiles
+from core.scenario import LoadScenarioEngine, ScenarioProfile, load_scenario_profiles
 from core.state_machine import (
     LoadOperatingState,
     is_transition_allowed,
@@ -27,6 +27,7 @@ __all__ = [
     "LoadOperatingState",
     "LoadState",
     "ScenarioProfile",
+    "LoadScenarioEngine",
     "is_transition_allowed",
     "load_device_configs",
     "load_fleet_from_config",

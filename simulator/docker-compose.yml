@@ -127,3 +127,22 @@ services:
       mqtt-broker:
         condition: service_healthy
 
+  load-simulator:
+    build:
+      context: ./load-simulator
+      dockerfile: Dockerfile
+    container_name: load-simulator
+    restart: always
+    command:
+      [
+        "python",
+        "main.py",
+        "--config",
+        "/app/config/devices.docker.yaml",
+        "--scenario",
+        "/app/config/scenario.yaml"
+      ]
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+
