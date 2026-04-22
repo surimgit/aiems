@@ -1,0 +1,15 @@
+profiles:
+  office-day:
+    noise_ratio: 0.05
+    peak_hours: [9, 10, 11, 14, 15, 16]
+    peak_multiplier: 1.20
+
+  hvac-heavy:
+    noise_ratio: 0.08
+    peak_hours: [12, 13, 14, 15]
+    peak_multiplier: 1.35
+
+  off-hours:
+    noise_ratio: 0.02
+    peak_hours: [6, 7, 18, 19]
+    peak_multiplier: 1.10
