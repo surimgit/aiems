@@ -46,6 +46,7 @@ def _load_yaml(path: str | Path) -> dict[str, Any]:
     return loaded
 
 
+# scenario.yaml에서 프로파일 정의를 읽어온다.
 def load_scenario_profiles(path: str | Path) -> dict[str, ScenarioProfile]:
     raw = _load_yaml(path)
     profiles = raw.get("profiles", {})
@@ -69,6 +70,7 @@ def load_scenario_profiles(path: str | Path) -> dict[str, ScenarioProfile]:
     return loaded_profiles
 
 
+# 입력 시간을 UTC 기준으로 정규화한다.
 def _utc(dt: datetime | None) -> datetime:
     if dt is None:
         return datetime.now(timezone.utc)
@@ -77,6 +79,7 @@ def _utc(dt: datetime | None) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+# 동일 입력에서 같은 노이즈를 만들기 위한 결정적 값을 계산한다.
 def _stable_noise(seed_text: str) -> float:
     seed = 0
     for index, char in enumerate(seed_text):
@@ -85,15 +88,18 @@ def _stable_noise(seed_text: str) -> float:
 
 
 class LoadScenarioEngine:
+    # 프로파일 사전을 받아 시나리오 엔진을 초기화한다.
     def __init__(self, profiles: dict[str, ScenarioProfile]) -> None:
         self.profiles = profiles
 
+    # 이름으로 시나리오 프로파일을 조회한다.
     def get_profile(self, profile_name: str) -> ScenarioProfile:
         try:
             return self.profiles[profile_name]
         except KeyError as error:
             raise ValueError(f"unknown scenario profile: {profile_name}") from error
 
+    # 특정 시점의 유효전력 값을 프로파일과 상태를 반영해 계산한다.
     def calculate_active_power(self, device: LoadDevice, observed_at: datetime) -> float:
         profile = self.get_profile(device.config.scenario_profile)
         current_time = _utc(observed_at)
@@ -112,6 +118,7 @@ class LoadScenarioEngine:
         bounded_kw = min(device.config.rated_kw, max(minimum_kw, shed_adjusted_kw))
         return round(bounded_kw, 3)
 
+    # 계산된 유효전력으로 전기 측정값 전체를 생성한다.
     def build_measurement(self, device: LoadDevice, observed_at: datetime, elapsed_seconds: float | None = None) -> LoadMeasurement:
         current_time = _utc(observed_at)
         previous_time = device.state.last_updated_at.astimezone(timezone.utc)
@@ -134,12 +141,14 @@ class LoadScenarioEngine:
         )
         return measurement
 
+    # 단일 분전함을 한 tick 진행시키고 측정값을 반영한다.
     def tick_device(self, device: LoadDevice, observed_at: datetime | None = None, *, elapsed_seconds: float | None = None) -> LoadMeasurement:
         current_time = _utc(observed_at)
         measurement = self.build_measurement(device, current_time, elapsed_seconds=elapsed_seconds)
         device.apply_measurement(measurement, updated_at=current_time)
         return measurement
 
+    # fleet 내 활성 분전함 전체를 한 tick 진행시킨다.
     def tick_fleet(self, fleet: LoadFleet, observed_at: datetime | None = None, *, elapsed_seconds: float | None = None) -> dict[str, LoadMeasurement]:
         current_time = _utc(observed_at)
         results: dict[str, LoadMeasurement] = {}

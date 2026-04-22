@@ -28,14 +28,17 @@ class LoadCommandMessage:
     payload: dict[str, Any]
 
 
+# 4세그먼트 MQTT 토픽 문자열을 만든다.
 def build_topic(site_id: str, resource_type: str, device_id: str, message_type: str) -> str:
     return f"{site_id}/{resource_type}/{device_id}/{message_type}"
 
 
+# 사이트 단위 heartbeat 토픽을 만든다.
 def build_heartbeat_topic(site_id: str) -> str:
     return f"{site_id}/heartbeat"
 
 
+# MQTT 토픽을 파싱해 site, device, message 정보를 추출한다.
 def parse_topic(topic: str) -> TopicParts:
     parts = topic.split("/")
     if len(parts) != 4:
@@ -53,6 +56,7 @@ def parse_topic(topic: str) -> TopicParts:
     )
 
 
+# load command payload를 파싱하고 필수 필드를 검증한다.
 def parse_load_command(topic: str, payload: str, site_id: str) -> tuple[TopicParts, LoadCommandMessage]:
     topic_parts = parse_topic(topic)
     if topic_parts.message_type != "command":
@@ -82,6 +86,7 @@ def parse_load_command(topic: str, payload: str, site_id: str) -> tuple[TopicPar
     )
 
 
+# 장치 상태를 MQTT telemetry payload 형식으로 변환한다.
 def snapshot_to_telemetry(device: LoadDevice, *, timestamp: datetime | None = None) -> dict[str, Any]:
     observed_at = timestamp or datetime.now(timezone.utc)
     return {
@@ -113,6 +118,7 @@ def snapshot_to_telemetry(device: LoadDevice, *, timestamp: datetime | None = No
     }
 
 
+# 내부 ACK 객체를 MQTT 응답 payload로 변환한다.
 def ack_to_payload(ack: CommandAck) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "command_id": ack.command_id,
@@ -123,6 +129,7 @@ def ack_to_payload(ack: CommandAck) -> dict[str, Any]:
     return payload
 
 
+# heartbeat 메시지를 MQTT payload 형식으로 생성한다.
 def build_heartbeat_message(site_id: str, resource_type: str, device_id: str, *, timestamp: datetime | None = None) -> dict[str, Any]:
     observed_at = timestamp or datetime.now(timezone.utc)
     return {

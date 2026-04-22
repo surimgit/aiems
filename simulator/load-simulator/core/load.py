@@ -11,6 +11,7 @@ import yaml
 from core.state_machine import LoadOperatingState, resolve_initial_state, resolve_runtime_state
 
 
+# 런타임 상태 갱신 시 사용할 UTC 현재 시각을 만든다.
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -170,11 +171,13 @@ class LoadDevice:
         )
         return cls(config=config, measurement=measurement, state=state)
 
+    # 새 측정값을 장치에 반영하고 상태를 최신화한다.
     def apply_measurement(self, measurement: LoadMeasurement, *, updated_at: datetime | None = None) -> None:
         self.measurement = measurement
         self.state.last_updated_at = updated_at or _utc_now()
         self.refresh_operating_state()
 
+    # load_shed 결과 비율을 장치 상태에 저장한다.
     def set_shed_ratio(
         self,
         shed_ratio: float,
@@ -189,6 +192,7 @@ class LoadDevice:
         self.state.last_updated_at = updated_at or _utc_now()
         self.refresh_operating_state()
 
+    # 현재 측정값과 제어 상태를 기준으로 운전 상태를 다시 계산한다.
     def refresh_operating_state(self, *, has_fault: bool = False) -> LoadOperatingState:
         self.state.operating_state = resolve_runtime_state(
             enabled=self.state.enabled,
@@ -198,6 +202,7 @@ class LoadDevice:
         )
         return self.state.operating_state
 
+    # 외부 출력용으로 장치 상태를 딕셔너리 스냅샷으로 만든다.
     def snapshot(self) -> dict[str, Any]:
         return {
             "site_id": self.site_id,
@@ -231,6 +236,7 @@ class LoadFleet:
     _devices: dict[str, LoadDevice] = field(default_factory=dict)
     _panel_index: dict[str, str] = field(default_factory=dict)
 
+    # 장치를 fleet에 등록하면서 중복 식별자를 검증한다.
     def register(self, device: LoadDevice) -> None:
         if device.site_id != self.site_id:
             raise ValueError("device site_id does not match fleet site_id")
@@ -243,30 +249,37 @@ class LoadFleet:
         self._devices[device.device_id] = device
         self._panel_index[device.panel_id] = device.device_id
 
+    # device_id로 등록된 장치를 조회한다.
     def get(self, device_id: str) -> LoadDevice | None:
         return self._devices.get(device_id)
 
+    # panel_id를 통해 장치를 조회한다.
     def get_by_panel_id(self, panel_id: str) -> LoadDevice | None:
         device_id = self._panel_index.get(panel_id)
         if device_id is None:
             return None
         return self._devices[device_id]
 
+    # 등록된 모든 장치를 리스트로 반환한다.
     def list_all(self) -> list[LoadDevice]:
         return list(self._devices.values())
 
+    # 활성화된 장치만 골라 반환한다.
     def list_enabled(self) -> list[LoadDevice]:
         return [device for device in self._devices.values() if device.state.enabled]
 
+    # 현재 측정 기준 유효전력 합계를 계산한다.
     def total_active_power_kw(self, *, enabled_only: bool = True) -> float:
         devices = self.list_enabled() if enabled_only else self.list_all()
         return sum(device.measurement.p_kw for device in devices)
 
+    # 설정 기준 기본 부하 합계를 계산한다.
     def total_base_power_kw(self, *, enabled_only: bool = True) -> float:
         devices = self.list_enabled() if enabled_only else self.list_all()
         return sum(device.config.base_kw for device in devices)
 
 
+# YAML 파일을 읽고 딕셔너리 루트인지 확인한다.
 def _load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as file:
         loaded = yaml.safe_load(file) or {}
@@ -275,6 +288,7 @@ def _load_yaml(path: str | Path) -> dict[str, Any]:
     return loaded
 
 
+# 장치 설정 파일에서 분전함 설정 목록을 로드한다.
 def load_device_configs(path: str | Path) -> list[LoadDeviceConfig]:
     raw = _load_yaml(path)
     site_id = str(raw.get("site_id", "")).strip()
@@ -316,6 +330,7 @@ def load_device_configs(path: str | Path) -> list[LoadDeviceConfig]:
     return configs
 
 
+# 설정 파일에서 fleet 객체를 바로 구성한다.
 def load_fleet_from_config(path: str | Path) -> LoadFleet:
     configs = load_device_configs(path)
     if not configs:
