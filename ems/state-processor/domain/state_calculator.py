@@ -21,6 +21,14 @@ def calculate(envelope: dict) -> dict:
         reported_state["operating_mode"] = status.get("operating_mode")
     elif resource_type == "LOAD":
         reported_state["demand_max"] = energy.get("demand_max")
+    elif resource_type == "DIESEL":
+        fuel = payload.get("fuel", {})
+        engine = payload.get("engine", {})
+        reported_state["fuel_level_percent"] = fuel.get("level_percent")
+        reported_state["fuel_remaining_liters"] = fuel.get("remaining_liters")
+        reported_state["fuel_consumption_lph"] = fuel.get("consumption_rate_lph")
+        reported_state["coolant_temp"] = engine.get("coolant_temp")
+        reported_state["rpm"] = engine.get("rpm")
 
     return {
         "site_id": envelope.get("site_id"),

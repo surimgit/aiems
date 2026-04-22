@@ -9,6 +9,19 @@ from api import run_api
 from config import CONTROL_INTERVAL_SECONDS
 
 _pending: dict[str, str] = {}
+
+
+def _dedupe_key(cmd: dict) -> str:
+    """같은 의미의 명령을 다시 보내지 않기 위한 키.
+    ess: command_type + mode, diesel: command_type + target_kw(있으면).
+    """
+    payload = cmd.get("payload", {})
+    parts = [cmd["command_type"]]
+    if "mode" in payload:
+        parts.append(str(payload["mode"]))
+    if "target_kw" in payload:
+        parts.append(str(payload["target_kw"]))
+    return ":".join(parts)
 _POLICY_REFRESH_INTERVAL = 30  # seconds
 
 
@@ -41,11 +54,11 @@ async def main():
                         sent = 0
                         for cmd in commands:
                             device_id = cmd["device_id"]
-                            target_mode = cmd["payload"].get("mode") or cmd["payload"].get("command")
-                            if _pending.get(device_id) == target_mode:
+                            key = _dedupe_key(cmd)
+                            if _pending.get(device_id) == key:
                                 continue
                             await commander.send(cmd)
-                            _pending[device_id] = target_mode
+                            _pending[device_id] = key
                             sent += 1
                         if sent == 0:
                             print(f"[control] 판단 완료: 명령 없음 (장치 {len(states)}개)")

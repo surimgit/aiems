@@ -1,59 +1,29 @@
+"""룰 오케스트레이터. 각 도메인 룰을 모아 우선순위로 충돌을 해결한다.
+
+priority 큰 룰이 같은 device를 더 먼저 잡는다 (safety > ess > diesel).
+"""
+
+from .power_flow import compute as compute_flow
+from .rules import safety, ess, diesel
+
+
 def run(states: dict, policy) -> list[dict]:
-    """policy: PolicyReader 인스턴스 — control_policy DB 값 조회용"""
-    soc_low = policy.get("SOC_LOW")
-    soc_high = policy.get("SOC_HIGH")
+    flow = compute_flow(states)
 
-    solar_p = 0.0
-    load_p = 0.0
-    ess_devices = []
+    candidates: list[dict] = []
+    candidates.extend(safety.evaluate(states, policy))
+    candidates.extend(ess.evaluate(flow, policy))
+    candidates.extend(diesel.evaluate(flow, policy, states))
 
-    for device_id, state in states.items():
-        resource_type = state.get("resource_type", "")
-        p = state.get("reported_state", {}).get("P") or 0.0
+    return _resolve(candidates)
 
-        if resource_type == "SOLAR":
-            solar_p += p
-        elif resource_type == "LOAD":
-            load_p += p
-        elif resource_type == "ESS":
-            soc = state.get("reported_state", {}).get("SOC")
-            mode = state.get("reported_state", {}).get("operating_mode", "standby")
-            ess_devices.append({"device_id": device_id, "P": p, "SOC": soc, "mode": mode})
 
-    net_power = solar_p - load_p
-    commands = []
-
-    for ess in ess_devices:
-        soc = ess["SOC"]
-        if soc is None:
-            continue
-
-        if net_power < 0:
-            if soc > soc_low and ess["mode"] != "discharge":
-                commands.append({
-                    "device_id": ess["device_id"],
-                    "resource_type": "ess",
-                    "command_type": "ess_mode",
-                    "payload": {"mode": "discharge", "target_power_kw": round(abs(net_power) / len(ess_devices), 1)},
-                    "reason": f"net_power={net_power:.1f}kW, SOC={soc}%",
-                })
-        elif net_power > 0:
-            if soc < soc_high and ess["mode"] != "charge":
-                commands.append({
-                    "device_id": ess["device_id"],
-                    "resource_type": "ess",
-                    "command_type": "ess_mode",
-                    "payload": {"mode": "charge", "target_power_kw": round(net_power / len(ess_devices), 1)},
-                    "reason": f"net_power={net_power:.1f}kW, SOC={soc}%",
-                })
-        else:
-            if ess["mode"] not in ("standby",):
-                commands.append({
-                    "device_id": ess["device_id"],
-                    "resource_type": "ess",
-                    "command_type": "ess_mode",
-                    "payload": {"mode": "standby", "target_power_kw": 0.0},
-                    "reason": "net_power balanced",
-                })
-
-    return commands
+def _resolve(candidates: list[dict]) -> list[dict]:
+    """동일 device_id에 대해 priority가 가장 높은 명령만 채택."""
+    by_device: dict[str, dict] = {}
+    for cmd in candidates:
+        device_id = cmd["device_id"]
+        existing = by_device.get(device_id)
+        if existing is None or cmd.get("priority", 0) > existing.get("priority", 0):
+            by_device[device_id] = cmd
+    return list(by_device.values())
