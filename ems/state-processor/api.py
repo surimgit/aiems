@@ -103,6 +103,10 @@ def _register_routes(app: Flask) -> None:
         SOC = fields.Float(allow_none=True)
         operating_mode = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
+        emergency = fields.Boolean()
+        interlock = fields.Boolean()
+        desired_state = fields.Dict(allow_none=True)
+        last_command_id = fields.String(allow_none=True)
 
     class EventLogSchema(Schema):
         time = fields.DateTime()
@@ -229,6 +233,10 @@ def _register_routes(app: Flask) -> None:
                     "SOC": (s.get("reported_state") or {}).get("SOC"),
                     "operating_mode": (s.get("reported_state") or {}).get("operating_mode"),
                     "comms_health": s.get("comms_health"),
+                    "emergency": s.get("emergency", False),
+                    "interlock": s.get("interlock", False),
+                    "desired_state": s.get("desired_state"),
+                    "last_command_id": s.get("last_command_id"),
                 }
                 for s in states
             ]
