@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
 
 
+# SOC 임계 이하면 emergency로 판단 (control_policy의 SOC_CRITICAL_LOW 기본값)
+_SOC_EMERGENCY = 5.0
+
+
 def calculate(envelope: dict) -> dict:
     resource_type = envelope.get("resource_type", "").upper()
     payload = envelope.get("payload", {})
@@ -16,11 +20,23 @@ def calculate(envelope: dict) -> dict:
         "PF": instantaneous.get("PF"),
     }
 
+    emergency = bool(envelope.get("emergency", False))
+    interlock = False
+
     if resource_type == "ESS":
-        reported_state["SOC"] = status.get("SOC")
-        reported_state["operating_mode"] = status.get("operating_mode")
+        soc = status.get("SOC")
+        operating_mode = status.get("operating_mode", "")
+        reported_state["SOC"] = soc
+        reported_state["operating_mode"] = operating_mode
+
+        if soc is not None and soc <= _SOC_EMERGENCY:
+            emergency = True
+        if operating_mode in ("fault", "error", "FAULT", "ERROR"):
+            interlock = True
+
     elif resource_type == "LOAD":
         reported_state["demand_max"] = energy.get("demand_max")
+
     elif resource_type == "DIESEL":
         fuel = payload.get("fuel", {})
         engine = payload.get("engine", {})
@@ -30,13 +46,20 @@ def calculate(envelope: dict) -> dict:
         reported_state["coolant_temp"] = engine.get("coolant_temp")
         reported_state["rpm"] = engine.get("rpm")
 
+        coolant = engine.get("coolant_temp")
+        if coolant is not None and coolant > 95:
+            emergency = True
+
     return {
         "site_id": envelope.get("site_id"),
         "device_id": envelope.get("resource_id"),
         "resource_type": resource_type,
         "timestamp": envelope.get("timestamp"),
         "reported_state": reported_state,
+        "desired_state": None,      # state_publisher에서 Redis desired 키 조회 후 채움
+        "last_command_id": None,    # 위와 동일
         "comms_health": status.get("comms_health", "unknown"),
-        "emergency": False,
+        "emergency": emergency,
+        "interlock": interlock,
         "calculated_at": datetime.now(timezone.utc).isoformat(),
     }

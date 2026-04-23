@@ -68,6 +68,21 @@ class MqttCommander:
         await self._db.insert_command(command, command_id)
 
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
+
+        # desired_state 저장 — state-processor가 읽어서 State Snapshot에 반영
+        desired = {
+            "command_id": command_id,
+            "command_type": command["command_type"],
+            "payload": command["payload"],
+            "issued_by": command.get("issued_by", "rule"),
+            "issued_at": time.time(),
+        }
+        await self._redis.set(
+            f"desired:{SITE_ID}:{device_id}",
+            json.dumps(desired, ensure_ascii=False),
+            ex=300,  # 5분 TTL — 명령 반영 후 자연 만료
+        )
+
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
         self._pending_verify[command_id] = (
             command["command_type"],
