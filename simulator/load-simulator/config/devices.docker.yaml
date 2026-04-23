@@ -1,6 +1,6 @@
 site_id: PLANT-ALPHA
 edge_id: edge-01
-mqtt_broker_host: mqtt-broker
+mqtt_broker_host: mosquitto
 mqtt_broker_port: 1883
 publish_interval_sec: 1.0
 
@@ -35,5 +35,5 @@ loads:
     power_factor: 0.99
     voltage_v: 380.0
     frequency_hz: 60.0
-    enabled: false
+    enabled: true
     scenario_profile: off-hours

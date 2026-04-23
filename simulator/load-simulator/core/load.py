@@ -175,7 +175,9 @@ class LoadDevice:
     def apply_measurement(self, measurement: LoadMeasurement, *, updated_at: datetime | None = None) -> None:
         self.measurement = measurement
         self.state.last_updated_at = updated_at or _utc_now()
-        self.refresh_operating_state()
+        # 정격 110% 초과 시 로컬 과부하 fault 전환
+        overload = measurement.p_kw > self.config.rated_kw * 1.1
+        self.refresh_operating_state(has_fault=overload)
 
     # load_shed 결과 비율을 장치 상태에 저장한다.
     def set_shed_ratio(

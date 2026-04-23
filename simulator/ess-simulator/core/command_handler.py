@@ -104,7 +104,8 @@ class CommandHandler:
         """ESS 모드 명령을 실행하고 문서 기준 적용값을 반환한다."""
 
         self._ensure_mode_command_allowed(command)
-        self.simulator.set_mode(command.payload.mode, command.payload.target_power_kw)
+        expires_in_sec = command.expires_in_sec if command.expires_in_sec is not None else 60.0
+        self.simulator.set_mode(command.payload.mode, command.payload.target_power_kw, expires_in_sec)
         return {
             "mode": command.payload.mode,
             "target_power_kw": command.payload.target_power_kw,
