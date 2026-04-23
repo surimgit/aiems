@@ -40,6 +40,7 @@ def calculate(envelope: dict) -> dict:
     elif resource_type == "DIESEL":
         fuel = payload.get("fuel", {})
         engine = payload.get("engine", {})
+        reported_state["operating_mode"] = status.get("operating_mode", "stopped")
         reported_state["fuel_level_percent"] = fuel.get("level_percent")
         reported_state["fuel_remaining_liters"] = fuel.get("remaining_liters")
         reported_state["fuel_consumption_lph"] = fuel.get("consumption_rate_lph")

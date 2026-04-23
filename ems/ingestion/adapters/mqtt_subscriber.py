@@ -14,27 +14,38 @@ TOPICS = [
     f"{SITE_ID}/heartbeat",
 ]
 
+_RECONNECT_DELAY_SEC = 5
+
 
 async def run(publisher: RedisPublisher) -> None:
-    async with aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT) as client:
-        for topic in TOPICS:
-            await client.subscribe(topic)
-        print(f"[ingestion] MQTT 구독 시작: {TOPICS}")
+    while True:
+        try:
+            async with aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT) as client:
+                for topic in TOPICS:
+                    await client.subscribe(topic)
+                print(f"[ingestion] MQTT 구독 시작: {TOPICS}")
 
-        async for message in client.messages:
-            topic = str(message.topic)
-            try:
-                parts = topic.split("/")
+                async for message in client.messages:
+                    topic = str(message.topic)
+                    try:
+                        parts = topic.split("/")
 
-                if len(parts) == 2 and parts[1] == "heartbeat":
-                    print(f"[ingestion] heartbeat: {message.payload.decode(errors='replace')}")
-                    continue
+                        if len(parts) == 2 and parts[1] == "heartbeat":
+                            print(f"[ingestion] heartbeat: {message.payload.decode(errors='replace')}")
+                            continue
 
-                message_type = parts[3]
-                envelope = normalize(topic, message.payload)
-                stream = classify(message_type)
+                        message_type = parts[3]
+                        if message_type == "ack":
+                            continue  # ACK는 control이 직접 처리, state stream 불필요
+                        envelope = normalize(topic, message.payload)
+                        stream = classify(message_type)
 
-                await publisher.publish(stream, envelope)
-                print(f"[ingestion] {topic} → {stream}")
-            except Exception as e:
-                print(f"[ingestion] 처리 실패 topic={topic} error={e}")
+                        await publisher.publish(stream, envelope)
+                        print(f"[ingestion] {topic} → {stream}")
+                    except Exception as e:
+                        print(f"[ingestion] 처리 실패 topic={topic} error={e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[ingestion] MQTT 연결 끊김: {e} — {_RECONNECT_DELAY_SEC}s 후 재연결")
+            await asyncio.sleep(_RECONNECT_DELAY_SEC)
