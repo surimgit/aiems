@@ -40,6 +40,7 @@ class EngineMetrics(BaseModel):
 
 class Status(BaseModel):
     comms_health: str = "ok"
+    operating_mode: str = "stopped"  # stopped / starting / running / stopping / fault
 
 class DieselData(BaseModel):
     instantaneous: Instantaneous = Field(default_factory=Instantaneous)
