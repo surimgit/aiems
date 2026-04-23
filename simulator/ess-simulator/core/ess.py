@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .calculations import (
     apply_soc_delta,
@@ -50,6 +50,8 @@ class EssStatus:
     interlock_active: bool = False
     comms_healthy: bool = True
     last_updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    ems_controlled: bool = False
+    ems_control_expires_at: datetime | None = None
 
 
 class EssSimulator:
@@ -66,7 +68,7 @@ class EssSimulator:
         self.profile = profile
         self.status = EssStatus(soc=initial_soc, temperature_c=temperature_c)
 
-    def set_mode(self, mode: OperatingMode, target_power_kw: float | None = None) -> None:
+    def set_mode(self, mode: OperatingMode, target_power_kw: float | None = None, expires_in_sec: float = 60.0) -> None:
         target_state = validate_mode_transition(
             current_state=self.status.state,
             current_mode=self.status.operating_mode,
@@ -77,6 +79,9 @@ class EssSimulator:
         self._ensure_mode_allowed(mode)
         self._enter_in_progress_state()
         self._apply_mode_state(target_state, mode, target_power_kw)
+        # EMS가 제어권을 가져감 — 만료 전까지 프로파일이 모드를 덮어쓰지 않음
+        self.status.ems_controlled = True
+        self.status.ems_control_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_sec)
 
     def update_device_spec(
         self,
@@ -202,6 +207,31 @@ class EssSimulator:
         if self.profile is None:
             return
 
+        # EMS 제어권 만료 여부 확인
+        if self.status.ems_controlled:
+            if (
+                self.status.ems_control_expires_at is not None
+                and datetime.now(timezone.utc) >= self.status.ems_control_expires_at
+            ):
+                self.status.ems_controlled = False
+                self.status.ems_control_expires_at = None
+            else:
+                # EMS 제어 중: 온도 노이즈만 반영, 전력/모드는 건드리지 않음
+                generated = self.profile.generate(
+                    ProfileContext(
+                        sim_time=self.status.last_updated_at,
+                        publish_interval_sec=self.device_spec.publish_interval_sec,
+                        soc=self.status.soc,
+                        power_limit_kw=self.device_spec.power_limit_kw,
+                        capacity_kwh=self.device_spec.capacity_kwh,
+                        temperature_c=self.status.temperature_c,
+                        device_id=self.device_spec.device_id,
+                    )
+                )
+                self.status.temperature_c = generated.temperature_c
+                return
+
+        # 자율 운전: 프로파일이 전력/모드 전체를 결정
         generated = self.profile.generate(
             ProfileContext(
                 sim_time=self.status.last_updated_at,
