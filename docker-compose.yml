@@ -1,3 +1,5 @@
+name: ems
+
 services:
   mosquitto:
     image: eclipse-mosquitto:2
