@@ -18,6 +18,10 @@ from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, M
 import time as _time
 _shared_pending_acks: dict[str, tuple[float, str, str]] = {}
 
+# device_id → sent_at (cooldown 중인 장치 추적)
+_COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 길게
+_device_cooldown: dict[str, float] = {}
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -43,17 +47,43 @@ def _start_worker() -> None:
     from domain.rule_engine import run
     from config import CONTROL_INTERVAL_SECONDS
 
-    _pending: dict[str, str] = {}
     _POLICY_REFRESH_INTERVAL = 30
 
-    def _dedupe_key(cmd: dict) -> str:
-        payload = cmd.get("payload", {})
-        parts = [cmd["command_type"]]
-        if "mode" in payload:
-            parts.append(str(payload["mode"]))
-        if "target_kw" in payload:
-            parts.append(str(payload["target_kw"]))
-        return ":".join(parts)
+    def _should_send(cmd: dict, states: dict) -> bool:
+        """3중 체크: cooldown → pending ACK → 현재 모드 비교."""
+        device_id = cmd["device_id"]
+        now = _time.monotonic()
+
+        # 1. cooldown 중인 장치는 skip
+        cooldown_since = _device_cooldown.get(device_id)
+        if cooldown_since is not None:
+            if now - cooldown_since < _COOLDOWN_SEC:
+                return False
+            else:
+                del _device_cooldown[device_id]
+
+        # 2. 이 장치로 보낸 명령 중 ACK 대기 중인 게 있으면 skip
+        pending_devices = {dev_id for _, (_, dev_id, _) in _shared_pending_acks.items()}
+        if device_id in pending_devices:
+            return False
+
+        # 3. 현재 모드가 요청 모드와 이미 같으면 skip
+        state = states.get(device_id, {})
+        reported = state.get("reported_state") or {}
+        current_mode = reported.get("operating_mode", "standby")
+
+        if cmd["command_type"] == "ess_mode":
+            requested_mode = cmd["payload"].get("mode", "standby")
+            return current_mode != requested_mode
+
+        if cmd["command_type"] == "diesel_command":
+            action = cmd["payload"].get("action", "")
+            if action == "start":
+                return current_mode.lower() not in ("running",)
+            if action == "stop":
+                return current_mode.lower() not in ("stopped", "idle")
+
+        return True
 
     async def _refresh_policy_loop(policy: PolicyReader) -> None:
         while True:
@@ -81,15 +111,13 @@ def _start_worker() -> None:
                     try:
                         states = await reader.get_all()
                         if states:
-                            commands, events = run(states, policy)
+                            commands, events = await run(states, policy, event_pub)
                             sent = 0
                             for cmd in commands:
-                                device_id = cmd["device_id"]
-                                key = _dedupe_key(cmd)
-                                if _pending.get(device_id) == key:
+                                if not _should_send(cmd, states):
                                     continue
                                 await commander.send(cmd)
-                                _pending[device_id] = key
+                                _device_cooldown[cmd["device_id"]] = _time.monotonic()
                                 sent += 1
                             if sent == 0:
                                 print(f"[control] 판단 완료: 명령 없음 (장치 {len(states)}개)")
@@ -222,6 +250,7 @@ def _register_routes(app: Flask) -> None:
             pool = get_pool()
             conn = pool.getconn()
             try:
+                translated = _translate_action(payload["action"])
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -236,8 +265,8 @@ def _register_routes(app: Flask) -> None:
                             payload["site_id"],
                             payload["device_id"],
                             payload["resource_type"].upper(),
-                            payload["action"],
-                            json.dumps({"action": payload["action"]}),
+                            translated["command_type"],
+                            json.dumps(translated["payload"]),
                             payload.get("reason", ""),
                             payload["requested_by"],
                         ),
@@ -263,8 +292,9 @@ def _register_routes(app: Flask) -> None:
                 client.publish(topic, mqtt_payload)
                 client.disconnect()
                 print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
-                # ACK 추적 등록 (asyncio 루프의 _ack_listener가 공유 dict를 감시)
+                # ACK 추적 + cooldown 등록
                 _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)
+                _device_cooldown[device_id] = _time.monotonic()
             except Exception as e:
                 print(f"[control][operator] MQTT 전송 실패: {e}")
 

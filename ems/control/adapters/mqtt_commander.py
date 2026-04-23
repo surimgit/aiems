@@ -17,7 +17,6 @@ _VERIFY_DELAY_SEC = 10.0   # ACK accepted 후 물리 결과 검증까지 대기
 class MqttCommander:
     def __init__(self, db: ControlDBWriter, event_pub: EventPublisher, pending_acks: dict | None = None):
         self._pub_client = None   # 명령 발행 전용
-        self._sub_client = None   # ACK 구독 전용
         self._db = db
         self._event_pub = event_pub
         self._redis = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -31,10 +30,6 @@ class MqttCommander:
         self._pub_client = aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT)
         await self._pub_client.__aenter__()
 
-        self._sub_client = aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT)
-        await self._sub_client.__aenter__()
-        await self._sub_client.subscribe(f"{SITE_ID}/+/+/ack")
-
         self._ack_task = asyncio.create_task(self._ack_listener())
         self._timeout_task = asyncio.create_task(self._timeout_checker())
         return self
@@ -44,7 +39,6 @@ class MqttCommander:
             self._ack_task.cancel()
         if self._timeout_task:
             self._timeout_task.cancel()
-        await self._sub_client.__aexit__(*args)
         await self._pub_client.__aexit__(*args)
         await self._redis.aclose()
 
@@ -61,12 +55,7 @@ class MqttCommander:
             "expires_in_sec": command.get("expires_in_sec", 30),
             "force": command.get("force", False),
         }
-        await self._pub_client.publish(topic, json.dumps(payload, ensure_ascii=False))
-        print(f"[control] → {topic} | {command['command_type']} {command['payload']} | {command['reason']}")
-
-        command["site_id"] = SITE_ID
-        await self._db.insert_command(command, command_id)
-
+        # publish 전에 먼저 등록 — ACK가 publish await 중에 먼저 들어오는 race condition 방지
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
 
         # desired_state 저장 — state-processor가 읽어서 State Snapshot에 반영
@@ -91,41 +80,56 @@ class MqttCommander:
             resource_type,
         )
 
-    async def _ack_listener(self) -> None:
-        try:
-            async for msg in self._sub_client.messages:
-                topic = str(msg.topic)
-                if not topic.endswith("/ack"):
-                    continue
-                try:
-                    data = json.loads(msg.payload)
-                    command_id = data.get("command_id")
-                    status = data.get("status", "unknown")
-                    reason = data.get("reason", "")
-                    if command_id and command_id in self._pending_acks:
-                        _, device_id, resource_type = self._pending_acks.pop(command_id)
-                        ack_label = f"{status}" + (f" ({reason})" if reason else "")
-                        print(f"[control][ack] {device_id} | {command_id[:8]}... | {ack_label}")
-                        await self._db.update_ack(command_id, status.upper())
+        await self._pub_client.publish(topic, json.dumps(payload, ensure_ascii=False))
+        print(f"[control] → {topic} | {command['command_type']} {command['payload']} | {command['reason']} | cmd={command_id[:8]}")
 
-                        if status.upper() == "ACCEPTED":
-                            verify_info = self._pending_verify.pop(command_id, None)
-                            if verify_info:
-                                # rule 명령: _pending_verify에 등록된 경우
-                                asyncio.create_task(
-                                    self._verify_after_delay(command_id, *verify_info)
-                                )
-                            else:
-                                # operator 명령: command_type/payload를 DB에서 조회해 검증
-                                asyncio.create_task(
-                                    self._verify_from_db(command_id, device_id, resource_type)
-                                )
-                        else:
-                            self._pending_verify.pop(command_id, None)
-                except Exception:
-                    continue
-        except asyncio.CancelledError:
-            pass
+        command["site_id"] = SITE_ID
+        await self._db.insert_command(command, command_id)
+
+    async def _ack_listener(self) -> None:
+        _RECONNECT_DELAY = 5
+        while True:
+            try:
+                async with aiomqtt.Client(
+                    hostname=MQTT_HOST,
+                    port=MQTT_PORT,
+                ) as sub:
+                    await sub.subscribe(f"{SITE_ID}/+/+/ack", qos=1)
+                    print("[control][ack] ACK 구독 시작")
+                    async for msg in sub.messages:
+                        topic = str(msg.topic)
+                        if not topic.endswith("/ack"):
+                            continue
+                        try:
+                            data = json.loads(msg.payload)
+                            command_id = data.get("command_id")
+                            status = data.get("status", "unknown")
+                            reason = data.get("reason", "")
+                            if command_id and command_id in self._pending_acks:
+                                _, device_id, resource_type = self._pending_acks.pop(command_id)
+                                ack_label = f"{status}" + (f" ({reason})" if reason else "")
+                                print(f"[control][ack] {device_id} | {command_id[:8]}... | {ack_label}")
+                                await self._db.update_ack(command_id, status.upper())
+
+                                if status.upper() == "ACCEPTED":
+                                    verify_info = self._pending_verify.pop(command_id, None)
+                                    if verify_info:
+                                        asyncio.create_task(
+                                            self._verify_after_delay(command_id, *verify_info)
+                                        )
+                                    else:
+                                        asyncio.create_task(
+                                            self._verify_from_db(command_id, device_id, resource_type)
+                                        )
+                                else:
+                                    self._pending_verify.pop(command_id, None)
+                        except Exception:
+                            continue
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                print(f"[control][ack] 구독 연결 끊김: {e} — {_RECONNECT_DELAY}s 후 재연결")
+                await asyncio.sleep(_RECONNECT_DELAY)
 
     async def _verify_from_db(
         self,
@@ -201,38 +205,37 @@ class MqttCommander:
 
 def _check_physical_result(command_type: str, payload: dict, state: dict) -> bool:
     """명령 의도가 현재 Redis state에 반영됐는지 휴리스틱 검증."""
+    rs = state.get("reported_state") or {}
+    p = rs.get("P") or 0
+
     if command_type == "ess_mode":
         mode = payload.get("mode")
-        if mode == "charging":
-            return (state.get("P") or 0) < 0       # 충전 중 → P < 0
-        if mode == "discharging":
-            return (state.get("P") or 0) > 0       # 방전 중 → P > 0
+        current_mode = (rs.get("operating_mode") or "").lower()
+        if mode in ("charge", "charging"):
+            return current_mode in ("charge", "charging") or p < -0.5
+        if mode in ("discharge", "discharging"):
+            return current_mode in ("discharge", "discharging") or p > 0.5
         if mode == "standby":
-            return abs(state.get("P") or 0) < 1.0  # 대기 중 → |P| ≈ 0
+            return current_mode == "standby" or abs(p) < 1.0
 
     if command_type == "diesel_command":
         action = payload.get("action")
+        operating_mode = rs.get("operating_mode") or ""
         if action == "start":
-            return state.get("operating_mode") in ("running", "RUNNING")
+            return operating_mode.lower() in ("running",)
         if action == "stop":
-            return state.get("operating_mode") in ("stopped", "STOPPED", "idle", "IDLE")
+            return operating_mode.lower() in ("stopped", "idle")
 
     if command_type == "load_shed":
-        # reduction_ratio가 0보다 크면 실제 P가 줄었어야 함
-        # 정확한 이전값이 없으므로 ratio > 0.5 이상이면 P가 절반 이하여야 한다고 가정
-        ratio = payload.get("reduction_ratio", 0)
-        if ratio >= 1.0:
-            return abs(state.get("P") or 0) < 1.0
-        # 부분 차단은 P값 변화를 사전값 없이 검증 불가 → 낙관적으로 True
+        # 이전 P값 없이 정확한 검증 불가 (minimum_load_ratio 등 시뮬레이터 특성 변수 있음)
+        # ACK accepted 자체를 성공으로 간주 → 낙관적 True
         return True
 
     if command_type == "set_curtailment":
         target = payload.get("curtailment_ratio", 1.0)
-        p = state.get("P") or 0
-        rated = state.get("rated_power") or p
+        rated = rs.get("rated_power") or p
         if rated > 0:
-            actual_ratio = p / rated
-            return actual_ratio <= target + 0.1  # ±10% 허용
+            return (p / rated) <= target + 0.1
 
-    # 알 수 없는 명령 타입 → 검증 건너뜀 (낙관적 True)
+    # 알 수 없는 명령 타입 → 낙관적 True
     return True
