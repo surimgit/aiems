@@ -19,6 +19,35 @@ class ControlDBWriter:
         if self._pool:
             await self._pool.close()
 
+    async def get_command(self, command_id: str) -> tuple | None:
+        """(command_type, payload) 반환. 없으면 None."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT command_type, payload FROM control_history WHERE command_id = $1::uuid",
+                command_id,
+            )
+        if not row:
+            return None
+        return row["command_type"], row["payload"]
+
+    async def mark_verified(self, command_id: str, verified: bool) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE control_history SET verified = $1 WHERE command_id = $2::uuid",
+                verified, command_id,
+            )
+
+    async def update_ack(self, command_id: str, status: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE control_history
+                SET ack_status = $1, ack_time = NOW()
+                WHERE command_id = $2::uuid
+                """,
+                status, command_id,
+            )
+
     async def insert_command(self, command: dict, command_id: str) -> None:
         async with self._pool.acquire() as conn:
             await conn.execute(

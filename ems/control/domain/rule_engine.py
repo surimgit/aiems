@@ -16,9 +16,12 @@ def run(states: dict, policy) -> tuple[list[dict], list[dict]]:
     candidates.extend(diesel.evaluate(flow, policy, states))
     candidates.extend(solar.evaluate(flow, policy, states))
     candidates.extend(load.evaluate(flow, policy, states))
-    commands = _resolve(candidates)
 
-    events = safety.evaluate(flow, states, policy)
+    events, failsafe_commands = safety.evaluate(flow, states, policy)
+
+    # fail-safe 명령은 priority=100으로 일반 후보보다 항상 우선
+    candidates.extend(failsafe_commands)
+    commands = _resolve(candidates)
 
     return commands, events
 

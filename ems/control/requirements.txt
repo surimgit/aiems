@@ -7,3 +7,4 @@ flask-smorest==0.45.0
 marshmallow==3.26.1
 psycopg2-binary==2.9.10
 gunicorn==21.2.0
+paho-mqtt==2.1.0

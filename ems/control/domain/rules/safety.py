@@ -1,6 +1,7 @@
-"""이상 감지 룰. 명령이 아닌 이벤트를 반환한다.
+"""이상 감지 룰. 이벤트와 fail-safe 명령을 반환한다.
 
 설계문서 §4.6 기준. 감지된 이상은 EventPublisher가 Redis stream에 발행한다.
+STATE_TTL 초과 장치는 이벤트 발행과 함께 standby 명령도 반환한다.
 """
 
 from datetime import datetime, timezone
@@ -16,10 +17,16 @@ _DEFICIT_THRESHOLD = 3      # 연속 N회
 _DEFICIT_KW = -50.0         # 기준값 kW
 
 
-def evaluate(flow: dict, states: dict, policy) -> list[dict]:
+def evaluate(flow: dict, states: dict, policy) -> tuple[list[dict], list[dict]]:
+    """(events, failsafe_commands) 튜플 반환.
+
+    events: 이상 감지 이벤트 — EventPublisher가 Redis stream에 발행
+    failsafe_commands: TTL 초과 장치에 대한 standby 강제 명령 — priority=100으로 자동 제어 override
+    """
     global _deficit_count
 
     events = []
+    failsafe_commands = []
     now = datetime.now(timezone.utc)
 
     soc_low = policy.get("SOC_LOW")
@@ -108,7 +115,7 @@ def evaluate(flow: dict, states: dict, policy) -> list[dict]:
     else:
         _alerted.discard("system:EVT-N-003")
 
-    # STATE_TTL 초과 디바이스 감지
+    # STATE_TTL 초과 디바이스 감지 + fail-safe standby 명령
     if state_ttl:
         for device_id, state in states.items():
             calculated_at = state.get("calculated_at")
@@ -118,22 +125,26 @@ def evaluate(flow: dict, states: dict, policy) -> list[dict]:
                 ts = datetime.fromisoformat(calculated_at)
                 age = (now - ts).total_seconds()
                 key = f"{device_id}:EVT-N-004"
+                resource_type = state.get("resource_type", "unknown").lower()
                 if age > state_ttl:
                     if key not in _alerted:
                         _alerted.add(key)
                         events.append(_evt(
-                            device_id,
-                            state.get("resource_type", "unknown").lower(),
-                            "EVT-N-004", "WARNING",
+                            device_id, resource_type, "EVT-N-004", "WARNING",
                             f"STATE_TTL 초과: {device_id} 마지막 갱신 {age:.0f}초 전",
                             {"age_seconds": round(age)},
                         ))
+                    # TTL 초과 장치는 상태를 알 수 없으므로 standby 강제 진입
+                    if resource_type == "ess":
+                        failsafe_commands.append(_failsafe_standby(device_id, resource_type, age))
+                    elif resource_type == "diesel":
+                        failsafe_commands.append(_failsafe_stop(device_id, resource_type, age))
                 else:
                     _alerted.discard(key)
             except Exception:
                 continue
 
-    return events
+    return events, failsafe_commands
 
 
 def _evt(device_id: str, resource_type: str, event_type: str,
@@ -145,4 +156,26 @@ def _evt(device_id: str, resource_type: str, event_type: str,
         "severity": severity,
         "message": message,
         "payload": payload,
+    }
+
+
+def _failsafe_standby(device_id: str, resource_type: str, age: float) -> dict:
+    return {
+        "device_id": device_id,
+        "resource_type": resource_type,
+        "command_type": "ess_mode",
+        "payload": {"mode": "standby", "target_power_kw": 0.0},
+        "reason": f"fail-safe: STATE_TTL 초과 {age:.0f}초, 상태 불명으로 standby 강제 진입",
+        "priority": PRIORITY,
+    }
+
+
+def _failsafe_stop(device_id: str, resource_type: str, age: float) -> dict:
+    return {
+        "device_id": device_id,
+        "resource_type": resource_type,
+        "command_type": "stop",
+        "payload": {},
+        "reason": f"fail-safe: STATE_TTL 초과 {age:.0f}초, 상태 불명으로 정지 명령",
+        "priority": PRIORITY,
     }
