@@ -22,6 +22,11 @@
 # PLANT_ID / DEVICE_IDS 환경변수만 다르게 설정하면 됩니다.
 # ================================================================
 
+# EMS 네트워크 외부 참조 (EMS docker-compose의 mosquitto 공유)
+networks:
+  ems_default:
+    external: true
+
 services:
 
   # ----------------------------------------------------------------
@@ -31,8 +36,7 @@ services:
   mqtt-broker:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-broker
-    ports:
-      - "1883:1883"   # 외부 MQTT 클라이언트 접속용 (MQTTX 등)
+    # 포트 노출 제거: EMS mosquitto가 1883을 이미 사용 중
 
     command: >
       sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
@@ -80,10 +84,12 @@ services:
       - solar
       - all
     environment:
-      - MQTT_HOST=mqtt-broker
+      - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
       - PLANT_ID=PLANT-ALPHA
       - DEVICE_IDS=solar-01,solar-02   # ← 여기서 장치 수/ID 결정
+    networks:
+      - ems_default
     depends_on:
       mqtt-broker:
         condition: service_healthy
@@ -108,10 +114,12 @@ services:
       - diesel
       - all
     environment:
-      - MQTT_HOST=mqtt-broker
+      - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
       - PLANT_ID=PLANT-ALPHA
       - DEVICE_IDS=diesel-01           # ← 여기서 장치 수/ID 결정
+    networks:
+      - ems_default
 
   # ================================================================
   # ESS SIMULATOR (에너지 저장 장치 시뮬레이터)
@@ -123,6 +131,8 @@ services:
     container_name: ess-simulator
     restart: always
     command: ["python", "main.py", "--no-cli", "--config", "/app/config/devices.docker.yaml"]
+    networks:
+      - ems_default
     depends_on:
       mqtt-broker:
         condition: service_healthy
@@ -142,6 +152,8 @@ services:
         "--scenario",
         "/app/config/scenario.yaml"
       ]
+    networks:
+      - ems_default
     depends_on:
       mqtt-broker:
         condition: service_healthy
