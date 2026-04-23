@@ -12,6 +12,8 @@ from config import (
     REDIS_HOST, REDIS_PORT, SITE_ID,
 )
 
+_KNOWN_SITES = [SITE_ID]
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -70,7 +72,47 @@ def _register_routes(app: Flask) -> None:
             _redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
         return _redis_client
 
+    def _get_site_states(site_id: str) -> list[dict]:
+        r = get_redis()
+        keys = r.keys(f"state:{site_id}:*")
+        if not keys:
+            return []
+        return [json.loads(v) for v in r.mget(*keys) if v]
+
     # ── Schemas ───────────────────────────────────────────────────────────────
+
+    class PlantSchema(Schema):
+        site_id = fields.String()
+
+    class PlantSummarySchema(Schema):
+        site_id = fields.String()
+        timestamp = fields.String()
+        net_power_kw = fields.Float()
+        pv_power_kw = fields.Float()
+        ess_power_kw = fields.Float()
+        load_power_kw = fields.Float()
+        diesel_power_kw = fields.Float()
+        ess_soc_avg = fields.Float(allow_none=True)
+
+    class DeviceStateSchema(Schema):
+        device_id = fields.String()
+        site_id = fields.String()
+        resource_type = fields.String()
+        timestamp = fields.String()
+        P = fields.Float(allow_none=True)
+        SOC = fields.Float(allow_none=True)
+        operating_mode = fields.String(allow_none=True)
+        comms_health = fields.String(allow_none=True)
+
+    class EventLogSchema(Schema):
+        time = fields.DateTime()
+        site_id = fields.String()
+        device_id = fields.String()
+        resource_type = fields.String()
+        event_type = fields.String()
+        severity = fields.String()
+        message = fields.String()
+        payload = fields.Dict()
 
     class SensorDataSchema(Schema):
         time = fields.DateTime()
@@ -87,37 +129,155 @@ def _register_routes(app: Flask) -> None:
         soc = fields.Float(allow_none=True)
         sample_count = fields.Integer()
 
-    class DeviceStateSchema(Schema):
-        device_id = fields.String()
-        site_id = fields.String()
-        resource_type = fields.String()
-        timestamp = fields.String()
-        reported_state = fields.Dict()
-
-    class EventLogSchema(Schema):
-        time = fields.DateTime()
-        site_id = fields.String()
-        device_id = fields.String()
-        resource_type = fields.String()
-        event_type = fields.String()
-        severity = fields.String()
-        message = fields.String()
-        payload = fields.Dict()
-
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
     blp = Blueprint("state", "state", url_prefix="/api")
 
-    @blp.route("/sensor/recent")
-    class SensorRecentResource(MethodView):
-        @blp.response(200, SensorDataSchema(many=True))
+    # ── Plant 목록 ─────────────────────────────────────────────────────────────
+
+    @blp.route("/plants")
+    class PlantListResource(MethodView):
+        @blp.response(200, PlantSchema(many=True))
         def get(self):
+            """등록된 Plant 목록 조회"""
+            return [{"site_id": s} for s in _KNOWN_SITES]
+
+    # ── Plant 요약 (net_power, pv, ess, load) ────────────────────────────────
+
+    @blp.route("/plants/<string:site_id>/summary")
+    class PlantSummaryResource(MethodView):
+        @blp.response(200, PlantSummarySchema)
+        def get(self, site_id):
+            """Plant 전력 흐름 요약 — 대시보드 상단 숫자"""
+            states = _get_site_states(site_id)
+
+            pv_power = 0.0
+            ess_power = 0.0
+            load_power = 0.0
+            diesel_power = 0.0
+            ess_soc_list = []
+            latest_ts = None
+
+            for s in states:
+                rs = s.get("reported_state") or {}
+                p = rs.get("P") or 0.0
+                rt = (s.get("resource_type") or "").upper()
+                ts = s.get("calculated_at") or s.get("timestamp")
+                if ts and (latest_ts is None or ts > latest_ts):
+                    latest_ts = ts
+
+                if rt == "SOLAR":
+                    pv_power += p
+                elif rt == "ESS":
+                    ess_power += p
+                    soc = rs.get("SOC")
+                    if soc is not None:
+                        ess_soc_list.append(soc)
+                elif rt == "LOAD":
+                    load_power += abs(p)
+                elif rt == "DIESEL":
+                    diesel_power += p
+
+            net_power = pv_power + ess_power + diesel_power - load_power
+            ess_soc_avg = round(sum(ess_soc_list) / len(ess_soc_list), 2) if ess_soc_list else None
+
+            return {
+                "site_id": site_id,
+                "timestamp": latest_ts,
+                "net_power_kw": round(net_power, 2),
+                "pv_power_kw": round(pv_power, 2),
+                "ess_power_kw": round(ess_power, 2),
+                "load_power_kw": round(load_power, 2),
+                "diesel_power_kw": round(diesel_power, 2),
+                "ess_soc_avg": ess_soc_avg,
+            }
+
+    # ── 실시간 디바이스 상태 ────────────────────────────────────────────────
+
+    @blp.route("/plants/<string:site_id>/state")
+    class PlantStateResource(MethodView):
+        @blp.response(200, DeviceStateSchema(many=True))
+        def get(self, site_id):
+            """Plant 내 전체 디바이스 최신 상태 (Redis)"""
+            resource_type = request.args.get("resource_type")
+            states = _get_site_states(site_id)
+            if resource_type:
+                states = [s for s in states if (s.get("resource_type") or "").upper() == resource_type.upper()]
+            return [
+                {
+                    "device_id": s.get("device_id"),
+                    "site_id": s.get("site_id"),
+                    "resource_type": s.get("resource_type"),
+                    "timestamp": s.get("calculated_at") or s.get("timestamp"),
+                    "P": (s.get("reported_state") or {}).get("P"),
+                    "SOC": (s.get("reported_state") or {}).get("SOC"),
+                    "operating_mode": (s.get("reported_state") or {}).get("operating_mode"),
+                    "comms_health": s.get("comms_health"),
+                }
+                for s in states
+            ]
+
+    # ── 이벤트 로그 ────────────────────────────────────────────────────────────
+
+    @blp.route("/plants/<string:site_id>/events")
+    class PlantEventResource(MethodView):
+        @blp.response(200, EventLogSchema(many=True))
+        def get(self, site_id):
+            """Plant 이벤트 로그 조회"""
+            device_id = request.args.get("device_id")
+            severity = request.args.get("severity")
+            limit = min(int(request.args.get("limit", 100)), 1000)
+
+            filters = ["site_id = %s"]
+            params = [site_id]
+            if device_id:
+                filters.append("device_id = %s")
+                params.append(device_id)
+            if severity:
+                filters.append("severity = %s")
+                params.append(severity.upper())
+
+            params.append(limit)
+            pool = get_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT time, site_id, device_id, resource_type,
+                               event_type, severity, message, payload
+                        FROM event_log
+                        WHERE {" AND ".join(filters)}
+                        ORDER BY time DESC LIMIT %s
+                        """,
+                        params,
+                    )
+                    rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
+
+            return [
+                {
+                    "time": r[0], "site_id": r[1], "device_id": r[2], "resource_type": r[3],
+                    "event_type": r[4], "severity": r[5], "message": r[6],
+                    "payload": r[7] if isinstance(r[7], dict) else json.loads(r[7] or "{}"),
+                }
+                for r in rows
+            ]
+
+    # ── 센서 시계열 (차트용) ──────────────────────────────────────────────────
+
+    @blp.route("/plants/<string:site_id>/sensors")
+    class PlantSensorResource(MethodView):
+        @blp.response(200, SensorDataSchema(many=True))
+        def get(self, site_id):
+            """센서 시계열 데이터 조회 (TimescaleDB)"""
             device_id = request.args.get("device_id")
             resource_type = request.args.get("resource_type")
             limit = min(int(request.args.get("limit", 100)), 1000)
 
-            filters = []
-            params = []
+            filters = ["site_id = %s"]
+            params = [site_id]
             if device_id:
                 filters.append("device_id = %s")
                 params.append(device_id)
@@ -125,9 +285,7 @@ def _register_routes(app: Flask) -> None:
                 filters.append("resource_type = %s")
                 params.append(resource_type.upper())
 
-            where = ("WHERE " + " AND ".join(filters)) if filters else ""
             params.append(limit)
-
             pool = get_db_pool()
             conn = pool.getconn()
             try:
@@ -137,7 +295,7 @@ def _register_routes(app: Flask) -> None:
                         SELECT time, site_id, device_id, resource_type,
                                p_avg, p_max, p_min, q_avg, v_avg, f_avg, pf_avg, soc, sample_count
                         FROM sensor_data
-                        {where}
+                        WHERE {" AND ".join(filters)}
                         ORDER BY time DESC LIMIT %s
                         """,
                         params,
@@ -152,70 +310,6 @@ def _register_routes(app: Flask) -> None:
                     "p_avg": r[4], "p_max": r[5], "p_min": r[6],
                     "q_avg": r[7], "v_avg": r[8], "f_avg": r[9], "pf_avg": r[10],
                     "soc": r[11], "sample_count": r[12],
-                }
-                for r in rows
-            ]
-
-    @blp.route("/devices")
-    class DeviceListResource(MethodView):
-        @blp.response(200, DeviceStateSchema(many=True))
-        def get(self):
-            r = get_redis()
-            keys = r.keys(f"state:{SITE_ID}:*")
-            if not keys:
-                return []
-
-            values = r.mget(*keys)
-            result = []
-            for value in values:
-                if value:
-                    state = json.loads(value)
-                    result.append(state)
-            return result
-
-    @blp.route("/events")
-    class EventListResource(MethodView):
-        @blp.response(200, EventLogSchema(many=True))
-        def get(self):
-            device_id = request.args.get("device_id")
-            severity = request.args.get("severity")
-            limit = min(int(request.args.get("limit", 100)), 1000)
-
-            filters = []
-            params = []
-            if device_id:
-                filters.append("device_id = %s")
-                params.append(device_id)
-            if severity:
-                filters.append("severity = %s")
-                params.append(severity.upper())
-
-            where = ("WHERE " + " AND ".join(filters)) if filters else ""
-            params.append(limit)
-
-            pool = get_db_pool()
-            conn = pool.getconn()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f"""
-                        SELECT time, site_id, device_id, resource_type,
-                               event_type, severity, message, payload
-                        FROM event_log
-                        {where}
-                        ORDER BY time DESC LIMIT %s
-                        """,
-                        params,
-                    )
-                    rows = cur.fetchall()
-            finally:
-                pool.putconn(conn)
-
-            return [
-                {
-                    "time": r[0], "site_id": r[1], "device_id": r[2], "resource_type": r[3],
-                    "event_type": r[4], "severity": r[5], "message": r[6],
-                    "payload": r[7] if isinstance(r[7], dict) else json.loads(r[7] or "{}"),
                 }
                 for r in rows
             ]
