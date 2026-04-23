@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS control_history (
     reason          TEXT,                      -- 판단 사유
     issued_by       VARCHAR(32)     NOT NULL DEFAULT 'rule',  -- rule / operator / ai
     ack_status      VARCHAR(16)     DEFAULT 'pending',        -- pending / accepted / rejected / timeout
-    ack_time        TIMESTAMPTZ
+    ack_time        TIMESTAMPTZ,
+    verified        BOOLEAN         DEFAULT NULL              -- NULL=미검증, TRUE=물리반영, FALSE=미반영
 );
 
 SELECT create_hypertable('control_history', 'time', if_not_exists => TRUE);
@@ -138,5 +139,6 @@ INSERT INTO control_policy (key, value, unit, description) VALUES
     ('BATTERY_TEMP_MAX',        45,     '°C',   'ESS 배터리 온도 상한'),
     ('COOLANT_TEMP_MAX',        95,     '°C',   '디젤 냉각수 온도 상한'),
     ('GRID_FREQ_MIN',           58,     'Hz',   '계통 주파수 하한'),
-    ('GRID_FREQ_MAX',           62,     'Hz',   '계통 주파수 상한')
+    ('GRID_FREQ_MAX',           62,     'Hz',   '계통 주파수 상한'),
+    ('LOAD_SHED_DEFAULT_PRIORITY', 3,  '',     '부하 등급 기본값 (1=필수/2=중요/3=일반/4=지연가능)')
 ON CONFLICT (key) DO NOTHING;
