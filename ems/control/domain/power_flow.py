@@ -26,6 +26,7 @@ def compute(states: dict) -> dict:
                 "P": p,
                 "SOC": reported.get("SOC"),
                 "mode": reported.get("operating_mode", "standby"),
+                "power_limit_kw": reported.get("power_limit_kw"),
             })
         elif resource_type == "DIESEL":
             diesel_p += p
@@ -33,6 +34,9 @@ def compute(states: dict) -> dict:
                 "device_id": device_id,
                 "P": p,
                 "fuel_percent": reported.get("fuel_level_percent"),
+                "operating_mode": reported.get("operating_mode", ""),
+                "coolant_temp": reported.get("coolant_temp"),
+                "rpm": reported.get("rpm"),
             })
 
     # net_power: 공급 - 수요. 양수 = 잉여, 음수 = 부족.

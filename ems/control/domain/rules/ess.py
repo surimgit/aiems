@@ -9,10 +9,14 @@ PRIORITY = 50
 # 충방전 전환 시 진동 방지용 SOC 여유값 (%)
 SOC_HYSTERESIS = 5.0
 
+# ESS 정격 기본값 — telemetry에 power_limit_kw 없을 때 fallback
+_ESS_POWER_LIMIT_DEFAULT_KW = 50.0
+
 
 def evaluate(flow: dict, policy) -> list[dict]:
     soc_low = policy.get("SOC_LOW")
     soc_high = policy.get("SOC_HIGH")
+    policy_limit = policy.get("ESS_POWER_LIMIT_KW") or _ESS_POWER_LIMIT_DEFAULT_KW
 
     ess_devices = flow["ess_devices"]
     if not ess_devices:
@@ -27,23 +31,23 @@ def evaluate(flow: dict, policy) -> list[dict]:
         if soc is None:
             continue
         mode = ess["mode"]
-        share = round(abs(external_net) / len(ess_devices), 1)
+
+        # 장치별 정격 — telemetry에 있으면 우선, 없으면 policy 기본값
+        device_limit = ess.get("power_limit_kw") or policy_limit
+        raw_share = abs(external_net) / len(ess_devices)
+        share = round(min(raw_share, device_limit), 1)
 
         if external_net < 0:
-            # 외부 부족 → 방전 검토
-            discharge_start = soc_low + SOC_HYSTERESIS  # 새로 시작할 때 여유 필요
+            discharge_start = soc_low + SOC_HYSTERESIS
             if mode == "discharge":
-                # 이미 방전 중이면 SOC_LOW까지 계속
                 if soc <= soc_low:
                     commands.append(_cmd(ess, "standby", 0.0, external_net, soc))
             else:
                 if soc > discharge_start:
                     commands.append(_cmd(ess, "discharge", share, external_net, soc))
         elif external_net > 0:
-            # 외부 잉여 → 충전 검토
             charge_start = soc_high - SOC_HYSTERESIS
             if mode == "charge":
-                # 이미 충전 중이면 SOC_HIGH까지 계속
                 if soc >= soc_high:
                     commands.append(_cmd(ess, "standby", 0.0, external_net, soc))
             else:

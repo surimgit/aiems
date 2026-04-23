@@ -1,25 +1,20 @@
-"""Solar curtailment 룰. ESS가 충전 불가일 때 잉여 발전분만큼 출력 제한."""
+"""Solar curtailment 룰. ESS가 충전 불가일 때 잉여 발전분만큼 출력 제한.
+출력 제한 해제: net_power < 0 OR any(ESS.SOC < SOC_HIGH) 시 clear_curtailment 발행.
+"""
 
+PRIORITY = 20
 
-PRIORITY = 20  # ESS/Diesel보다 낮음. 극단 상황에서만 동작.
+# curtailment 발행 중인 장치 추적 — 해제 조건 판단에 사용
+_curtailed_devices: set[str] = set()
 
 
 def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     net_power = flow["net_power"]
     solar_p = flow["solar_p"]
-
-    # 잉여 없음 → 비동작
-    if net_power <= 0 or solar_p <= 0:
-        return []
-
     soc_high = policy.get("SOC_HIGH")
     ess_devices = flow["ess_devices"]
 
-    # 가용 ESS가 있고 모두 만충 상태가 아니면 ESS가 먼저 처리 → curtailment 비동작
-    if ess_devices:
-        any_can_charge = any((e["SOC"] or 0) < soc_high for e in ess_devices)
-        if any_can_charge:
-            return []
+    any_can_charge = any((e["SOC"] or 0) < soc_high for e in ess_devices) if ess_devices else False
 
     commands = []
     solar_targets = [
@@ -30,11 +25,31 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     if not solar_targets:
         return []
 
-    # 잉여분만큼 전체 solar 목표 출력을 깎는다. 대수로 균등 분배.
+    # --- 해제 조건: 부족 or ESS 충전 가능 ---
+    if net_power <= 0 or any_can_charge:
+        for device_id, _ in solar_targets:
+            if device_id in _curtailed_devices:
+                _curtailed_devices.discard(device_id)
+                commands.append({
+                    "device_id": device_id,
+                    "resource_type": "solar",
+                    "command_type": "clear_curtailment",
+                    "payload": {},
+                    "reason": f"net={net_power:.1f}kW or ESS can charge — curtailment 해제",
+                    "priority": PRIORITY,
+                })
+        return commands
+
+    # --- 제한 조건: 잉여 + ESS 만충 ---
+    # 가용 ESS가 있고 모두 만충이 아니면 ESS가 먼저 처리
+    if ess_devices and any_can_charge:
+        return []
+
     target_total_kw = max(solar_p - net_power, 0.0)
     per_device_limit = round(target_total_kw / len(solar_targets), 1)
 
-    for device_id, _state in solar_targets:
+    for device_id, _ in solar_targets:
+        _curtailed_devices.add(device_id)
         commands.append({
             "device_id": device_id,
             "resource_type": "solar",

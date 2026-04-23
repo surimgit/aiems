@@ -7,23 +7,31 @@ from .power_flow import compute as compute_flow
 from .rules import safety, ess, diesel, solar, load
 
 
-def run(states: dict, policy) -> tuple[list[dict], list[dict]]:
+async def run(states: dict, policy, event_pub) -> tuple[list[dict], list[dict]]:
     """(commands, events) 튜플 반환. commands는 장치 제어, events는 이상 감지."""
     flow = compute_flow(states)
 
     candidates: list[dict] = []
-    candidates.extend(ess.evaluate(flow, policy))
-    candidates.extend(diesel.evaluate(flow, policy, states))
-    candidates.extend(solar.evaluate(flow, policy, states))
-    candidates.extend(load.evaluate(flow, policy, states))
+    rule_events: list[dict] = []
 
-    events, failsafe_commands = safety.evaluate(flow, states, policy)
+    for result in [
+        ess.evaluate(flow, policy),
+        diesel.evaluate(flow, policy, states),
+        solar.evaluate(flow, policy, states),
+        load.evaluate(flow, policy, states),
+    ]:
+        for item in result:
+            if item.get("_is_event"):
+                rule_events.append(item)
+            else:
+                candidates.append(item)
 
-    # fail-safe 명령은 priority=100으로 일반 후보보다 항상 우선
+    safety_events, failsafe_commands = await safety.evaluate(flow, states, policy, event_pub)
+
     candidates.extend(failsafe_commands)
     commands = _resolve(candidates)
 
-    return commands, events
+    return commands, safety_events + rule_events
 
 
 def _resolve(candidates: list[dict]) -> list[dict]:

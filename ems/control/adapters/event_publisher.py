@@ -13,6 +13,11 @@ from config import (
 STREAM_NORMAL = "ems:normal"
 STREAM_EMERGENCY = "ems:emergency"
 
+# 알람 상태 Redis key prefix — 재시작해도 중복 발행 방지
+_ALERTED_PREFIX = "ems:alerted:"
+# 알람 TTL: 상태 지속 중 재발행 억제 시간 (초). 상태 회복 시 clear_alert()로 즉시 삭제.
+_ALERTED_TTL_SEC = 3600
+
 
 class EventPublisher:
     def __init__(self):
@@ -25,6 +30,18 @@ class EventPublisher:
             database=DB_NAME, user=DB_USER, password=DB_PASSWORD,
             min_size=1, max_size=3,
         )
+
+    async def is_alerted(self, alert_key: str) -> bool:
+        """Redis에 알람 키가 존재하면 이미 발행된 상태."""
+        return bool(await self._redis.exists(f"{_ALERTED_PREFIX}{alert_key}"))
+
+    async def set_alerted(self, alert_key: str) -> None:
+        """알람 발행 후 Redis에 키 등록 (TTL 설정)."""
+        await self._redis.setex(f"{_ALERTED_PREFIX}{alert_key}", _ALERTED_TTL_SEC, "1")
+
+    async def clear_alert(self, alert_key: str) -> None:
+        """상태 회복 시 Redis 알람 키 삭제 — 다음 위반 시 재발행 허용."""
+        await self._redis.delete(f"{_ALERTED_PREFIX}{alert_key}")
 
     async def publish(self, event: dict) -> None:
         severity = event.get("severity", "WARNING")
