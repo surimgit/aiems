@@ -114,6 +114,22 @@ def _register_routes(app: Flask) -> None:
         message = fields.String()
         payload = fields.Dict()
 
+    class AlarmSchema(Schema):
+        alarm_id = fields.String()
+        time = fields.DateTime()
+        site_id = fields.String()
+        device_id = fields.String()
+        resource_type = fields.String()
+        event_type = fields.String()
+        severity = fields.String()
+        message = fields.String()
+        acknowledged = fields.Boolean()
+        acked_at = fields.DateTime(allow_none=True)
+        acked_by = fields.String(allow_none=True)
+
+    class AlarmAckRequestSchema(Schema):
+        acked_by = fields.String(required=True)
+
     class SensorDataSchema(Schema):
         time = fields.DateTime()
         site_id = fields.String()
@@ -264,6 +280,93 @@ def _register_routes(app: Flask) -> None:
                 }
                 for r in rows
             ]
+
+    # ── 알람 ───────────────────────────────────────────────────────────────────
+
+    @blp.route("/plants/<string:site_id>/alarms")
+    class PlantAlarmListResource(MethodView):
+        @blp.response(200, AlarmSchema(many=True))
+        def get(self, site_id):
+            """알람 목록 조회 — WARNING 이상 이벤트. acknowledged 필터 지원"""
+            acknowledged = request.args.get("acknowledged")  # "true" / "false" / 미입력=전체
+            severity = request.args.get("severity")          # WARNING / CRITICAL / EMERGENCY
+            limit = min(int(request.args.get("limit", 100)), 1000)
+
+            filters = ["site_id = %s", "severity != 'INFO'"]
+            params = [site_id]
+            if acknowledged is not None:
+                filters.append("acknowledged = %s")
+                params.append(acknowledged.lower() == "true")
+            if severity:
+                filters.append("severity = %s")
+                params.append(severity.upper())
+
+            params.append(limit)
+            pool = get_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT alarm_id, time, site_id, device_id, resource_type,
+                               event_type, severity, message, acknowledged, acked_at, acked_by
+                        FROM event_log
+                        WHERE {" AND ".join(filters)}
+                        ORDER BY time DESC LIMIT %s
+                        """,
+                        params,
+                    )
+                    rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
+
+            return [
+                {
+                    "alarm_id": str(r[0]) if r[0] else None,
+                    "time": r[1], "site_id": r[2], "device_id": r[3],
+                    "resource_type": r[4], "event_type": r[5], "severity": r[6],
+                    "message": r[7], "acknowledged": r[8],
+                    "acked_at": r[9], "acked_by": r[10],
+                }
+                for r in rows
+            ]
+
+    @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>")
+    class PlantAlarmDetailResource(MethodView):
+        @blp.arguments(AlarmAckRequestSchema)
+        @blp.response(200, AlarmSchema)
+        def patch(self, body, site_id, alarm_id):
+            """알람 확인 처리 (acknowledged = true)"""
+            pool = get_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE event_log
+                        SET acknowledged = true, acked_at = NOW(), acked_by = %s
+                        WHERE alarm_id = %s::uuid AND site_id = %s
+                        RETURNING alarm_id, time, site_id, device_id, resource_type,
+                                  event_type, severity, message, acknowledged, acked_at, acked_by
+                        """,
+                        (body["acked_by"], alarm_id, site_id),
+                    )
+                    r = cur.fetchone()
+                conn.commit()
+            finally:
+                pool.putconn(conn)
+
+            if not r:
+                from flask import abort
+                abort(404)
+
+            return {
+                "alarm_id": str(r[0]) if r[0] else None,
+                "time": r[1], "site_id": r[2], "device_id": r[3],
+                "resource_type": r[4], "event_type": r[5], "severity": r[6],
+                "message": r[7], "acknowledged": r[8],
+                "acked_at": r[9], "acked_by": r[10],
+            }
 
     # ── 센서 시계열 (차트용) ──────────────────────────────────────────────────
 

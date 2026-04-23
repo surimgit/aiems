@@ -45,13 +45,18 @@ CREATE TABLE IF NOT EXISTS event_log (
     event_type      VARCHAR(64)     NOT NULL,  -- EVT-N-001, EVT-E-001 등
     severity        VARCHAR(16)     NOT NULL,  -- INFO / WARNING / CRITICAL / EMERGENCY
     message         TEXT,
-    payload         JSONB
+    payload         JSONB,
+    alarm_id        UUID            DEFAULT gen_random_uuid(),
+    acknowledged    BOOLEAN         DEFAULT false,
+    acked_at        TIMESTAMPTZ     DEFAULT NULL,
+    acked_by        VARCHAR(64)     DEFAULT NULL
 );
 
 SELECT create_hypertable('event_log', 'time', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_event_log_device   ON event_log (device_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_event_log_severity ON event_log (severity, time DESC);
+CREATE INDEX IF NOT EXISTS idx_event_log_alarm_id ON event_log (alarm_id);
 
 -- ============================================================
 -- 3. control_history
