@@ -12,10 +12,23 @@ from adapters.event_publisher import EventPublisher
 
 _ACK_TIMEOUT_SEC = 30.0
 _VERIFY_DELAY_SEC = 10.0   # ACK accepted 후 물리 결과 검증까지 대기
+_MAX_RETRIES = 3
+_RETRY_DELAY_SEC = 2.0
+
+# 명령 타입별 ACK 타임아웃 (초) — diesel 기동은 워밍업 시간 고려
+_ACK_TIMEOUT_BY_TYPE: dict[str, float] = {
+    "ess_mode": 30.0,
+    "diesel_command": 60.0,
+    "load_shed": 10.0,
+    "curtailment": 15.0,
+    "clear_curtailment": 15.0,
+    "diesel_load_control": 20.0,
+}
 
 
 class MqttCommander:
-    def __init__(self, db: ControlDBWriter, event_pub: EventPublisher, pending_acks: dict | None = None):
+    def __init__(self, db: ControlDBWriter, event_pub: EventPublisher,
+                 pending_acks: dict | None = None, device_cooldown: dict | None = None):
         self._pub_client = None   # 명령 발행 전용
         self._db = db
         self._event_pub = event_pub
@@ -23,6 +36,10 @@ class MqttCommander:
         self._pending_acks: dict[str, tuple[float, str, str]] = pending_acks if pending_acks is not None else {}
         # command_id → (command_type, payload_snapshot) for closed-loop check
         self._pending_verify: dict[str, tuple[str, dict, str, str]] = {}
+        # command_id → (retry_count, command_dict) — 재시도 추적
+        self._retry_counts: dict[str, tuple[int, dict]] = {}
+        # 외부 공유 cooldown dict — ACK 수신 시 즉시 해제
+        self._device_cooldown: dict[str, float] = device_cooldown if device_cooldown is not None else {}
         self._ack_task: asyncio.Task | None = None
         self._timeout_task: asyncio.Task | None = None
 
@@ -35,10 +52,13 @@ class MqttCommander:
         return self
 
     async def __aexit__(self, *args):
-        if self._ack_task:
-            self._ack_task.cancel()
-        if self._timeout_task:
-            self._timeout_task.cancel()
+        for task in (self._ack_task, self._timeout_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         await self._pub_client.__aexit__(*args)
         await self._redis.aclose()
 
@@ -46,17 +66,20 @@ class MqttCommander:
         device_id = command["device_id"]
         resource_type = command["resource_type"]
         command_id = str(uuid.uuid4())
+        command_type = command["command_type"]
         topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
+        timeout_sec = _ACK_TIMEOUT_BY_TYPE.get(command_type, _ACK_TIMEOUT_SEC)
         payload = {
             "command_id": command_id,
-            "command_type": command["command_type"],
+            "command_type": command_type,
             "payload": command["payload"],
             "source": command.get("issued_by", "rule"),
-            "expires_in_sec": command.get("expires_in_sec", 30),
+            "expires_in_sec": command.get("expires_in_sec", timeout_sec),
             "force": command.get("force", False),
         }
         # publish 전에 먼저 등록 — ACK가 publish await 중에 먼저 들어오는 race condition 방지
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
+        self._retry_counts[command_id] = (0, command)
 
         # desired_state 저장 — state-processor가 읽어서 State Snapshot에 반영
         desired = {
@@ -69,7 +92,7 @@ class MqttCommander:
         await self._redis.set(
             f"desired:{SITE_ID}:{device_id}",
             json.dumps(desired, ensure_ascii=False),
-            ex=300,  # 5분 TTL — 명령 반영 후 자연 만료
+            ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
         )
 
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
@@ -107,6 +130,9 @@ class MqttCommander:
                             reason = data.get("reason", "")
                             if command_id and command_id in self._pending_acks:
                                 _, device_id, resource_type = self._pending_acks.pop(command_id)
+                                self._retry_counts.pop(command_id, None)
+                                # ACK 수신 즉시 cooldown 해제 — 35초 무조건 대기 불필요
+                                self._device_cooldown.pop(device_id, None)
                                 ack_label = f"{status}" + (f" ({reason})" if reason else "")
                                 print(f"[control][ack] {device_id} | {command_id[:8]}... | {ack_label}")
                                 await self._db.update_ack(command_id, status.upper())
@@ -194,13 +220,57 @@ class MqttCommander:
             now = time.monotonic()
             expired = [
                 cid for cid, (sent_at, _, __) in self._pending_acks.items()
-                if now - sent_at > _ACK_TIMEOUT_SEC
+                if now - sent_at > _ACK_TIMEOUT_BY_TYPE.get(
+                    (self._retry_counts.get(cid, (0, {}))[1] or {}).get("command_type", ""),
+                    _ACK_TIMEOUT_SEC
+                )
             ]
             for command_id in expired:
-                _, device_id, _ = self._pending_acks.pop(command_id)
+                _, device_id, resource_type = self._pending_acks.pop(command_id)
                 self._pending_verify.pop(command_id, None)
-                print(f"[control][ack] TIMEOUT | {device_id} | {command_id[:8]}...")
-                await self._db.update_ack(command_id, "TIMEOUT")
+                retry_count, original_cmd = self._retry_counts.pop(command_id, (0, None))
+
+                if original_cmd and retry_count < _MAX_RETRIES:
+                    # 재시도: 새 command_id로 재발행
+                    await asyncio.sleep(_RETRY_DELAY_SEC)
+                    new_id = str(uuid.uuid4())
+                    new_retry = retry_count + 1
+                    print(f"[control][ack] TIMEOUT → 재시도 {new_retry}/{_MAX_RETRIES} | {device_id} | {command_id[:8]}...")
+                    self._pending_acks[new_id] = (time.monotonic(), device_id, resource_type)
+                    self._retry_counts[new_id] = (new_retry, original_cmd)
+                    self._pending_verify[new_id] = self._pending_verify.pop(command_id, (
+                        original_cmd.get("command_type", ""),
+                        original_cmd.get("payload", {}),
+                        device_id,
+                        resource_type,
+                    ))
+                    cmd_type = original_cmd["command_type"]
+                    topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
+                    retry_payload = {
+                        "command_id": new_id,
+                        "command_type": cmd_type,
+                        "payload": original_cmd["payload"],
+                        "source": original_cmd.get("issued_by", "rule"),
+                        "expires_in_sec": _ACK_TIMEOUT_BY_TYPE.get(cmd_type, _ACK_TIMEOUT_SEC),
+                        "force": original_cmd.get("force", False),
+                    }
+                    try:
+                        await self._pub_client.publish(topic, json.dumps(retry_payload, ensure_ascii=False))
+                        await self._db.update_ack(command_id, "TIMEOUT")
+                    except Exception as e:
+                        print(f"[control][ack] 재시도 발행 실패 | {device_id} | {e}")
+                else:
+                    # 최대 재시도 초과 → CRITICAL 이벤트 발행
+                    print(f"[control][ack] TIMEOUT 최종 실패 ({_MAX_RETRIES}회) | {device_id} | {command_id[:8]}...")
+                    await self._db.update_ack(command_id, "TIMEOUT")
+                    await self._event_pub.publish({
+                        "device_id": device_id,
+                        "resource_type": resource_type,
+                        "event_type": "EVT-E-005",
+                        "severity": "CRITICAL",
+                        "message": f"명령 전달 {_MAX_RETRIES}회 재시도 후 최종 실패: {device_id}",
+                        "payload": {"command_id": command_id, "retries": _MAX_RETRIES},
+                    })
 
 
 def _check_physical_result(command_type: str, payload: dict, state: dict) -> bool:

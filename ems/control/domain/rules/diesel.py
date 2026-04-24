@@ -2,19 +2,19 @@
 
 정지 조건: net_power > DIESEL_STOP_NET_POWER AND 운전 시간 >= DIESEL_MIN_RUN_SECONDS
 연료 위급은 최소 운전 시간 예외 (즉시 정지).
+
+운전 시작 시각을 Redis에 저장해 process restart 후에도 최소 운전 시간 보장.
 """
 
 import time as _time
 
 PRIORITY = 30  # ESS보다 낮음. ESS가 충분하면 diesel 안 켜짐.
 
-_DIESEL_MIN_RUN_SECONDS_DEFAULT = 300  # policy 미설정 시 기본값 5분
-
-# device_id → 운전 시작 monotonic timestamp
-_diesel_start_times: dict[str, float] = {}
+_DIESEL_MIN_RUN_SECONDS_DEFAULT = 300
+_REDIS_PREFIX = "ems:diesel:start:"
 
 
-def evaluate(flow: dict, policy, states: dict) -> list[dict]:
+async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     diesel_devices = flow["diesel_devices"]
     if not diesel_devices:
         return []
@@ -29,7 +29,7 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     )
 
     net_power = flow["net_power"]
-    now = _time.monotonic()
+    now = _time.time()
     commands = []
 
     for diesel in diesel_devices:
@@ -37,16 +37,19 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
         operating_mode = (diesel.get("operating_mode") or "").lower()
         running = operating_mode == "running" or (operating_mode == "" and (diesel["P"] or 0) > 0)
         fuel = diesel["fuel_percent"]
+        redis_key = f"{_REDIS_PREFIX}{device_id}"
 
-        # 운전 시작 시점 추적
-        if running and device_id not in _diesel_start_times:
-            _diesel_start_times[device_id] = now
-        elif not running and device_id in _diesel_start_times:
-            del _diesel_start_times[device_id]
+        # 운전 시작 시점 추적 (Redis)
+        if running:
+            if not await redis.exists(redis_key):
+                await redis.set(redis_key, str(now))
+        else:
+            await redis.delete(redis_key)
 
-        running_seconds = now - _diesel_start_times.get(device_id, now)
+        start_ts = await redis.get(redis_key)
+        running_seconds = (now - float(start_ts)) if start_ts else 0.0
 
-        # 1. 연료 위급 → 즉시 정지 (최소 운전 시간 예외)
+        # 1. 연료 위급 → 즉시 정지
         if running and fuel is not None and fuel <= fuel_critical:
             commands.append(_stop(diesel, f"fuel_critical={fuel}%"))
             continue
@@ -65,7 +68,7 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
                 print(f"[diesel] {device_id} 정지 보류: 최소 운전 시간 미달 ({running_seconds:.0f}s / {min_run_sec:.0f}s, {remaining:.0f}s 남음)")
             continue
 
-        # 4. 운전 중 + 부족 → 부족분 부하조정
+        # 4. 운전 중 + 부족 → 부하조정
         if running and net_power < 0:
             target_kw = round(abs(net_power) / len(diesel_devices), 1)
             commands.append(_load_control(diesel, target_kw, f"net={net_power:.1f}kW"))

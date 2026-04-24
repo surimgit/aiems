@@ -429,6 +429,24 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/health")
     def health():
+        errors = []
+        try:
+            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, socket_connect_timeout=2)
+            r.ping()
+            r.close()
+        except Exception as e:
+            errors.append(f"redis: {e}")
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+                user=DB_USER, password=DB_PASSWORD, connect_timeout=2,
+            )
+            conn.close()
+        except Exception as e:
+            errors.append(f"db: {e}")
+        if errors:
+            return jsonify({"status": "degraded", "errors": errors}), 503
         return jsonify({"status": "ok"})
 
 

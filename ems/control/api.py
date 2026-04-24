@@ -11,7 +11,7 @@ from flask.views import MethodView
 from flask_smorest import Api, Blueprint
 from marshmallow import Schema, fields, validate
 
-from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID
+from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID, REDIS_HOST, REDIS_PORT
 
 # operator 명령의 ACK 추적을 위해 asyncio 루프와 공유하는 pending dict
 # command_id → (sent_at, device_id, resource_type)
@@ -21,6 +21,19 @@ _shared_pending_acks: dict[str, tuple[float, str, str]] = {}
 # device_id → sent_at (cooldown 중인 장치 추적)
 _COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 길게
 _device_cooldown: dict[str, float] = {}
+
+# Operator 명령용 MQTT 싱글턴 — 매번 connect/disconnect 방지
+_operator_mqtt: mqtt_client.Client | None = None
+
+
+def _get_operator_mqtt() -> mqtt_client.Client:
+    global _operator_mqtt
+    if _operator_mqtt is None or not _operator_mqtt.is_connected():
+        client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        _operator_mqtt = client
+    return _operator_mqtt
 
 
 def create_app() -> Flask:
@@ -47,7 +60,7 @@ def _start_worker() -> None:
     from domain.rule_engine import run
     from config import CONTROL_INTERVAL_SECONDS
 
-    _POLICY_REFRESH_INTERVAL = 30
+    _POLICY_REFRESH_INTERVAL = 10
 
     def _should_send(cmd: dict, states: dict) -> bool:
         """3중 체크: cooldown → pending ACK → 현재 모드 비교."""
@@ -106,7 +119,7 @@ def _start_worker() -> None:
         refresh_task = asyncio.create_task(_refresh_policy_loop(policy))
 
         try:
-            async with MqttCommander(db, event_pub, _shared_pending_acks) as commander:
+            async with MqttCommander(db, event_pub, _shared_pending_acks, _device_cooldown) as commander:
                 while True:
                     try:
                         states = await reader.get_all()
@@ -287,10 +300,8 @@ def _register_routes(app: Flask) -> None:
                 "force": True,
             }, ensure_ascii=False)
             try:
-                client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
-                client.connect(MQTT_HOST, MQTT_PORT, keepalive=5)
+                client = _get_operator_mqtt()
                 client.publish(topic, mqtt_payload)
-                client.disconnect()
                 print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
                 # ACK 추적 + cooldown 등록
                 _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)
@@ -489,6 +500,27 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/health")
     def health():
+        errors = []
+        # Redis 연결 확인
+        try:
+            import redis as _redis
+            r = _redis.Redis(host=REDIS_HOST, port=REDIS_PORT, socket_connect_timeout=2)
+            r.ping()
+            r.close()
+        except Exception as e:
+            errors.append(f"redis: {e}")
+        # DB 연결 확인
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+                user=DB_USER, password=DB_PASSWORD, connect_timeout=2,
+            )
+            conn.close()
+        except Exception as e:
+            errors.append(f"db: {e}")
+        if errors:
+            return jsonify({"status": "degraded", "errors": errors}), 503
         return jsonify({"status": "ok"})
 
 
