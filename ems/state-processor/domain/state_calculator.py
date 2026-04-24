@@ -11,8 +11,10 @@ _KNOWN_TYPES = {"ESS", "SOLAR", "LOAD", "DIESEL"}
 def calculate(envelope: dict) -> dict:
     resource_type = envelope.get("resource_type", "").upper()
     if resource_type not in _KNOWN_TYPES:
+        print(f"[state_calculator] 알 수 없는 resource_type 무시: {resource_type!r} | resource_id={envelope.get('resource_id')}")
         return None
     if not envelope.get("resource_id"):
+        print(f"[state_calculator] resource_id 없는 envelope 무시: resource_type={resource_type}")
         return None
     payload = envelope.get("payload", {})
     instantaneous = payload.get("instantaneous", {})

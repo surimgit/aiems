@@ -11,7 +11,7 @@ from flask.views import MethodView
 from flask_smorest import Api, Blueprint
 from marshmallow import Schema, fields, validate
 
-from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID
+from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, MQTT_HOST, MQTT_PORT, SITE_ID, REDIS_HOST, REDIS_PORT
 
 # operator 명령의 ACK 추적을 위해 asyncio 루프와 공유하는 pending dict
 # command_id → (sent_at, device_id, resource_type)
@@ -500,6 +500,27 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/health")
     def health():
+        errors = []
+        # Redis 연결 확인
+        try:
+            import redis as _redis
+            r = _redis.Redis(host=REDIS_HOST, port=REDIS_PORT, socket_connect_timeout=2)
+            r.ping()
+            r.close()
+        except Exception as e:
+            errors.append(f"redis: {e}")
+        # DB 연결 확인
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
+                user=DB_USER, password=DB_PASSWORD, connect_timeout=2,
+            )
+            conn.close()
+        except Exception as e:
+            errors.append(f"db: {e}")
+        if errors:
+            return jsonify({"status": "degraded", "errors": errors}), 503
         return jsonify({"status": "ok"})
 
 

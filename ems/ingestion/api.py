@@ -2,6 +2,7 @@ import asyncio
 import threading
 
 from flask import Flask, jsonify
+from config import REDIS_HOST, REDIS_PORT
 
 
 def create_app() -> Flask:
@@ -9,6 +10,16 @@ def create_app() -> Flask:
 
     @app.route("/health")
     def health():
+        errors = []
+        try:
+            import redis as _redis
+            r = _redis.Redis(host=REDIS_HOST, port=REDIS_PORT, socket_connect_timeout=2)
+            r.ping()
+            r.close()
+        except Exception as e:
+            errors.append(f"redis: {e}")
+        if errors:
+            return jsonify({"status": "degraded", "errors": errors}), 503
         return jsonify({"status": "ok"})
 
     _start_worker()
