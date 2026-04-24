@@ -27,7 +27,6 @@ class Instantaneous(BaseModel):
 
 class Energy(BaseModel):
     kWh: float = 0.0    # 누적 발전량
-    kvarh: float = 0.0  # 누적 무효 에너지
 
 class FuelSystem(BaseModel):
     level_percent: float = 100.0  # 연료 잔량 (%)
