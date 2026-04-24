@@ -30,6 +30,11 @@ services:
       - timescaledb_data:/var/lib/postgresql/data
       - ./ems/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./ems/db/aggregation.sql:/docker-entrypoint-initdb.d/02-aggregation.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ems -d emsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   ingestion:
@@ -63,8 +68,10 @@ services:
       - DB_USER=ems
       - DB_PASSWORD=ems1234
     depends_on:
-      - redis
-      - timescaledb
+      redis:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
     restart: unless-stopped
 
   control:
@@ -84,9 +91,12 @@ services:
       - DB_USER=ems
       - DB_PASSWORD=ems1234
     depends_on:
-      - redis
-      - mosquitto
-      - timescaledb
+      redis:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
     restart: unless-stopped
 
 
