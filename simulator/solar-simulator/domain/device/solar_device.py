@@ -109,6 +109,10 @@ class SolarDevice:
                 result = "accepted"
             else:
                 reason = "MISSING_LIMIT_KW"
+
+        elif cmd_type == "clear_curtailment":
+            self.curtailment_limit_kw = float('inf')
+            result = "accepted"
         
         # 공통 명령어 처리
         elif cmd_type == "mode_change":

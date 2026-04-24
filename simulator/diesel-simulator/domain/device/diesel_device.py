@@ -198,4 +198,5 @@ class DieselDevice:
 
     def get_telemetry(self, current_time: datetime) -> DieselData:
         """현재 디바이스의 telemetry 데이터를 반환. Solar와 동일한 패턴."""
+        self.data.status.operating_mode = self.state.value.lower()
         return self.data
