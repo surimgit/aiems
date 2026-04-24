@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,38 @@ except Exception:
 EDGES_DIR = Path(__file__).parent / "edges"
 PORT = int(os.environ.get("PORT", 8080))
 STATIC_DIR = Path(__file__).parent / "static"
-DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "ems_default")
+DOCKER_NETWORK_NAME = os.environ.get("DOCKER_NETWORK", "ems_default")
+
+
+def _detect_real_network_name() -> str:
+    """
+    현재 컨테이너가 속한 실제 Docker 네트워크 이름을 감지합니다.
+    ems_default라는 이름이 포함된 네트워크가 있다면 최우선적으로 선택합니다.
+    """
+    if not DOCKER_AVAILABLE:
+        return DOCKER_NETWORK_NAME
+
+    try:
+        import socket
+        hostname = socket.gethostname()
+        container = _docker_client.containers.get(hostname)
+        networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if networks:
+            names = list(networks.keys())
+            # 1순위: 환경변수 혹은 기본값과 정확히 일치하는 이름
+            if DOCKER_NETWORK_NAME in names:
+                return DOCKER_NETWORK_NAME
+            # 2순위: ems_default 라는 문자열이 포함된 이름 (Docker Compose 접두사 고려)
+            for name in names:
+                if "ems_default" in name:
+                    print(f"[manager] detected prefixed network: {name}")
+                    return name
+            # 3순위: 그냥 첫 번째 네트워크
+            return names[0]
+    except Exception as e:
+        print(f"[manager] network auto-detect failed: {e}")
+    
+    return DOCKER_NETWORK_NAME
 
 
 def _detect_host_edges_path() -> str:
@@ -51,6 +83,7 @@ def _detect_host_edges_path() -> str:
 
 
 HOST_EDGES_PATH = _detect_host_edges_path()
+REAL_NETWORK_NAME = _detect_real_network_name()
 
 EDGE_TYPE_IMAGES = {
     "solar": os.environ.get("SOLAR_IMAGE", "solar-simulator:latest"),
@@ -148,7 +181,7 @@ def _start_container(edge_id: str, edge_type: str) -> None:
         name=edge_id,
         detach=True,
         volumes=volumes,
-        network=DOCKER_NETWORK,
+        network=REAL_NETWORK_NAME,
         restart_policy={"Name": "always"},
     )
     if cmd:
@@ -188,7 +221,7 @@ def create_edge(body: dict) -> dict:
     edge_id = body.get("edge_id", "").strip()
     edge_type = body.get("edge_type", "").strip()
     plant_id = body.get("plant_id", "PLANT-ALPHA").strip()
-    mqtt_host = body.get("mqtt_broker_host", "mosquitto").strip()
+    mqtt_host = body.get("mqtt_broker_host", "mqtt-broker").strip()
     mqtt_port = int(body.get("mqtt_broker_port", 1883))
 
     if not edge_id:
@@ -239,10 +272,20 @@ def create_edge(body: dict) -> dict:
 
 
 def delete_edge(edge_id: str) -> dict:
-    if not _edge_dir(edge_id).exists():
+    edge_path = _edge_dir(edge_id)
+    if not edge_path.exists():
         raise FileNotFoundError(f"Edge '{edge_id}' not found")
+    
     if DOCKER_AVAILABLE:
         _stop_container(edge_id)
+        
+    # 설정 디렉토리 삭제
+    try:
+        shutil.rmtree(edge_path)
+        print(f"[manager] deleted edge directory: {edge_path}")
+    except Exception as e:
+        print(f"[manager] failed to delete edge directory {edge_path}: {e}")
+        
     return {"edge_id": edge_id, "status": "deleted"}
 
 

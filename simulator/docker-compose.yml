@@ -48,6 +48,8 @@ services:
       interval: 2s
       timeout: 5s
       retries: 10
+    networks:
+      - ems_default
 
   # ----------------------------------------------------------------
   # MQTT 메시지 전체 로거 (디버깅용 - 항상 실행)
@@ -61,6 +63,8 @@ services:
       mqtt-broker:
         condition: service_healthy
     command: mosquitto_sub -h mqtt-broker -t "#" -v
+    networks:
+      - ems_default
 
   # ================================================================
   # SOLAR EDGE (태양광 시뮬레이터)
