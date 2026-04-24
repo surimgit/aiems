@@ -26,7 +26,7 @@ class DieselDevice:
         self.state_start_time = None
         
         # 물리적 특성 상수
-        self.STARTUP_TIME_SEC = 10
+        self.STARTUP_TIME_SEC = 30
         self.SHUTDOWN_TIME_SEC = 5
         self.FUEL_CONS_COEFF = 0.25 # 0.25 L per kWh
         self.IDLE_FUEL_LPH = 5.0     # 5 L per hour when idling
