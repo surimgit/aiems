@@ -9,7 +9,7 @@ class StateReader:
 
     async def get_all(self) -> dict:
         pattern = f"state:{SITE_ID}:*"
-        keys = await self._client.keys(pattern)
+        keys = [key async for key in self._client.scan_iter(pattern)]
         if not keys:
             return {}
 

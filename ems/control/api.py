@@ -22,6 +22,19 @@ _shared_pending_acks: dict[str, tuple[float, str, str]] = {}
 _COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 길게
 _device_cooldown: dict[str, float] = {}
 
+# Operator 명령용 MQTT 싱글턴 — 매번 connect/disconnect 방지
+_operator_mqtt: mqtt_client.Client | None = None
+
+
+def _get_operator_mqtt() -> mqtt_client.Client:
+    global _operator_mqtt
+    if _operator_mqtt is None or not _operator_mqtt.is_connected():
+        client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        _operator_mqtt = client
+    return _operator_mqtt
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -287,10 +300,8 @@ def _register_routes(app: Flask) -> None:
                 "force": True,
             }, ensure_ascii=False)
             try:
-                client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
-                client.connect(MQTT_HOST, MQTT_PORT, keepalive=5)
+                client = _get_operator_mqtt()
                 client.publish(topic, mqtt_payload)
-                client.disconnect()
                 print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
                 # ACK 추적 + cooldown 등록
                 _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)

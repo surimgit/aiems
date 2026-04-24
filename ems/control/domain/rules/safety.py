@@ -11,14 +11,13 @@ from datetime import datetime, timezone
 
 PRIORITY = 100
 
-# net_power 부족 연속 감지 카운터
-_deficit_count: int = 0
 _DEFICIT_THRESHOLD = 3
 _DEFICIT_KW = -50.0
 
-# Load/Solar 이상 감지를 위한 이전 P값 추적
-_prev_load_p: dict[str, float] = {}
-_prev_solar_p: dict[str, float] = {}
+# Redis 키
+_REDIS_DEFICIT_COUNT = "ems:safety:deficit_count"
+_REDIS_PREV_LOAD_P = "ems:safety:prev_load_p:"
+_REDIS_PREV_SOLAR_P = "ems:safety:prev_solar_p:"
 
 # Load 이상 감지 임계값
 _LOAD_SURGE_RATIO = 0.30     # 30% 이상 급증
@@ -41,8 +40,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
     events: 이상 감지 이벤트 — EventPublisher가 Redis stream에 발행
     failsafe_commands: TTL 초과 장치에 대한 standby 강제 명령 — priority=100으로 자동 제어 override
     """
-    global _deficit_count
-
+    redis = event_pub._redis
     events = []
     failsafe_commands = []
     now = datetime.now(timezone.utc)
@@ -154,7 +152,8 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
             continue
         reported = state.get("reported_state") or {}
         current_p = abs(reported.get("P") or 0.0)
-        prev_p = _prev_load_p.get(device_id)
+        prev_p_raw = await redis.get(f"{_REDIS_PREV_LOAD_P}{device_id}")
+        prev_p = float(prev_p_raw) if prev_p_raw else None
 
         if prev_p is not None and prev_p > 1.0:
             # 급증: 이전 대비 30% 이상 증가
@@ -197,7 +196,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
         else:
             await event_pub.clear_alert(f"{device_id}:EVT-N-010")
 
-        _prev_load_p[device_id] = current_p
+        await redis.set(f"{_REDIS_PREV_LOAD_P}{device_id}", str(current_p))
 
     # Solar 이상 감지 (주간 발전량 0, 급감)
     for device_id, state in states.items():
@@ -205,7 +204,8 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
             continue
         reported = state.get("reported_state") or {}
         current_p = reported.get("P") or 0.0
-        prev_p = _prev_solar_p.get(device_id)
+        prev_p_raw = await redis.get(f"{_REDIS_PREV_SOLAR_P}{device_id}")
+        prev_p = float(prev_p_raw) if prev_p_raw else None
 
         # 주간 발전량 0 감지 (낮 시간대인데 P = 0)
         is_daytime = _SOLAR_DAYTIME_HOURS[0] <= now.hour < _SOLAR_DAYTIME_HOURS[1]
@@ -235,22 +235,23 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
             else:
                 await event_pub.clear_alert(f"{device_id}:EVT-N-012")
 
-        _prev_solar_p[device_id] = current_p
+        await redis.set(f"{_REDIS_PREV_SOLAR_P}{device_id}", str(current_p))
 
     # net_power 연속 부족 감지
     if flow["net_power"] < _DEFICIT_KW:
-        _deficit_count += 1
+        deficit_count = await redis.incr(_REDIS_DEFICIT_COUNT)
     else:
-        _deficit_count = 0
+        await redis.set(_REDIS_DEFICIT_COUNT, 0)
+        deficit_count = 0
 
-    if _deficit_count >= _DEFICIT_THRESHOLD:
+    if deficit_count >= _DEFICIT_THRESHOLD:
         key = "system:EVT-N-003"
         if not await event_pub.is_alerted(key):
             await event_pub.set_alerted(key)
             events.append(_evt(
                 "system", "system", "EVT-N-003", "WARNING",
                 f"전력 부족 {_DEFICIT_THRESHOLD}회 연속: net={flow['net_power']:.1f}kW",
-                {"net_power": flow["net_power"], "count": _deficit_count},
+                {"net_power": flow["net_power"], "count": deficit_count},
             ))
     else:
         await event_pub.clear_alert("system:EVT-N-003")
@@ -281,7 +282,8 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                         failsafe_commands.append(_failsafe_stop(device_id, resource_type, age))
                 else:
                     await event_pub.clear_alert(key)
-            except Exception:
+            except Exception as e:
+                print(f"[safety] STATE_TTL 처리 오류 | {device_id} | {e}")
                 continue
 
     return events, failsafe_commands

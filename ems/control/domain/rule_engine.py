@@ -10,14 +10,15 @@ from .rules import safety, ess, diesel, solar, load
 async def run(states: dict, policy, event_pub) -> tuple[list[dict], list[dict]]:
     """(commands, events) 튜플 반환. commands는 장치 제어, events는 이상 감지."""
     flow = compute_flow(states)
+    redis = event_pub._redis
 
     candidates: list[dict] = []
     rule_events: list[dict] = []
 
     for result in [
         ess.evaluate(flow, policy),
-        diesel.evaluate(flow, policy, states),
-        solar.evaluate(flow, policy, states),
+        await diesel.evaluate(flow, policy, states, redis),
+        await solar.evaluate(flow, policy, states, redis),
         load.evaluate(flow, policy, states),
     ]:
         for item in result:

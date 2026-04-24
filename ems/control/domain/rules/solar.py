@@ -1,14 +1,15 @@
 """Solar curtailment 룰. ESS가 충전 불가일 때 잉여 발전분만큼 출력 제한.
 출력 제한 해제: net_power < 0 OR any(ESS.SOC < SOC_HIGH) 시 clear_curtailment 발행.
+
+curtailment 상태를 Redis에 저장해 process restart 후에도 유지.
 """
 
 PRIORITY = 20
 
-# curtailment 발행 중인 장치 추적 — 해제 조건 판단에 사용
-_curtailed_devices: set[str] = set()
+_REDIS_PREFIX = "ems:curtailed:"
 
 
-def evaluate(flow: dict, policy, states: dict) -> list[dict]:
+async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     net_power = flow["net_power"]
     solar_p = flow["solar_p"]
     soc_high = policy.get("SOC_HIGH")
@@ -28,8 +29,9 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     # --- 해제 조건: 부족 or ESS 충전 가능 ---
     if net_power <= 0 or any_can_charge:
         for device_id, _ in solar_targets:
-            if device_id in _curtailed_devices:
-                _curtailed_devices.discard(device_id)
+            key = f"{_REDIS_PREFIX}{device_id}"
+            if await redis.exists(key):
+                await redis.delete(key)
                 commands.append({
                     "device_id": device_id,
                     "resource_type": "solar",
@@ -41,7 +43,6 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
         return commands
 
     # --- 제한 조건: 잉여 + ESS 만충 ---
-    # 가용 ESS가 있고 모두 만충이 아니면 ESS가 먼저 처리
     if ess_devices and any_can_charge:
         return []
 
@@ -49,7 +50,7 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     per_device_limit = round(target_total_kw / len(solar_targets), 1)
 
     for device_id, _ in solar_targets:
-        _curtailed_devices.add(device_id)
+        await redis.set(f"{_REDIS_PREFIX}{device_id}", "1")
         commands.append({
             "device_id": device_id,
             "resource_type": "solar",
