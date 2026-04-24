@@ -41,6 +41,9 @@ async def _consume_normal(client: aioredis.Redis, publisher: StatePublisher,
                 try:
                     envelope = json.loads(fields["data"])
                     snapshot = calculate(envelope)
+                    if snapshot is None:
+                        await client.xack(REDIS_NORMAL_STREAM, CONSUMER_GROUP, msg_id)
+                        continue
                     await publisher.publish(snapshot)
                     aggregator.add(snapshot)
                     await client.xack(REDIS_NORMAL_STREAM, CONSUMER_GROUP, msg_id)
