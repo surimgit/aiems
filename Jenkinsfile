@@ -19,27 +19,54 @@ pipeline {
 
         // ──────────────────────────────────────
         //  1. Checkout
+        //     - MR 이벤트 : GitLab webhook 이 주입하는 gitlabSourceBranch 체크아웃
+        //     - Push 이벤트 : 해당 브랜치(env.BRANCH_NAME) 체크아웃
+        //     - 그 외       : master fallback
         // ──────────────────────────────────────
         stage('Checkout') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/master']],
-                    userRemoteConfigs: [[
-                        url: 'https://lab.ssafy.com/s14-final/S14P31S305.git',
-                        credentialsId: "${GITLAB_CRED}"
-                    ]]
-                ])
+                script {
+                    def targetRef = env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'
+                    echo "=== Checkout 대상 브랜치: ${targetRef} ==="
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${targetRef}"]],
+                        userRemoteConfigs: [[
+                            url: 'https://lab.ssafy.com/s14-final/S14P31S305.git',
+                            credentialsId: "${GITLAB_CRED}"
+                        ]]
+                    ])
+                }
             }
         }
 
         // ──────────────────────────────────────
-        //  2. 변경 감지
+        //  2. 변경 감지 (폴더별 CI/CD)
+        //     - MR 이벤트 : origin/<target>...HEAD (3-dot) 로 MR 전체 변경사항 감지
+        //                   → MR 내 모든 커밋의 변경사항을 빠짐없이 잡음
+        //     - Push 이벤트 : HEAD~1..HEAD (직전 커밋) 로 변경사항 감지
+        //     - 감지 결과에 따라 Build/Test/Deploy stage 는 when 조건으로 필터링됨
         // ──────────────────────────────────────
         stage('Detect Changes') {
             steps {
                 script {
-                    def changes = sh(script: "git diff --name-only HEAD~1 HEAD || echo '.'", returnStdout: true).trim()
+                    def isMR = env.gitlabActionType == 'MERGE' || env.gitlabMergeRequestIid?.trim()
+                    def targetBranch = env.gitlabTargetBranch ?: 'master'
+
+                    def changes
+                    if (isMR) {
+                        echo "=== 변경 감지 방식: MR diff (origin/${targetBranch}...HEAD) ==="
+                        changes = sh(
+                            script: "git fetch origin ${targetBranch} && git diff --name-only origin/${targetBranch}...HEAD || echo '.'",
+                            returnStdout: true
+                        ).trim()
+                    } else {
+                        echo "=== 변경 감지 방식: Push diff (HEAD~1..HEAD) ==="
+                        changes = sh(
+                            script: "git diff --name-only HEAD~1 HEAD || echo '.'",
+                            returnStdout: true
+                        ).trim()
+                    }
                     echo "=== 변경된 파일 ===\n${changes}"
 
                     env.CHANGED_GATEWAY   = changes.contains('gateway/')              ? 'true' : 'false'
@@ -51,13 +78,19 @@ pipeline {
                     env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
 
+                    // MR 이벤트이고 target 이 master 가 아니면 (예: feature → ems) 배포 skip
+                    // master push 또는 ems→master / feature→master MR 일 때만 배포 허용
+                    env.SHOULD_DEPLOY = (!isMR || targetBranch == 'master') ? 'true' : 'false'
+
                     echo """
                     === 변경 감지 결과 ===
+                    이벤트 타입:     ${isMR ? 'MR (target=' + targetBranch + ')' : 'Push'}
                     Gateway:         ${env.CHANGED_GATEWAY}
                     Ingestion:       ${env.CHANGED_INGESTION}
                     State+DBWriter:  ${env.CHANGED_STATE} / ${env.CHANGED_DBWRITER}
                     Control+AI:      ${env.CHANGED_CONTROL} / ${env.CHANGED_AI}
                     Infra:           ${env.CHANGED_INFRA}
+                    Deploy 수행:     ${env.SHOULD_DEPLOY}
                     """
                 }
             }
@@ -155,7 +188,7 @@ pipeline {
         stage('Deploy') {
             parallel {
                 stage('Deploy - Gateway') {
-                    when { expression { env.CHANGED_GATEWAY == 'true' || env.CHANGED_INFRA == 'true' } }
+                    when { expression { env.SHOULD_DEPLOY == 'true' && (env.CHANGED_GATEWAY == 'true' || env.CHANGED_INFRA == 'true') } }
                     steps {
                         sshagent(credentials: ['ec2-ssh-key']) {
                             sh '''
@@ -168,7 +201,7 @@ pipeline {
                     }
                 }
                 stage('Deploy - Ingestion') {
-                    when { expression { env.CHANGED_INGESTION == 'true' || env.CHANGED_INFRA == 'true' } }
+                    when { expression { env.SHOULD_DEPLOY == 'true' && (env.CHANGED_INGESTION == 'true' || env.CHANGED_INFRA == 'true') } }
                     steps {
                         configFileProvider([configFile(fileId: 'ems-env', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
@@ -184,7 +217,7 @@ pipeline {
                     }
                 }
                 stage('Deploy - State+DBWriter') {
-                    when { expression { env.CHANGED_STATE == 'true' || env.CHANGED_DBWRITER == 'true' || env.CHANGED_INFRA == 'true' } }
+                    when { expression { env.SHOULD_DEPLOY == 'true' && (env.CHANGED_STATE == 'true' || env.CHANGED_DBWRITER == 'true' || env.CHANGED_INFRA == 'true') } }
                     steps {
                         configFileProvider([configFile(fileId: 'ems-env', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
@@ -199,7 +232,7 @@ pipeline {
                     }
                 }
                 stage('Deploy - Control+AI') {
-                    when { expression { env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' || env.CHANGED_INFRA == 'true' } }
+                    when { expression { env.SHOULD_DEPLOY == 'true' && (env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' || env.CHANGED_INFRA == 'true') } }
                     steps {
                         configFileProvider([configFile(fileId: 'ems-env', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
@@ -214,7 +247,7 @@ pipeline {
                     }
                 }
                 stage('Deploy - DB') {
-                    when { expression { env.CHANGED_INFRA == 'true' } }
+                    when { expression { env.SHOULD_DEPLOY == 'true' && env.CHANGED_INFRA == 'true' } }
                     steps {
                         configFileProvider([configFile(fileId: 'ems-env', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
