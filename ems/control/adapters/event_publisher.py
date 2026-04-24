@@ -66,7 +66,10 @@ class EventPublisher:
         print(f"[control][event] {severity} {event['event_type']} | {event['device_id']} | {event.get('message', '')}")
 
         if self._pool:
-            await self._insert_db(envelope)
+            try:
+                await self._insert_db(envelope)
+            except Exception as e:
+                print(f"[event_publisher] DB insert 실패 (Redis stream에는 저장됨): {e} | event_id={envelope['event_id']}")
 
     async def _insert_db(self, envelope: dict) -> None:
         async with self._pool.acquire() as conn:
