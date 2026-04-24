@@ -296,7 +296,7 @@ class EssSimulator:
             return
 
         energy_delta_kwh = calculate_energy_delta_kwh(self.status.power_kw, self.device_spec.publish_interval_sec)
-        soc_delta = calculate_soc_delta(energy_delta_kwh, self.device_spec.capacity_kwh)
+        soc_delta = calculate_soc_delta(energy_delta_kwh, self.device_spec.capacity_kwh, self.status.operating_mode)
         next_soc = apply_soc_delta(self.status.soc, soc_delta, self.status.operating_mode)
         self.status.soc = clamp_soc(next_soc)
 

@@ -40,8 +40,8 @@ def test_start_command_and_transition():
     device.tick(now, now)
     assert device.state == DeviceState.STARTING
     
-    # 3. Startup 시간(10초) 경과 후 tick 실행
-    future = now + timedelta(seconds=11)
+    # 3. Startup 시간(30초) 경과 후 tick 실행
+    future = now + timedelta(seconds=31)
     event = device.tick(future, future)
     
     assert device.state == DeviceState.RUNNING

@@ -25,8 +25,11 @@ class CalculationsUnitTest(unittest.TestCase):
         self.assertAlmostEqual(calculate_energy_delta_kwh(40.0, 0.1), 40.0 * 0.1 / 3600.0)
 
     def test_calculate_soc_delta_uses_capacity_kwh(self) -> None:
-        """SOC 변화율은 이동 에너지와 배터리 용량으로 계산해야 한다."""
-        self.assertAlmostEqual(calculate_soc_delta(25.0, 500.0), 5.0)
+        """SOC 변화율은 이동 에너지와 배터리 용량으로 계산해야 한다. 충방전 효율(95%) 반영."""
+        # 방전: 25kWh ÷ 0.95 / 500kWh * 100 ≈ 5.263%
+        self.assertAlmostEqual(calculate_soc_delta(25.0, 500.0, "discharge"), 25.0 / 0.95 / 500.0 * 100.0, places=5)
+        # 충전: 25kWh × 0.95 / 500kWh * 100 = 4.75%
+        self.assertAlmostEqual(calculate_soc_delta(25.0, 500.0, "charge"), 25.0 * 0.95 / 500.0 * 100.0, places=5)
 
     def test_apply_soc_delta_respects_operating_mode(self) -> None:
         """충전은 증가, 방전은 감소, 대기는 유지되어야 한다."""
