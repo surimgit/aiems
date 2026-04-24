@@ -97,7 +97,21 @@ pipeline {
         }
 
         // ──────────────────────────────────────
-        //  3. SonarQube 정적 분석
+        //  3. Verify Env (.env 필수 값 + 길이/형식 검증)
+        //     - configFileProvider 로 Managed File "ems-env" 주입
+        //     - infra/check_env.sh 가 공란/약한 값 검출 시 exit 1 → 파이프라인 중단
+        //     - Build/Test/Deploy 전에 선제 차단
+        // ──────────────────────────────────────
+        stage('Verify Env') {
+            steps {
+                configFileProvider([configFile(fileId: 'ems-env', targetLocation: '.env')]) {
+                    sh 'bash infra/check_env.sh .env'
+                }
+            }
+        }
+
+        // ──────────────────────────────────────
+        //  4. SonarQube 정적 분석
         // ──────────────────────────────────────
         // stage('SonarQube Analysis') {
         //     steps {
@@ -112,7 +126,7 @@ pipeline {
         // }
 
         // ──────────────────────────────────────
-        //  4. Build (변경된 서비스만)
+        //  5. Build (변경된 서비스만)
         // ──────────────────────────────────────
         stage('Build') {
             parallel {
@@ -136,7 +150,7 @@ pipeline {
         }
 
         // ──────────────────────────────────────
-        //  5. Test (변경된 서비스만)
+        //  6. Test (변경된 서비스만)
         // ──────────────────────────────────────
         stage('Test') {
             parallel {
@@ -180,7 +194,7 @@ pipeline {
         }
 
         // ──────────────────────────────────────
-        //  6. Deploy (EC2 5대 병렬 배포)
+        //  7. Deploy (EC2 5대 병렬 배포)
         //     - .env 는 Jenkins Config File Provider 로 주입 (파일은 저장소에 없음)
         //     - scp 경로는 monorepo 구조(ems/*) 기준
         //     - 각 stage 는 해당 EC2 의 /home/ubuntu/app 에 파일을 올리고 docker compose up -d --build
