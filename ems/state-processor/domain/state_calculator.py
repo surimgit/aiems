@@ -12,6 +12,8 @@ def calculate(envelope: dict) -> dict:
     resource_type = envelope.get("resource_type", "").upper()
     if resource_type not in _KNOWN_TYPES:
         return None
+    if not envelope.get("resource_id"):
+        return None
     payload = envelope.get("payload", {})
     instantaneous = payload.get("instantaneous", {})
     status = payload.get("status", {})

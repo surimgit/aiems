@@ -1,10 +1,14 @@
 import asyncio
+import json
 import aiomqtt
-from config import MQTT_HOST, MQTT_PORT, SITE_ID
+import redis.asyncio as aioredis
+from config import MQTT_HOST, MQTT_PORT, SITE_ID, REDIS_HOST, REDIS_PORT
 from domain.normalizer import normalize
 from domain.classifier import classify
 from adapters.redis_publisher import RedisPublisher
 
+_HEARTBEAT_TTL_SEC = 30  # 시뮬레이터 10초 주기 × 3회 미수신 시 만료
+_HEARTBEAT_PREFIX = "ems:heartbeat:"
 
 TOPICS = [
     f"{SITE_ID}/+/+/telemetry",
@@ -18,6 +22,7 @@ _RECONNECT_DELAY_SEC = 5
 
 
 async def run(publisher: RedisPublisher) -> None:
+    redis = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     while True:
         try:
             async with aiomqtt.Client(hostname=MQTT_HOST, port=MQTT_PORT) as client:
@@ -31,7 +36,15 @@ async def run(publisher: RedisPublisher) -> None:
                         parts = topic.split("/")
 
                         if len(parts) == 2 and parts[1] == "heartbeat":
-                            print(f"[ingestion] heartbeat: {message.payload.decode(errors='replace')}")
+                            try:
+                                hb = json.loads(message.payload)
+                                device_id = hb.get("device_id")
+                                if device_id:
+                                    key = f"{_HEARTBEAT_PREFIX}{SITE_ID}:{device_id}"
+                                    await redis.setex(key, _HEARTBEAT_TTL_SEC, hb.get("timestamp", ""))
+                                    print(f"[ingestion] heartbeat: {device_id}")
+                            except Exception as e:
+                                print(f"[ingestion] heartbeat 파싱 실패: {e}")
                             continue
 
                         message_type = parts[3]
