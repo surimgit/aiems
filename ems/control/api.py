@@ -119,7 +119,7 @@ def _start_worker() -> None:
         refresh_task = asyncio.create_task(_refresh_policy_loop(policy))
 
         try:
-            async with MqttCommander(db, event_pub, _shared_pending_acks) as commander:
+            async with MqttCommander(db, event_pub, _shared_pending_acks, _device_cooldown) as commander:
                 while True:
                     try:
                         states = await reader.get_all()
