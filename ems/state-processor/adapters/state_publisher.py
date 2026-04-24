@@ -1,6 +1,6 @@
 import json
 import redis.asyncio as aioredis
-from config import REDIS_HOST, REDIS_PORT, REDIS_STATE_STREAM, STATE_TTL_SECONDS
+from config import REDIS_HOST, REDIS_PORT, REDIS_STATE_STREAM
 
 
 class StatePublisher:
@@ -24,7 +24,7 @@ class StatePublisher:
         key = f"state:{site_id}:{device_id}"
         value = json.dumps(snapshot, ensure_ascii=False)
 
-        await self._client.set(key, value, ex=STATE_TTL_SECONDS)
+        await self._client.set(key, value)
         await self._client.xadd(REDIS_STATE_STREAM, {"data": value})
 
     async def close(self) -> None:
