@@ -1,0 +1,7 @@
+{
+  "edge_id": "solar-edge-02",
+  "edge_type": "solar",
+  "plant_id": "PLANT-ALPHA",
+  "mqtt_broker_host": "mosquitto",
+  "mqtt_broker_port": 1883
+}

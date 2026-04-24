@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from dataclasses import dataclass
+from pathlib import Path
 
 from adapters.inbound.cli_controller import CliController, CliExitRequested
 from adapters.inbound.mqtt_subscriber import MqttCommandSubscriber
@@ -10,7 +11,9 @@ from adapters.outbound.mqtt_publisher import MqttPublisher
 from core.command_handler import CommandHandler
 from core.ess import DeviceSpec, EssSimulator, SafetySpec
 from mqtt_contract import coerce_simulator_snapshot
-from runtime_config import DeviceConfig, RuntimeConfig
+from runtime_config import DeviceConfig, RuntimeConfig, load_config
+
+CONFIG_POLL_INTERVAL = 2
 
 
 @dataclass
@@ -27,8 +30,9 @@ def build_profile(device: DeviceConfig):
 
 
 class EssSimulatorApp:
-    def __init__(self, config: RuntimeConfig, *, interactive: bool = True) -> None:
+    def __init__(self, config: RuntimeConfig, config_path: Path, *, interactive: bool = True) -> None:
         self.config = config
+        self.config_path = config_path
         self.interactive = interactive
         self.publisher = MqttPublisher(config.mqtt_broker_host, config.mqtt_broker_port)
         self.simulators: dict[str, EssSimulator] = {}
@@ -70,6 +74,58 @@ class EssSimulatorApp:
             self.simulators[device.device_id] = simulator
             self.command_handlers[device.device_id] = CommandHandler(simulator)
 
+    def add_device(self, device: DeviceConfig) -> None:
+        if device.device_id in self.simulators:
+            return
+        simulator = EssSimulator(
+            device_spec=DeviceSpec(
+                plant_id=self.config.plant_id,
+                device_id=device.device_id,
+                resource_type=device.resource_type,
+                publish_interval_sec=device.publish_interval_sec,
+                power_limit_kw=device.power_limit_kw,
+                capacity_kwh=device.capacity_kwh,
+            ),
+            safety_spec=SafetySpec(
+                low_soc_threshold=device.low_soc_threshold,
+                high_soc_threshold=device.high_soc_threshold,
+                min_safe_soc_threshold=device.min_safe_soc_threshold,
+                max_safe_soc_threshold=device.max_safe_soc_threshold,
+                max_temperature_c=device.max_temperature_c,
+            ),
+            initial_soc=device.initial_soc,
+            temperature_c=device.temperature_c,
+            profile=build_profile(device),
+        )
+        self.simulators[device.device_id] = simulator
+        self.command_handlers[device.device_id] = CommandHandler(simulator)
+        print(f"[hot-reload] Device added: {device.device_id}")
+
+    def remove_device(self, device_id: str) -> None:
+        self.simulators.pop(device_id, None)
+        self.command_handlers.pop(device_id, None)
+        print(f"[hot-reload] Device removed: {device_id}")
+
+    async def _watch_config(self) -> None:
+        last_mtime = self.config_path.stat().st_mtime
+        while not self._stop_event.is_set():
+            await asyncio.sleep(CONFIG_POLL_INTERVAL)
+            try:
+                mtime = self.config_path.stat().st_mtime
+                if mtime == last_mtime:
+                    continue
+                last_mtime = mtime
+                new_config = load_config(self.config_path)
+                new_ids = {d.device_id for d in new_config.devices}
+                current_ids = set(self.simulators.keys())
+                for device in new_config.devices:
+                    if device.device_id not in current_ids:
+                        self.add_device(device)
+                for device_id in current_ids - new_ids:
+                    self.remove_device(device_id)
+            except Exception as e:
+                print(f"[hot-reload] Config reload error: {e}")
+
     def request_shutdown(self) -> None:
         self._stop_event.set()
 
@@ -84,16 +140,16 @@ class EssSimulatorApp:
 
         try:
             if self.interactive:
-                await asyncio.gather(self._runtime_loop(), self._cli_loop())
+                await asyncio.gather(self._runtime_loop(), self._cli_loop(), self._watch_config())
             else:
-                await self._runtime_loop()
+                await asyncio.gather(self._runtime_loop(), self._watch_config())
         finally:
             self.mqtt_subscriber.stop()
             self.publisher.stop()
 
     def build_publish_batches(self) -> list[RuntimePublishBatch]:
         batches: list[RuntimePublishBatch] = []
-        for simulator in self.simulators.values():
+        for simulator in list(self.simulators.values()):
             snapshot = coerce_simulator_snapshot(simulator.tick())
             batches.append(
                 RuntimePublishBatch(
@@ -128,8 +184,11 @@ class EssSimulatorApp:
         return batches
 
     async def _runtime_loop(self) -> None:
-        interval = min(sim.device_spec.publish_interval_sec for sim in self.simulators.values())
         while not self._stop_event.is_set():
+            interval = min(
+                (sim.device_spec.publish_interval_sec for sim in self.simulators.values()),
+                default=0.5,
+            )
             self.run_publish_cycle()
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)

@@ -1,0 +1,7 @@
+{
+  "edge_id": "diesel-edge1234",
+  "edge_type": "diesel",
+  "plant_id": "PLANT-ALPHA-DIESLE1234",
+  "mqtt_broker_host": "mosquitto",
+  "mqtt_broker_port": 1883
+}

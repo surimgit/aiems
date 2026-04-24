@@ -1,0 +1,7 @@
+{
+  "edge_id": "ess-simulator",
+  "edge_type": "ess",
+  "plant_id": "PLANT-ALPHA",
+  "mqtt_broker_host": "mosquitto",
+  "mqtt_broker_port": 1883
+}

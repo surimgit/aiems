@@ -7,9 +7,11 @@ from datetime import datetime, timezone
 from adapters.inbound.mqtt_subscriber import MqttCommandSubscriber
 from adapters.outbound.mqtt_publisher import MqttPublisher
 from core.command_handler import LoadCommandHandler
-from core.load import LoadDevice
+from core.load import LoadDevice, LoadDeviceConfig, load_device_configs
 from core.scenario import LoadScenarioEngine
 from runtime_config import RuntimeConfig
+
+CONFIG_POLL_INTERVAL = 2
 
 
 @dataclass(slots=True)
@@ -35,6 +37,37 @@ class LoadSimulatorApp:
             config.mqtt_broker_port,
         )
         self._stop_event = asyncio.Event()
+
+    def add_device(self, device_config: LoadDeviceConfig) -> None:
+        if self.config.fleet.get(device_config.device_id) is not None:
+            return
+        device = LoadDevice.from_config(device_config)
+        self.config.fleet.register(device)
+        print(f"[hot-reload] Device added: {device_config.device_id}")
+
+    def remove_device(self, device_id: str) -> None:
+        self.config.fleet.unregister(device_id)
+        print(f"[hot-reload] Device removed: {device_id}")
+
+    async def _watch_config(self) -> None:
+        last_mtime = self.config.devices_path.stat().st_mtime
+        while not self._stop_event.is_set():
+            await asyncio.sleep(CONFIG_POLL_INTERVAL)
+            try:
+                mtime = self.config.devices_path.stat().st_mtime
+                if mtime == last_mtime:
+                    continue
+                last_mtime = mtime
+                new_configs = load_device_configs(self.config.devices_path)
+                new_ids = {c.device_id for c in new_configs}
+                current_ids = {d.device_id for d in self.config.fleet.list_all()}
+                for cfg in new_configs:
+                    if cfg.device_id not in current_ids:
+                        self.add_device(cfg)
+                for device_id in current_ids - new_ids:
+                    self.remove_device(device_id)
+            except Exception as e:
+                print(f"[hot-reload] Config reload error: {e}")
 
     # 외부 종료 요청을 받아 런타임 루프를 멈추게 한다.
     def request_shutdown(self) -> None:
@@ -72,7 +105,7 @@ class LoadSimulatorApp:
     # 한 주기의 시나리오 계산과 MQTT 발행을 순서대로 수행한다.
     def run_publish_cycle(self, observed_at: datetime | None = None) -> list[RuntimePublishBatch]:
         batches = self.build_publish_batches(observed_at)
-        for batch in batches:
+        for batch in list(batches):
             device = self.config.fleet.get(batch.device_id)
             if device is None:
                 continue
@@ -90,6 +123,7 @@ class LoadSimulatorApp:
         self.mqtt_subscriber.start()
 
         completed_cycles = 0
+        watch_task = asyncio.create_task(self._watch_config())
         try:
             while not self._stop_event.is_set():
                 self.run_publish_cycle()
@@ -104,5 +138,10 @@ class LoadSimulatorApp:
                 except asyncio.TimeoutError:
                     continue
         finally:
+            watch_task.cancel()
+            try:
+                await watch_task
+            except asyncio.CancelledError:
+                pass
             self.mqtt_subscriber.stop()
             self.publisher.stop()

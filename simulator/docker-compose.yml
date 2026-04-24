@@ -22,10 +22,11 @@
 # PLANT_ID / DEVICE_IDS 환경변수만 다르게 설정하면 됩니다.
 # ================================================================
 
-# EMS 네트워크 외부 참조 (EMS docker-compose의 mosquitto 공유)
+# ems_default 네트워크: EMS가 먼저 실행 중이면 external로 공유, 아니면 자체 생성
+# EMS와 함께 실행할 경우: external: true 로 변경하고 EMS를 먼저 실행할 것
 networks:
   ems_default:
-    external: true
+    external: false
 
 services:
 
@@ -73,18 +74,18 @@ services:
   #   이 블록을 복사 → 서비스명/container_name/PLANT_ID or DEVICE_IDS 변경
   # ================================================================
 
-  # --- Solar Edge: PLANT-ALPHA (장치 2대) ---
+  # --- Solar Edge: PLANT-ALPHA ---
+  # devices.yaml로 장치 관리 (hot-reload 지원)
+  # 장치 추가/제거: simulator-manager/edges/solar-edge-alpha/devices.yaml 수정
   solar-edge-alpha:
     build:
       context: ./solar-simulator
       dockerfile: Dockerfile
+    image: solar-simulator:latest
     container_name: solar-edge-alpha
     restart: always
-    environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - PLANT_ID=PLANT-ALPHA
-      - DEVICE_IDS=solar-01,solar-02   # ← 여기서 장치 수/ID 결정
+    volumes:
+      - ./simulator-manager/edges/solar-edge-alpha:/app/config
     networks:
       - ems_default
     depends_on:
@@ -100,18 +101,18 @@ services:
   #   - 2대: DEVICE_IDS=diesel-01,diesel-02
   # ================================================================
 
-  # --- Diesel Edge: PLANT-ALPHA (발전기 1대) ---
+  # --- Diesel Edge: PLANT-ALPHA ---
+  # devices.yaml로 장치 관리 (hot-reload 지원)
+  # 장치 추가/제거: simulator-manager/edges/diesel-edge-alpha/devices.yaml 수정
   diesel-edge-alpha:
     build:
       context: ./diesel-simulator
       dockerfile: Dockerfile
+    image: diesel-simulator:latest
     container_name: diesel-edge-alpha
     restart: always
-    environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - PLANT_ID=PLANT-ALPHA
-      - DEVICE_IDS=diesel-01           # ← 여기서 장치 수/ID 결정
+    volumes:
+      - ./simulator-manager/edges/diesel-edge-alpha:/app/config
     networks:
       - ems_default
 
@@ -122,9 +123,12 @@ services:
     build:
       context: ./ess-simulator
       dockerfile: Dockerfile
+    image: ess-simulator:latest
     container_name: ess-simulator
     restart: always
-    command: ["python", "main.py", "--no-cli", "--config", "/app/config/devices.docker.yaml"]
+    command: ["python", "main.py", "--no-cli", "--config", "/app/config/devices.yaml"]
+    volumes:
+      - ./simulator-manager/edges/ess-simulator:/app/config
     networks:
       - ems_default
     depends_on:
@@ -135,6 +139,7 @@ services:
     build:
       context: ./load-simulator
       dockerfile: Dockerfile
+    image: load-simulator:latest
     container_name: load-simulator
     restart: always
     command:
@@ -142,13 +147,42 @@ services:
         "python",
         "main.py",
         "--config",
-        "/app/config/devices.docker.yaml",
+        "/app/config/devices.yaml",
         "--scenario",
         "/app/config/scenario.yaml"
       ]
+    volumes:
+      - ./simulator-manager/edges/load-simulator:/app/config
     networks:
       - ems_default
     depends_on:
       mqtt-broker:
         condition: service_healthy
+
+  # ================================================================
+  # SIMULATOR MANAGER (Web UI for edge & device management)
+  # 접속: http://localhost:8080
+  # ================================================================
+  simulator-manager:
+    build:
+      context: ./simulator-manager
+      dockerfile: Dockerfile
+    image: simulator-manager:latest
+    container_name: simulator-manager
+    hostname: simulator-manager
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./simulator-manager/edges:/app/edges
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - PORT=8080
+      - DOCKER_NETWORK=ems_default
+      - SOLAR_IMAGE=solar-simulator:latest
+      - DIESEL_IMAGE=diesel-simulator:latest
+      - ESS_IMAGE=ess-simulator:latest
+      - LOAD_IMAGE=load-simulator:latest
+    networks:
+      - ems_default
 

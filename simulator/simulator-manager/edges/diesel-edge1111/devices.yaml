@@ -1,0 +1,4 @@
+devices: []
+mqtt_broker_host: mosquitto
+mqtt_broker_port: 1883
+plant_id: PLANT-ALPHA-DIESLE232

@@ -270,6 +270,13 @@ class LoadFleet:
     def list_enabled(self) -> list[LoadDevice]:
         return [device for device in self._devices.values() if device.state.enabled]
 
+    # 장치를 fleet에서 제거한다.
+    def unregister(self, device_id: str) -> None:
+        device = self._devices.pop(device_id, None)
+        if device is not None:
+            self._panel_index.pop(device.panel_id, None)
+            print(f"Unregistered device: {device_id}")
+
     # 현재 측정 기준 유효전력 합계를 계산한다.
     def total_active_power_kw(self, *, enabled_only: bool = True) -> float:
         devices = self.list_enabled() if enabled_only else self.list_all()
