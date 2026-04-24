@@ -1,6 +1,9 @@
 from collections import defaultdict
 
 
+_MAX_BUFFER_SIZE = 100  # 장치당 최대 버퍼 크기 — burst 시 메모리 보호
+
+
 class WindowAggregator:
     """1초 윈도우 내 수신된 메시지를 집계하여 avg/max/min 반환"""
 
@@ -9,7 +12,10 @@ class WindowAggregator:
 
     def add(self, snapshot: dict) -> None:
         key = snapshot["device_id"]
-        self._buffers[key].append(snapshot)
+        buf = self._buffers[key]
+        if len(buf) >= _MAX_BUFFER_SIZE:
+            buf.pop(0)  # 가장 오래된 항목 제거
+        buf.append(snapshot)
 
     def flush(self) -> list[dict]:
         # 버퍼를 atomic하게 교체 - 교체 후 add()는 새 버퍼에 쌓여 유실 없음

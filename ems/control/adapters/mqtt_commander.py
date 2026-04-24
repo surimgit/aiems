@@ -92,7 +92,7 @@ class MqttCommander:
         await self._redis.set(
             f"desired:{SITE_ID}:{device_id}",
             json.dumps(desired, ensure_ascii=False),
-            ex=300,  # 5분 TTL — 명령 반영 후 자연 만료
+            ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
         )
 
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
