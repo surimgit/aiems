@@ -3,7 +3,8 @@ services:
     build:
       context: ./gateway
     ports:
-      - "80:80"
+      # 로컬 http://localhost → 컨테이너 내부 nginx(8080) 로 포워딩
+      - "80:8080"
     depends_on:
       ingestion:
         condition: service_healthy

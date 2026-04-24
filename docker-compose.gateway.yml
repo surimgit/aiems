@@ -1,11 +1,13 @@
+# Gateway EC2 (172.31.37.96) 전용 compose
+# - SSAFY 포트 정책: 외부 노출은 8000-8999 범위만 허용 → 8080 사용
+# - nginx.prod.conf 의 listen 8080 과 매칭
+# - SSL 은 Phase 3 (Cloudflare Origin Cert 방식) 에서 추가 예정
 services:
   gateway:
     build:
       context: ./gateway
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:8080"
     restart: always
     volumes:
-      - ./gateway/nginx.prod.conf:/etc/nginx/nginx.conf
-      - /etc/nginx/ssl:/etc/nginx/ssl
+      - ./gateway/nginx.prod.conf:/etc/nginx/nginx.conf:ro
