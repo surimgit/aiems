@@ -5,8 +5,13 @@ from datetime import datetime, timezone
 _SOC_EMERGENCY = 5.0
 
 
+_KNOWN_TYPES = {"ESS", "SOLAR", "LOAD", "DIESEL"}
+
+
 def calculate(envelope: dict) -> dict:
     resource_type = envelope.get("resource_type", "").upper()
+    if resource_type not in _KNOWN_TYPES:
+        return None
     payload = envelope.get("payload", {})
     instantaneous = payload.get("instantaneous", {})
     status = payload.get("status", {})
