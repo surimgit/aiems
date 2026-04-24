@@ -1,4 +1,18 @@
 services:
+  # Redis Streams Consumer Group 초기화 (oneshot)
+  # - 모든 서비스가 XREADGROUP 호출 전에 그룹을 미리 생성
+  # - Normal + Emergency 2개 이벤트 버스 커버
+  # - ingestion 기동 전에 반드시 완료 되어야 함
+  stream-init:
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.stream-init
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"
+
   ingestion:
     build:
       context: ./ems/ingestion
@@ -15,6 +29,8 @@ services:
         condition: service_healthy
       mqtt:
         condition: service_started
+      stream-init:
+        condition: service_completed_successfully
 
   redis:
     image: redis:7.2-alpine

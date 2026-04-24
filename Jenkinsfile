@@ -176,7 +176,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'mkdir -p /home/ubuntu/app/ems /home/ubuntu/app/infra'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/app/ems/
-                                    scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py ubuntu@${INGESTION_IP}:/home/ubuntu/app/infra/
+                                    scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/app/infra/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.ingestion.yml up -d --build'
                                 '''
                             }
