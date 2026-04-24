@@ -1,0 +1,21 @@
+# Example:
+# drive_root: "G:/My Drive"
+# project_folder: "s305-ai-data"
+
+drive_root: "G:/내 드라이브"
+project_folder: "s305-ai-data"
+
+raw_sources:
+  - kma_asos
+  - kepco
+  - west_power
+  - satellite
+
+processed_dirs:
+  - merged
+  - features
+  - splits
+
+artifact_dirs:
+  - manifests
+  - exports
