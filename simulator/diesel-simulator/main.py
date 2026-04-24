@@ -103,7 +103,16 @@ async def main():
         subscriber.subscribe()
 
     mqtt_client.on_connect = on_connect
-    mqtt_client.connect(mqtt_host, mqtt_port, 60)
+    # MQTT 브로커 연결 (재시도 로직 포함)
+    while True:
+        try:
+            print(f"[DIESEL] Connecting to MQTT broker at {mqtt_host}:{mqtt_port}...")
+            mqtt_client.connect(mqtt_host, mqtt_port, 60)
+            break
+        except Exception as e:
+            print(f"[DIESEL] MQTT connection failed: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+            
     mqtt_client.loop_start()
 
     print(f"Starting Diesel Edge Simulator for {plant_id} with devices: {list(manager.devices.keys())}")

@@ -579,8 +579,8 @@ function buildDeviceForm(edgeType) {
 
     case 'load':
       return base
-        + row(f('panel_id', 'Panel ID *', 'text', '', 'e.g. panel-04'),
-               f('name', 'Name *', 'text', '', 'e.g. server-room'))
+        + row(f('panel_id', 'Panel ID *', 'text', 'PANEL-MAIN', 'e.g. PANEL-MAIN'),
+               f('name', 'Name', 'text', 'load-name', 'e.g. load-name'))
         + row(f('rated_kw', 'Rated kW', 'number', '100'),
                f('base_kw', 'Base kW', 'number', '60'))
         + row(f('power_factor', 'Power Factor', 'number', '0.98'),
@@ -588,7 +588,7 @@ function buildDeviceForm(edgeType) {
         + row(f('frequency_hz', 'Frequency (Hz)', 'number', '60'),
                `<div class="form-group">
                   <label>Scenario Profile</label>
-                  <select id="df-scenario_profile">
+                  <select id="df-profile">
                     <option value="office-day">office-day</option>
                     <option value="hvac-heavy">hvac-heavy</option>
                     <option value="off-hours">off-hours</option>
@@ -652,7 +652,7 @@ async function submitAddDevice() {
         voltage_v: gn('voltage_v'),
         frequency_hz: gn('frequency_hz'),
         enabled: gv('enabled') === 'true',
-        scenario_profile: gv('scenario_profile'),
+        profile: gv('profile'),
       });
       break;
   }

@@ -250,11 +250,52 @@ def create_edge(body: dict) -> dict:
             "mqtt_broker_host": mqtt_host,
             "mqtt_broker_port": mqtt_port,
             "publish_interval_sec": 1.0,
-            "loads": [],
+            "loads": [
+                {
+                    "device_id": f"{edge_id}-load-01",
+                    "resource_type": "load",
+                    "panel_id": "PANEL-MAIN",
+                    "max_capacity_kw": 500,
+                    "profile": "office-day"
+                }
+            ],
         }
-        scenario_template = EDGES_DIR / "load-simulator" / "scenario.yaml"
-        if scenario_template.exists() and edge_id != "load-simulator":
-            (d / "scenario.yaml").write_bytes(scenario_template.read_bytes())
+        # 템플릿 시나리오 파일 복사 강화
+        scenario_template = EDGES_DIR.parent / "load-simulator" / "config" / "scenario.yaml"
+        target_scenario = d / "scenario.yaml"
+        try:
+            if scenario_template.exists():
+                shutil.copy2(scenario_template, target_scenario)
+            else:
+                # 템플릿이 없으면 풍부한 기본 시나리오 생성
+                default_scenario_content = """profiles:
+  office-day:
+    noise_ratio: 0.05
+    peak_hours: [9, 10, 11, 14, 15, 16]
+    peak_multiplier: 1.20
+    off_peak_multiplier: 0.85
+    weekend_multiplier: 0.70
+    minimum_load_ratio: 0.15
+
+  hvac-heavy:
+    noise_ratio: 0.08
+    peak_hours: [12, 13, 14, 15]
+    peak_multiplier: 1.35
+    off_peak_multiplier: 0.90
+    weekend_multiplier: 0.80
+    minimum_load_ratio: 0.20
+
+  off-hours:
+    noise_ratio: 0.02
+    peak_hours: [6, 7, 18, 19]
+    peak_multiplier: 1.10
+    off_peak_multiplier: 0.60
+    weekend_multiplier: 0.75
+    minimum_load_ratio: 0.10
+"""
+                target_scenario.write_text(default_scenario_content, encoding="utf-8")
+        except Exception as e:
+            print(f"[manager] Failed to copy scenario.yaml: {e}")
     else:
         cfg = {
             "plant_id": plant_id,
@@ -406,11 +447,33 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def _start_existing_edges() -> None:
+    """매니저 시작 시, 기존에 생성되어 있던 Edge 컨테이너가 꺼져 있다면 다시 구동합니다."""
+    print("[manager] Checking existing edges for auto-start...")
+    edges = list_edges()
+    for edge in edges:
+        status = edge.get("status", "unknown")
+        # running 상태가 아니면 켜준다
+        if status not in ("running", "restarting"):
+            edge_id = edge["edge_id"]
+            edge_type = edge["edge_type"]
+            print(f"[manager] Auto-starting existing edge: {edge_id} (type: {edge_type})")
+            try:
+                # 이미 컨테이너가 exited 상태로 남아있을 수 있으므로 먼저 지운다
+                _stop_container(edge_id)
+                _start_container(edge_id, edge_type)
+            except Exception as e:
+                print(f"[manager] Failed to auto-start {edge_id}: {e}")
+
 if __name__ == "__main__":
     EDGES_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[simulator-manager] edges dir : {EDGES_DIR}")
     print(f"[simulator-manager] host edges: {HOST_EDGES_PATH}")
     print(f"[simulator-manager] docker    : {'available' if DOCKER_AVAILABLE else 'unavailable'}")
+    
+    if DOCKER_AVAILABLE:
+        _start_existing_edges()
+
     print(f"[simulator-manager] listening : http://0.0.0.0:{PORT}")
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
