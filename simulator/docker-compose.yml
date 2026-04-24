@@ -80,9 +80,6 @@ services:
       dockerfile: Dockerfile
     container_name: solar-edge-alpha
     restart: always
-    profiles:
-      - solar
-      - all
     environment:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
@@ -110,9 +107,6 @@ services:
       dockerfile: Dockerfile
     container_name: diesel-edge-alpha
     restart: always
-    profiles:
-      - diesel
-      - all
     environment:
       - MQTT_HOST=mosquitto
       - MQTT_PORT=1883
