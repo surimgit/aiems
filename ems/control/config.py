@@ -15,3 +15,5 @@ DB_PORT = int(os.getenv("DB_PORT", 5432))
 DB_NAME = os.getenv("DB_NAME", "emsdb")
 DB_USER = os.getenv("DB_USER", "ems")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "ems1234")
+
+TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul")

@@ -60,7 +60,7 @@ def _start_worker() -> None:
     from domain.rule_engine import run
     from config import CONTROL_INTERVAL_SECONDS
 
-    _POLICY_REFRESH_INTERVAL = 30
+    _POLICY_REFRESH_INTERVAL = 10
 
     def _should_send(cmd: dict, states: dict) -> bool:
         """3중 체크: cooldown → pending ACK → 현재 모드 비교."""
