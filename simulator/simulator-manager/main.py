@@ -253,10 +253,15 @@ def create_edge(body: dict) -> dict:
             "loads": [
                 {
                     "device_id": f"{edge_id}-load-01",
-                    "resource_type": "load",
                     "panel_id": "PANEL-MAIN",
-                    "max_capacity_kw": 500,
-                    "profile": "office-day"
+                    "name": "office-panel",
+                    "rated_kw": 120.0,
+                    "base_kw": 80.0,
+                    "power_factor": 0.98,
+                    "voltage_v": 380.0,
+                    "frequency_hz": 60.0,
+                    "enabled": True,
+                    "scenario_profile": "office-day",
                 }
             ],
         }
