@@ -22,19 +22,28 @@ import test_01_solar_fault
 import test_02_ess_soc_freeze
 import test_03_diesel_fault
 import test_04_load_fault
+import test_05_shared_line_fault
+import test_06_ess_discharge_fault
+import test_07_rapid_toggle
 
 ALL_SUITES = [
     ("Solar wire_fault (LINE FAULT / SWITCH / ISOLATE)", test_01_solar_fault),
     ("ESS SOC 고정 (wire_fault 중 SOC freeze)",          test_02_ess_soc_freeze),
     ("Diesel wire_fault (RUNNING 중 LINE FAULT)",        test_03_diesel_fault),
     ("Load wire_fault (LINE FAULT / SWITCH OPEN)",       test_04_load_fault),
+    ("공유 선로 장애 (Solar + ESS 동시 wire_fault)",       test_05_shared_line_fault),
+    ("ESS 방전 중 wire_fault (discharge 모드 유지)",       test_06_ess_discharge_fault),
+    ("선로 장애 빠른 반복 토글 (3사이클 안정성)",            test_07_rapid_toggle),
 ]
 
 FILTER_MAP = {
-    "solar":  0,
-    "ess":    1,
-    "diesel": 2,
-    "load":   3,
+    "solar":    0,
+    "ess":      1,
+    "diesel":   2,
+    "load":     3,
+    "shared":   4,
+    "discharge":5,
+    "toggle":   6,
 }
 
 

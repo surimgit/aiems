@@ -22,6 +22,26 @@ EDGE_STARTUP_SEC   = 15   # 컨테이너 기동 대기
 FAULT_PROPAGATE_SEC = 2   # MQTT retained → 시뮬레이터 반영 대기
 TELEMETRY_TIMEOUT  = 15   # 메시지 수집 최대 대기 시간
 
+# ESS 디바이스 생성 시 pydantic 필수 필드 기본값
+ESS_DEVICE_DEFAULTS = {
+    "resource_type": "ess",
+    "publish_interval_sec": 0.5,
+    "initial_soc": 62.0,
+    "power_limit_kw": 42.0,
+    "capacity_kwh": 420.0,
+    "low_soc_threshold": 20.0,
+    "high_soc_threshold": 90.0,
+    "min_safe_soc_threshold": 10.0,
+    "max_safe_soc_threshold": 95.0,
+    "temperature_c": 24.5,
+    "max_temperature_c": 45.0,
+    "profile": {
+        "module": "core.profiles.default_profile",
+        "class_name": "DefaultEssProfile",
+        "seed": 101,
+    },
+}
+
 
 # ── MQTT 캡처 ─────────────────────────────────────────────────────────────────
 

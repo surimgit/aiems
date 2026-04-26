@@ -16,7 +16,7 @@ import time
 import traceback
 
 from utils import (
-    FAULT_PROPAGATE_SEC, PLANT_ID,
+    FAULT_PROPAGATE_SEC, PLANT_ID, ESS_DEVICE_DEFAULTS,
     MqttCapture, create_edge, delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
@@ -45,7 +45,7 @@ def run():
     results = []
 
     try:
-        create_edge("ess", EDGE_ID, DEVICE_ID)
+        create_edge("ess", EDGE_ID, DEVICE_ID, extra_device_fields=ESS_DEVICE_DEFAULTS)
 
         # ── 충전 명령 전송 (ESS를 charge 모드로 전환) ─────────────────────────
         time.sleep(2)
