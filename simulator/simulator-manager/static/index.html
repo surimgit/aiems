@@ -245,6 +245,42 @@
 
   .enabled-yes { color: var(--success); font-weight: 600; }
   .enabled-no  { color: var(--text-muted); }
+
+  /* ── Topology panel ── */
+  .topology-panel {
+    flex-shrink: 0;
+    height: 280px;
+    border-top: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+  .topology-panel .panel-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .topology-table-wrap {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 16px;
+  }
+
+  .tl-normal  { color: var(--success); font-weight: 600; }
+  .tl-fault   { color: var(--danger);  font-weight: 600; }
+  .tl-blocked { color: var(--warning); font-weight: 600; }
+  .sw-closed  { color: var(--success); }
+  .sw-open    { color: var(--warning); }
+
+  .topo-btn {
+    padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid; transition: background 0.15s;
+    margin-right: 3px;
+  }
+  .topo-btn-fault   { background: rgba(224,82,82,0.15);   color: var(--danger);  border-color: var(--danger); }
+  .topo-btn-restore { background: rgba(62,207,142,0.15);  color: var(--success); border-color: var(--success); }
+  .topo-btn-isolate { background: rgba(245,158,11,0.15);  color: var(--warning); border-color: var(--warning); }
+  .topo-btn-sw      { background: rgba(91,138,248,0.15);  color: var(--accent);  border-color: var(--accent); }
+  .topo-btn:hover { opacity: 0.8; }
 </style>
 </head>
 <body>
@@ -266,7 +302,7 @@
     </ul>
   </aside>
 
-  <!-- Right: Device table -->
+  <!-- Right: Device table + Topology -->
   <section class="devices-panel">
     <div class="devices-header">
       <div style="display:flex;align-items:center;gap:4px;">
@@ -279,6 +315,19 @@
       <div class="empty-state">
         <div class="icon">◈</div>
         <div>Select an edge to manage devices</div>
+      </div>
+    </div>
+
+    <!-- Topology panel -->
+    <div class="topology-panel">
+      <div class="panel-header">
+        <h2>Topology — Lines &amp; Switches</h2>
+        <button class="btn btn-primary" onclick="loadTopology()" style="font-size:11px;padding:4px 10px;">Refresh</button>
+      </div>
+      <div class="topology-table-wrap" id="topology-table-wrap">
+        <div class="empty-state" style="padding:20px">
+          <div>Loading topology...</div>
+        </div>
       </div>
     </div>
   </section>
@@ -355,7 +404,8 @@ let selectedEdgeType = null;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 loadEdges();
-setInterval(loadEdges, 5000);
+loadTopology();
+setInterval(() => { loadEdges(); loadTopology(); }, 5000);
 
 // ── Edges ──────────────────────────────────────────────────────────────────
 async function loadEdges() {
@@ -671,6 +721,98 @@ async function submitAddDevice() {
   closeModal('add-device-modal');
   await loadDevices(selectedEdgeId);
   await loadEdges();
+}
+
+// ── Topology ───────────────────────────────────────────────────────────────
+async function loadTopology() {
+  try {
+    const res = await fetch('/api/topology');
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    renderTopology(data);
+  } catch (e) {
+    document.getElementById('topology-table-wrap').innerHTML =
+      `<div class="empty-state" style="padding:20px;color:var(--danger)">Topology 서비스 연결 불가: ${e.message}</div>`;
+  }
+}
+
+function renderTopology(data) {
+  const wrap = document.getElementById('topology-table-wrap');
+  const lines = data.lines || [];
+  const nodeMap = {};
+  (data.nodes || []).forEach(n => { nodeMap[n.node_id] = n.resource_id; });
+
+  if (lines.length === 0) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:20px">No lines defined</div>';
+    return;
+  }
+
+  const rows = lines.map(line => {
+    const sw = line.switch || {};
+    const affected = [nodeMap[line.from_node_id], nodeMap[line.to_node_id]]
+      .filter(Boolean).join(', ');
+    const statusCls = { NORMAL: 'tl-normal', FAULT: 'tl-fault', BLOCKED: 'tl-blocked' }[line.status] || '';
+    const swCls = sw.position === 'CLOSED' ? 'sw-closed' : 'sw-open';
+
+    const lineActions = line.status === 'FAULT'
+      ? `<button class="topo-btn topo-btn-restore" onclick="topoFault('${line.line_id}', false)">복구</button>`
+      : `<button class="topo-btn topo-btn-fault" onclick="topoFault('${line.line_id}', true)">Fault</button>`;
+
+    const isolateAction = line.status === 'BLOCKED'
+      ? `<button class="topo-btn topo-btn-restore" onclick="topoCmd('${line.line_id}', 'RESTORE_LINE')">Restore</button>`
+      : `<button class="topo-btn topo-btn-isolate" onclick="topoCmd('${line.line_id}', 'ISOLATE_LINE')">Isolate</button>`;
+
+    const swAction = sw.switch_id
+      ? (sw.position === 'CLOSED'
+          ? `<button class="topo-btn topo-btn-sw" onclick="swCmd('${sw.switch_id}', 'OPEN_SWITCH')">Open</button>`
+          : `<button class="topo-btn topo-btn-restore" onclick="swCmd('${sw.switch_id}', 'CLOSE_SWITCH')">Close</button>`)
+      : '';
+
+    return `<tr>
+      <td class="muted">${line.line_id}</td>
+      <td><span class="${statusCls}">${line.status}</span></td>
+      <td><span class="${swCls}">${sw.position || '—'}</span></td>
+      <td class="muted" style="font-size:11px">${affected}</td>
+      <td>${lineActions}${isolateAction}${swAction}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>Line ID</th><th>상태</th><th>Switch</th><th>연결 장치</th><th>Actions</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function topoFault(lineId, fault) {
+  const res = await fetch(`/api/lines/${lineId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fault }),
+  });
+  if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
+  await loadTopology();
+}
+
+async function topoCmd(lineId, command) {
+  const res = await fetch(`/api/lines/${lineId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+  if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
+  await loadTopology();
+}
+
+async function swCmd(switchId, command) {
+  const res = await fetch(`/api/switches/${switchId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+  if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
+  await loadTopology();
 }
 
 // ── Modal helpers ──────────────────────────────────────────────────────────

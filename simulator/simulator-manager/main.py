@@ -5,6 +5,8 @@ import mimetypes
 import os
 import re
 import shutil
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -91,6 +93,8 @@ EDGE_TYPE_IMAGES = {
     "ess": os.environ.get("ESS_IMAGE", "ess-simulator:latest"),
     "load": os.environ.get("LOAD_IMAGE", "load-simulator:latest"),
 }
+
+TOPOLOGY_URL = os.environ.get("TOPOLOGY_URL", "http://topology:8081")
 
 EDGE_TYPE_CMD: dict[str, list[str] | None] = {
     "solar": None,
@@ -360,6 +364,32 @@ def remove_device(edge_id: str, device_id: str) -> dict:
     return {"device_id": device_id, "status": "removed"}
 
 
+# ── Topology proxy ───────────────────────────────────────────────────────────
+
+def _proxy_topology(handler: BaseHTTPRequestHandler, method: str, topo_path: str, body: bytes | None = None) -> None:
+    url = TOPOLOGY_URL + topo_path
+    req = urllib.request.Request(url, data=body, method=method)
+    if body:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read()
+            handler.send_response(resp.status)
+            handler.send_header("Content-Type", "application/json; charset=utf-8")
+            handler.send_header("Content-Length", str(len(data)))
+            handler.end_headers()
+            handler.wfile.write(data)
+    except urllib.error.HTTPError as e:
+        data = e.read()
+        handler.send_response(e.code)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        handler.wfile.write(data)
+    except Exception as e:
+        _send_err(handler, f"topology service unreachable: {e}", 502)
+
+
 # ── HTTP handler ─────────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
@@ -385,6 +415,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/edges/([^/]+)/devices$", p)
         if m:
             return _send_json(self, read_devices(m.group(1)))
+
+        if p == "/api/topology" or p.startswith("/api/lines") or p.startswith("/api/switches"):
+            return _proxy_topology(self, "GET", p)
 
         _send_err(self, "Not found", 404)
 
@@ -413,6 +446,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return _send_err(self, str(e), 500)
 
+        if p.startswith("/api/lines") or p.startswith("/api/switches"):
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length > 0 else None
+            return _proxy_topology(self, "POST", p, raw)
+
+        _send_err(self, "Not found", 404)
+
+    def do_PATCH(self):
+        self.log_request_line()
+        p = self.path
+        if p.startswith("/api/lines/") or p.startswith("/api/switches/"):
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length > 0 else None
+            return _proxy_topology(self, "PATCH", p, raw)
         _send_err(self, "Not found", 404)
 
     def do_DELETE(self):
@@ -436,6 +483,9 @@ class Handler(BaseHTTPRequestHandler):
                 return _send_err(self, str(e), 404)
             except Exception as e:
                 return _send_err(self, str(e), 500)
+
+        if p.startswith("/api/lines/") or p.startswith("/api/switches/"):
+            return _proxy_topology(self, "DELETE", p)
 
         _send_err(self, "Not found", 404)
 
