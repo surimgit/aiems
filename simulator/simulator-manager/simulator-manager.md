@@ -56,6 +56,7 @@ docker compose up -d --build
 - `mqtt-broker` — Eclipse Mosquitto 2.0 (포트 1883)
 - `mqtt-logger` — 전체 토픽 구독 로그 출력
 - `simulator-manager` — Web UI + REST API (포트 8080)
+- `topology` — 선로·스위치 상태 관리 + wire_fault MQTT 발행 (포트 8081)
 
 ### 3. Web UI 접속
 
@@ -405,6 +406,7 @@ ENV PYTHONUNBUFFERED=1
 ## 관련 파일
 
 - [docker-compose.yml](../docker-compose.yml)
+- [topology/README.md](../topology/README.md)
 - [solar-simulator](../solar-simulator/)
 - [diesel-simulator](../diesel-simulator/)
 - [ess-simulator/docs/mqtt-contract-application.md](../ess-simulator/docs/mqtt-contract-application.md)

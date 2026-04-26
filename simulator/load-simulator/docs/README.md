@@ -49,6 +49,7 @@ docker compose config
 - 시나리오 기반 소비량 생성
 - `load_shed` 명령 수신 및 `shed_ratio` 반영
 - MQTT `telemetry / command / ack / heartbeat` 처리
+- `topology` 서비스 연동: 선로 장애(wire_fault) 시 `P=0`, `comms_health="wire_fault"` 발행
 - 로컬 실행 및 Docker 실행 경로 제공
 - 단위 테스트 및 통합 성격 테스트 포함
 

@@ -3,7 +3,7 @@
 ## Summary
 
 이 문서는 `simulator/ess-simulator` 작업 상태를 Jira 기준으로 정리한다.
-현재 기준으로 `S14P31S305-205`까지 구현과 테스트 반영이 끝난 상태다.
+현재 기준으로 `S14P31S305-205` 및 topology wire_fault 연동까지 구현과 테스트 반영이 끝난 상태다.
 
 ## Jira Status
 
@@ -15,6 +15,7 @@
 | `S14P31S305-203` | ESS 안전 제약 및 차단 로직 구현      | 완료   | 기존 반영                                                |
 | `S14P31S305-204` | ESS Telemetry 주기 발행 기능 구현 | 완료   | 기본 주기 0.1초, publish cycle 함수 분리                      |
 | `S14P31S305-205` | ESS 시뮬레이터 테스트 코드 작성       | 완료   | 계산, 안전, MQTT 계약, subscriber 예외, publish cycle 테스트 확장 |
+| `S14P31S305-49`  | Topology wire_fault 연동     | 완료   | topology 서비스 구독, SOC 고정, comms_health=wire_fault 발행  |
 | `S14P31S305-206` | ESS 시뮬레이터 상태 확인용 TUI 구현   | 진행 전 | 미착수                                                  |
 
 ## 202 Done
@@ -64,6 +65,16 @@
 ```bash
 python -m unittest tests.unit.test_simulator_app tests.unit.test_safety_guards tests.unit.test_command_handler tests.unit.test_mqtt_contract tests.unit.test_state_machine tests.unit.test_calculations tests.unit.test_ess_state_logic tests.functional.test_ess_mqtt_flow tests.integration.test_mqtt_subscriber tests.integration.test_mqtt_publisher
 ```
+
+## S14P31S305-49 Done (Topology wire_fault 연동)
+
+- `simulator_app.py`에 `_topology_line_states`, `_topology_switch_states` 모듈 레벨 딕셔너리 추가
+- `_is_wire_fault(device_id)` 함수로 `affected_devices` 기준 장애 판단
+- `MqttCommandSubscriber`에서 `{plant_id}/topology/#` 구독 및 `topology_callback` 처리
+- wire_fault 진입 시 `power_kw=0.0`, SOC는 진입 시점 값으로 고정 (`_frozen_soc`)
+- wire_fault 해제 시 frozen SOC 해제, 정상 계산 재개
+- telemetry `comms_health` 필드: `"wire_fault"` / `"ok"` 분기 발행
+- 통합 테스트: `tests/test_02_ess_soc_freeze.py` (시나리오 4)
 
 ## Next Boundary
 
