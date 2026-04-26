@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from json import JSONDecodeError
+from typing import Callable
 from typing import Any, Protocol
 
 import paho.mqtt.client as mqtt
@@ -33,6 +34,7 @@ class MqttCommandSubscriber:
         resource_type: str,
         broker_host: str,
         broker_port: int,
+        topology_callback=None,
     ) -> None:
         self.command_handlers = command_handlers
         self.publisher = publisher
@@ -40,6 +42,7 @@ class MqttCommandSubscriber:
         self.resource_type = resource_type
         self.broker_host = broker_host
         self.broker_port = broker_port
+        self.topology_callback = topology_callback
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -68,8 +71,19 @@ class MqttCommandSubscriber:
         topic = f"{self.plant_id}/{self.resource_type}/+/command"
         client.subscribe(topic)
         print(f"[ESS][mqtt] subscriber connected and subscribed to {topic}")
+        topology_topic = f"{self.plant_id}/topology/#"
+        client.subscribe(topology_topic)
+        print(f"[ESS][mqtt] subscribed to topology: {topology_topic}")
 
     def _on_message(self, _client: Any, _userdata: Any, message: InboundMqttMessage) -> None:
+        if "/topology/" in message.topic:
+            if self.topology_callback is not None:
+                try:
+                    payload = json.loads(self._decode_payload(message.payload))
+                    self.topology_callback(message.topic, payload)
+                except Exception:
+                    pass
+            return
         payload = self._decode_payload(message.payload)
         device_id = self._extract_device_id(message.topic)
         try:

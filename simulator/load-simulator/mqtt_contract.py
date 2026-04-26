@@ -87,8 +87,16 @@ def parse_load_command(topic: str, payload: str, site_id: str) -> tuple[TopicPar
 
 
 # 장치 상태를 MQTT telemetry payload 형식으로 변환한다.
-def snapshot_to_telemetry(device: LoadDevice, *, timestamp: datetime | None = None) -> dict[str, Any]:
+def snapshot_to_telemetry(
+    device: LoadDevice,
+    *,
+    timestamp: datetime | None = None,
+    wire_fault: bool = False,
+) -> dict[str, Any]:
     observed_at = timestamp or datetime.now(timezone.utc)
+    p_kw = 0.0 if wire_fault else device.measurement.p_kw
+    i_a = 0.0 if wire_fault else device.measurement.i_a
+    comms_health = "wire_fault" if wire_fault else device.state.comms_health
     return {
         "device_id": device.device_id,
         "plant_id": device.site_id,
@@ -96,10 +104,10 @@ def snapshot_to_telemetry(device: LoadDevice, *, timestamp: datetime | None = No
         "timestamp": observed_at.isoformat().replace("+00:00", "Z"),
         "data": {
             "instantaneous": {
-                "P": device.measurement.p_kw,
+                "P": p_kw,
                 "Q": device.measurement.q_kvar,
                 "V": device.measurement.v_v,
-                "I": device.measurement.i_a,
+                "I": i_a,
                 "f": device.measurement.f_hz,
                 "PF": device.measurement.pf,
             },
@@ -109,7 +117,7 @@ def snapshot_to_telemetry(device: LoadDevice, *, timestamp: datetime | None = No
                 "demand_max": device.measurement.demand_max_kw,
             },
             "status": {
-                "comms_health": device.state.comms_health,
+                "comms_health": comms_health,
                 "operating_state": device.state.operating_state.value,
                 "shed_ratio": device.state.shed_ratio,
                 "panel_id": device.panel_id,

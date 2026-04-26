@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 import yaml
@@ -14,6 +15,42 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "
 TICK_INTERVAL = 0.1
 HEARTBEAT_INTERVAL = 10
 CONFIG_POLL_INTERVAL = 2
+
+# topology 상태 추적 (line_id → payload)
+_topology_line_states: dict = {}
+_topology_switch_states: dict = {}  # line_id → switch payload
+
+
+def _is_wire_fault(device_id: str) -> bool:
+    """디바이스에 연결된 선로 중 하나라도 차단 상태이면 True."""
+    for line_id, line in _topology_line_states.items():
+        if device_id not in line.get("affected_devices", []):
+            continue
+        if line.get("status", "NORMAL") != "NORMAL":
+            return True
+        sw = _topology_switch_states.get(line_id, {})
+        if sw.get("position", "CLOSED") not in ("CLOSED",):
+            return True
+    return False
+
+
+def _handle_topology_message(topic: str, payload_bytes: bytes, plant_id: str) -> None:
+    try:
+        payload = json.loads(payload_bytes.decode())
+    except Exception:
+        return
+    parts = topic.split("/")
+    if len(parts) < 4:
+        return
+    kind = parts[2]  # "line" or "switch"
+    if kind == "line":
+        line_id = payload.get("line_id")
+        if line_id:
+            _topology_line_states[line_id] = payload
+    elif kind == "switch":
+        line_id = payload.get("line_id")
+        if line_id:
+            _topology_switch_states[line_id] = payload
 
 
 def load_config(path: str) -> dict:
@@ -59,6 +96,10 @@ async def run_simulation(
     while True:
         real_current_time = datetime.now(timezone.utc)
 
+        # 토폴로지 wire_fault 상태 반영
+        for device_id, device in manager.devices.items():
+            device.wire_fault = _is_wire_fault(device_id)
+
         telemetries, events = manager.tick_all(real_current_time)
 
         for event in events:
@@ -101,8 +142,16 @@ async def main():
     def on_connect(client, userdata, flags, rc):
         print(f"Connected to MQTT Broker with result code {rc}")
         subscriber.subscribe()
+        topology_topic = f"{plant_id}/topology/#"
+        client.subscribe(topology_topic)
+        print(f"[DIESEL] Subscribed to topology: {topology_topic}")
+
+    def on_message(client, userdata, msg):
+        if "/topology/" in msg.topic:
+            _handle_topology_message(msg.topic, msg.payload, plant_id)
 
     mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
     # MQTT 브로커 연결 (재시도 로직 포함)
     while True:
         try:

@@ -34,6 +34,28 @@ services:
     networks:
       - ems_default
 
+  topology:
+    build:
+      context: ./topology
+      dockerfile: Dockerfile
+    image: topology:latest
+    container_name: topology
+    restart: always
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./topology/topology.yaml:/app/topology.yaml
+    environment:
+      - PORT=8081
+      - MQTT_HOST=mqtt-broker
+      - MQTT_PORT=1883
+      - TOPOLOGY_PATH=/app/topology.yaml
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+    networks:
+      - ems_default
+
   simulator-manager:
     build:
       context: ./simulator-manager

@@ -11,6 +11,37 @@ from core.load import LoadDevice, LoadDeviceConfig, load_device_configs
 from core.scenario import LoadScenarioEngine
 from runtime_config import RuntimeConfig
 
+# topology 상태 추적
+_topology_line_states: dict = {}
+_topology_switch_states: dict = {}  # line_id → switch payload
+
+
+def _is_wire_fault(device_id: str) -> bool:
+    for line_id, line in _topology_line_states.items():
+        if device_id not in line.get("affected_devices", []):
+            continue
+        if line.get("status", "NORMAL") != "NORMAL":
+            return True
+        sw = _topology_switch_states.get(line_id, {})
+        if sw.get("position", "CLOSED") not in ("CLOSED",):
+            return True
+    return False
+
+
+def _on_topology_message(topic: str, payload: dict) -> None:
+    parts = topic.split("/")
+    if len(parts) < 4:
+        return
+    kind = parts[2]
+    if kind == "line":
+        line_id = payload.get("line_id")
+        if line_id:
+            _topology_line_states[line_id] = payload
+    elif kind == "switch":
+        line_id = payload.get("line_id")
+        if line_id:
+            _topology_switch_states[line_id] = payload
+
 CONFIG_POLL_INTERVAL = 2
 
 
@@ -35,6 +66,7 @@ class LoadSimulatorApp:
             "load",
             config.mqtt_broker_host,
             config.mqtt_broker_port,
+            topology_callback=_on_topology_message,
         )
         self._stop_event = asyncio.Event()
 
@@ -99,7 +131,7 @@ class LoadSimulatorApp:
 
     # 한 분전함의 telemetry와 heartbeat를 브로커로 발행한다.
     def publish_batch(self, device: LoadDevice) -> None:
-        self.publisher.publish_telemetry(device)
+        self.publisher.publish_telemetry(device, wire_fault=_is_wire_fault(device.device_id))
         self.publisher.publish_heartbeat(device.site_id, "load", device.device_id)
 
     # 한 주기의 시나리오 계산과 MQTT 발행을 순서대로 수행한다.

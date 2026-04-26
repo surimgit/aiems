@@ -31,6 +31,9 @@ class SolarDevice:
         # 로컬 안전 판단 (rule-engine-spec.md §5.3)
         self.safety_guard = SolarLocalSafetyGuard()
 
+        # 전선 장애 상태 (topology 서비스에서 수신)
+        self.wire_fault = False
+
     def tick(self, sim_time: datetime, real_time: datetime) -> Optional[Tuple[str, str, str, Dict[str, Any]]]:
         # ── [1] 로컬 안전 판단 (최우선, rule-engine-spec.md §5.3) ────────────
         # safety_guard.check()는 위반 감지 시 device 상태를 직접 변경하고 이벤트를 반환
@@ -74,6 +77,11 @@ class SolarDevice:
                 actual_p = 0.0
                 i_val = 0.0
 
+        # 전선 장애 시 물리값 억제 (topology spec §7.4)
+        if self.wire_fault:
+            actual_p = 0.0
+            i_val = 0.0
+
         # Update Energy & Data
         if self.last_update_time:
             hours_diff = (real_time - self.last_update_time).total_seconds() / 3600.0
@@ -84,7 +92,8 @@ class SolarDevice:
         self.data.instantaneous.V = v_val
         self.data.instantaneous.I = round(i_val, 3)
         self.data.instantaneous.S = round(actual_p, 2)
-        
+        self.data.status.comms_health = "wire_fault" if self.wire_fault else "ok"
+
         return event_data
 
     def execute_command(self, cmd: dict, current_time: datetime) -> Tuple[str, Optional[str]]:

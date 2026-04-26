@@ -130,8 +130,8 @@ class LoadState:
     def __post_init__(self) -> None:
         if not 0.0 <= self.shed_ratio <= 1.0:
             raise ValueError("shed_ratio must be between 0.0 and 1.0")
-        if self.comms_health not in {"ok", "error"}:
-            raise ValueError("comms_health must be either 'ok' or 'error'")
+        if self.comms_health not in {"ok", "error", "wire_fault"}:
+            raise ValueError("comms_health must be 'ok', 'error', or 'wire_fault'")
 
 
 @dataclass(slots=True)
