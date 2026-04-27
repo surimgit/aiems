@@ -27,9 +27,24 @@ _mqtt_client: mqtt.Client | None = None
 
 # ── YAML persistence ─────────────────────────────────────────────────────────
 
+_DEFAULT_TOPOLOGY = {
+    "plant_id": "PLANT-ALPHA",
+    "nodes": [],
+    "lines": [],
+}
+
+
 def _load_topology() -> dict:
     if not TOPOLOGY_PATH.exists():
-        return {"plant_id": "PLANT-ALPHA", "nodes": [], "lines": []}
+        # 파일 없으면 기본 토폴로지로 초기화하고 저장
+        TOPOLOGY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        default = json.loads(json.dumps(_DEFAULT_TOPOLOGY))
+        with open(TOPOLOGY_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(default, f, default_flow_style=False, allow_unicode=True)
+        print(f"[topology] 기본 토폴로지 생성: {TOPOLOGY_PATH}")
+        return default
+    if TOPOLOGY_PATH.is_dir():
+        raise RuntimeError(f"TOPOLOGY_PATH({TOPOLOGY_PATH})가 파일이 아닌 디렉토리입니다. Docker 볼륨 마운트를 확인하세요.")
     return yaml.safe_load(TOPOLOGY_PATH.read_text(encoding="utf-8")) or {}
 
 

@@ -27,10 +27,9 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-logger
     restart: always
-    depends_on:
-      mqtt-broker:
-        condition: service_healthy
-    command: mosquitto_sub -h mqtt-broker -t "#" -v
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: mosquitto_sub -h host.docker.internal -p 1883 -t "#" -v
     networks:
       - ems_default
 
@@ -43,16 +42,15 @@ services:
     restart: always
     ports:
       - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./topology/topology.yaml:/app/topology.yaml
+      - topology_data:/app/data
     environment:
       - PORT=8081
-      - MQTT_HOST=mqtt-broker
+      - MQTT_HOST=host.docker.internal
       - MQTT_PORT=1883
-      - TOPOLOGY_PATH=/app/topology.yaml
-    depends_on:
-      mqtt-broker:
-        condition: service_healthy
+      - TOPOLOGY_PATH=/app/data/topology.yaml
     networks:
       - ems_default
 
@@ -67,6 +65,8 @@ services:
     stop_grace_period: 30s
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./simulator-manager/edges:/app/edges
       - /var/run/docker.sock:/var/run/docker.sock
@@ -77,6 +77,8 @@ services:
       - DIESEL_IMAGE=diesel-simulator:latest
       - ESS_IMAGE=ess-simulator:latest
       - LOAD_IMAGE=load-simulator:latest
+      - MQTT_HOST=host.docker.internal
+      - MQTT_PORT=1883
     networks:
       - ems_default
 
@@ -115,3 +117,6 @@ services:
     image: load-simulator:latest
     restart: "no"
     entrypoint: ["sh", "-c", "exit 0"]
+
+volumes:
+  topology_data:
