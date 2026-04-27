@@ -96,6 +96,13 @@ EDGE_TYPE_IMAGES = {
     "load": os.environ.get("LOAD_IMAGE", "load-simulator:latest"),
 }
 
+EDGE_TYPE_NODE_TYPE = {
+    "solar": "GENERATION",
+    "diesel": "GENERATION",
+    "ess": "STORAGE",
+    "load": "LOAD",
+}
+
 TOPOLOGY_URL = os.environ.get("TOPOLOGY_URL", "http://topology:8081")
 
 EDGE_TYPE_CMD: dict[str, list[str] | None] = {
@@ -193,6 +200,19 @@ def _start_container(edge_id: str, edge_type: str) -> None:
     if cmd:
         kwargs["command"] = cmd
     _docker_client.containers.run(**kwargs)
+
+
+def _call_topology(method: str, path: str, body: dict | None = None) -> None:
+    url = TOPOLOGY_URL + path
+    data = json.dumps(body).encode("utf-8") if body else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception as e:
+        print(f"[manager] topology {method} {path} failed: {e}")
 
 
 def _stop_container(edge_id: str) -> None:
@@ -319,6 +339,13 @@ def create_edge(body: dict) -> dict:
     if DOCKER_AVAILABLE:
         _start_container(edge_id, edge_type)
 
+    _call_topology("POST", "/api/nodes", {
+        "node_id": f"node-{edge_id}",
+        "node_type": EDGE_TYPE_NODE_TYPE.get(edge_type, "LOAD"),
+        "edge_id": edge_id,
+        "resource_id": edge_id,
+    })
+
     return {"edge_id": edge_id, "status": "created"}
 
 
@@ -326,7 +353,9 @@ def delete_edge(edge_id: str) -> dict:
     edge_path = _edge_dir(edge_id)
     if not edge_path.exists():
         raise FileNotFoundError(f"Edge '{edge_id}' not found")
-    
+
+    _call_topology("DELETE", f"/api/nodes/node-{edge_id}")
+
     if DOCKER_AVAILABLE:
         _stop_container(edge_id)
         
@@ -508,14 +537,21 @@ def _start_existing_edges() -> None:
     print("[manager] Checking existing edges for auto-start...")
     edges = list_edges()
     for edge in edges:
+        edge_id = edge["edge_id"]
+        edge_type = edge["edge_type"]
+
+        # topology에 노드 등록 (멱등성 보장: 이미 있으면 upsert)
+        _call_topology("POST", "/api/nodes", {
+            "node_id": f"node-{edge_id}",
+            "node_type": EDGE_TYPE_NODE_TYPE.get(edge_type, "LOAD"),
+            "edge_id": edge_id,
+            "resource_id": edge_id,
+        })
+
         status = edge.get("status", "unknown")
-        # running 상태가 아니면 켜준다
         if status not in ("running", "restarting"):
-            edge_id = edge["edge_id"]
-            edge_type = edge["edge_type"]
             print(f"[manager] Auto-starting existing edge: {edge_id} (type: {edge_type})")
             try:
-                # 이미 컨테이너가 exited 상태로 남아있을 수 있으므로 먼저 지운다
                 _stop_container(edge_id)
                 _start_container(edge_id, edge_type)
             except Exception as e:

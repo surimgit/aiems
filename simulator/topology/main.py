@@ -164,6 +164,12 @@ def create_line(body: dict) -> dict:
         if _find_line(line_id):
             raise ValueError(f"line '{line_id}' already exists")
 
+        # 양방향 중복 체크 (A→B이든 B→A이든 이미 연결된 쌍이면 거부)
+        for existing in _topology.get("lines", []):
+            if (existing["from_node_id"] == from_node and existing["to_node_id"] == to_node) or \
+               (existing["from_node_id"] == to_node and existing["to_node_id"] == from_node):
+                raise ValueError("이미 연결된 노드입니다")
+
         switch_id = body.get("switch_id", f"sw-{line_id}")
         line = {
             "line_id": line_id,
@@ -274,6 +280,62 @@ def delete_line(line_id: str) -> dict:
     return {"line_id": line_id, "status": "deleted"}
 
 
+# ── Node CRUD ─────────────────────────────────────────────────────────────────
+
+def create_node(body: dict) -> dict:
+    node_id = body.get("node_id", "").strip()
+    node_type = body.get("node_type", "").strip()
+    edge_id = body.get("edge_id", "").strip()
+    resource_id = body.get("resource_id", edge_id).strip()
+
+    if not node_id:
+        raise ValueError("node_id is required")
+    if node_type not in ("GENERATION", "STORAGE", "LOAD"):
+        raise ValueError("node_type must be GENERATION, STORAGE, or LOAD")
+
+    with _lock:
+        nodes = _topology.setdefault("nodes", [])
+        # 이미 존재하면 upsert (idempotent)
+        for i, n in enumerate(nodes):
+            if n["node_id"] == node_id:
+                nodes[i] = {"node_id": node_id, "node_type": node_type,
+                             "edge_id": edge_id, "resource_id": resource_id}
+                _save_topology()
+                return {"node_id": node_id, "status": "updated"}
+        nodes.append({"node_id": node_id, "node_type": node_type,
+                       "edge_id": edge_id, "resource_id": resource_id})
+        _save_topology()
+
+    return {"node_id": node_id, "status": "created"}
+
+
+def delete_node(node_id: str) -> dict:
+    """노드 삭제 + 해당 노드가 양 끝인 라인도 함께 삭제."""
+    with _lock:
+        nodes = _topology.get("nodes", [])
+        if not any(n["node_id"] == node_id for n in nodes):
+            raise FileNotFoundError(f"node '{node_id}' not found")
+
+        # 연결된 라인 수집 후 삭제
+        removed_lines = [
+            l for l in _topology.get("lines", [])
+            if l["from_node_id"] == node_id or l["to_node_id"] == node_id
+        ]
+        _topology["lines"] = [
+            l for l in _topology.get("lines", [])
+            if l["from_node_id"] != node_id and l["to_node_id"] != node_id
+        ]
+        _topology["nodes"] = [n for n in nodes if n["node_id"] != node_id]
+        _save_topology()
+
+    plant_id = _topology.get("plant_id", "PLANT-ALPHA")
+    if _mqtt_client:
+        for line in removed_lines:
+            _mqtt_client.publish(f"{plant_id}/topology/line/{line['line_id']}", "", retain=True)
+
+    return {"node_id": node_id, "status": "deleted", "removed_lines": [l["line_id"] for l in removed_lines]}
+
+
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
 
 def _send_json(handler: BaseHTTPRequestHandler, data: Any, status: int = 200) -> None:
@@ -327,6 +389,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return _send_err(self, str(e), 500)
 
+        if p == "/api/nodes":
+            try:
+                return _send_json(self, create_node(_read_body(self)), 201)
+            except ValueError as e:
+                return _send_err(self, str(e), 400)
+            except Exception as e:
+                return _send_err(self, str(e), 500)
+
         _send_err(self, "Not found", 404)
 
     def do_PATCH(self):
@@ -371,6 +441,15 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             try:
                 return _send_json(self, delete_line(m.group(1)))
+            except FileNotFoundError as e:
+                return _send_err(self, str(e), 404)
+            except Exception as e:
+                return _send_err(self, str(e), 500)
+
+        m = re.match(r"^/api/nodes/([^/]+)$", p)
+        if m:
+            try:
+                return _send_json(self, delete_node(m.group(1)))
             except FileNotFoundError as e:
                 return _send_err(self, str(e), 404)
             except Exception as e:

@@ -103,23 +103,21 @@
     font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
     text-transform: uppercase; letter-spacing: 0.5px;
   }
-  .badge-solar { background: rgba(245,158,11,0.2); color: var(--solar); }
-  .badge-diesel { background: rgba(99,102,241,0.2); color: #a5b4fc; }
-  .badge-ess { background: rgba(62,207,142,0.2); color: var(--ess); }
-  .badge-load { background: rgba(224,82,82,0.2); color: var(--load); }
+  .badge-solar  { background: rgba(245,158,11,0.2);  color: var(--solar); }
+  .badge-diesel { background: rgba(99,102,241,0.2);  color: #a5b4fc; }
+  .badge-ess    { background: rgba(62,207,142,0.2);  color: var(--ess); }
+  .badge-load   { background: rgba(224,82,82,0.2);   color: var(--load); }
 
-  .status-dot {
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  }
-  .status-running { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .status-running  { background: var(--success); box-shadow: 0 0 6px var(--success); }
   .status-exited, .status-stopped { background: var(--danger); }
   .status-not_found { background: var(--text-muted); }
-  .status-unknown { background: var(--warning); }
+  .status-unknown   { background: var(--warning); }
 
-  .status-text { font-size: 11px; color: var(--text-muted); }
+  .status-text  { font-size: 11px; color: var(--text-muted); }
   .device-count { font-size: 11px; color: var(--text-muted); margin-left: auto; }
 
-  /* ── Right panel: Devices ── */
+  /* ── Right panel ── */
   .devices-panel {
     flex: 1;
     display: flex;
@@ -144,39 +142,21 @@
     flex: 1;
     overflow: auto;
     padding: 16px;
+    min-height: 80px;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th {
-    text-align: left;
-    padding: 8px 12px;
-    background: var(--surface2);
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
+    text-align: left; padding: 8px 12px;
+    background: var(--surface2); color: var(--text-muted);
+    font-weight: 600; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; border-bottom: 1px solid var(--border); white-space: nowrap;
   }
-  td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text);
-  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
   tr:hover td { background: var(--surface2); }
   td.muted { color: var(--text-muted); font-size: 12px; }
 
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--text-muted);
-    font-size: 14px;
-  }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 14px; }
   .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
 
   /* ── Buttons ── */
@@ -207,16 +187,9 @@
     display: none; align-items: center; justify-content: center; z-index: 100;
   }
   .modal-backdrop.open { display: flex; }
-
   .modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 24px;
-    width: 420px;
-    max-width: 95vw;
-    max-height: 90vh;
-    overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; width: 420px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
   }
   .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 18px; }
 
@@ -225,8 +198,7 @@
   .form-group input, .form-group select {
     width: 100%; padding: 8px 10px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--surface2);
-    color: var(--text); font-size: 13px; outline: none;
-    transition: border-color 0.15s;
+    color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s;
   }
   .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -237,7 +209,6 @@
 
   .error-msg { color: var(--danger); font-size: 12px; margin-top: -8px; margin-bottom: 8px; display: none; }
 
-  /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -246,48 +217,94 @@
   .enabled-yes { color: var(--success); font-weight: 600; }
   .enabled-no  { color: var(--text-muted); }
 
-  /* ── Topology panel ── */
+  /* ── Topology SVG panel ── */
   .topology-panel {
     flex-shrink: 0;
-    height: 280px;
+    height: 420px;
     border-top: 2px solid var(--border);
     display: flex;
     flex-direction: column;
     background: var(--bg);
+    overflow: hidden;
   }
+
   .topology-panel .panel-header {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-  }
-  .topology-table-wrap {
-    flex: 1;
-    overflow: auto;
-    padding: 12px 16px;
+    gap: 12px;
   }
 
-  .tl-normal  { color: var(--success); font-weight: 600; }
-  .tl-fault   { color: var(--danger);  font-weight: 600; }
-  .tl-blocked { color: var(--warning); font-weight: 600; }
-  .sw-closed  { color: var(--success); }
-  .sw-open    { color: var(--warning); }
+  .topo-hint {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .topo-canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #topo-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .topo-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .topo-empty .icon { font-size: 32px; opacity: 0.3; }
+
+  /* ── Line control panel (bottom strip) ── */
+  .topo-line-panel {
+    flex-shrink: 0;
+    height: 44px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .topo-line-panel.visible { display: flex; }
+
+  .topo-line-id { font-weight: 600; color: var(--text); margin-right: 4px; }
+  .topo-line-status { font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+  .topo-line-status.NORMAL  { background: rgba(62,207,142,0.2);  color: var(--success); }
+  .topo-line-status.FAULT   { background: rgba(224,82,82,0.2);   color: var(--danger); }
+  .topo-line-status.BLOCKED { background: rgba(245,158,11,0.2);  color: var(--warning); }
 
   .topo-btn {
-    padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
-    cursor: pointer; border: 1px solid; transition: background 0.15s;
-    margin-right: 3px;
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid; transition: opacity 0.15s;
   }
-  .topo-btn-fault   { background: rgba(224,82,82,0.15);   color: var(--danger);  border-color: var(--danger); }
-  .topo-btn-restore { background: rgba(62,207,142,0.15);  color: var(--success); border-color: var(--success); }
-  .topo-btn-isolate { background: rgba(245,158,11,0.15);  color: var(--warning); border-color: var(--warning); }
-  .topo-btn-sw      { background: rgba(91,138,248,0.15);  color: var(--accent);  border-color: var(--accent); }
-  .topo-btn:hover { opacity: 0.8; }
+  .topo-btn:hover { opacity: 0.75; }
+  .topo-btn-fault   { background: rgba(224,82,82,0.15);  color: var(--danger);  border-color: var(--danger); }
+  .topo-btn-restore { background: rgba(62,207,142,0.15); color: var(--success); border-color: var(--success); }
+  .topo-btn-isolate { background: rgba(245,158,11,0.15); color: var(--warning); border-color: var(--warning); }
+  .topo-btn-sw      { background: rgba(91,138,248,0.15); color: var(--accent);  border-color: var(--accent); }
+  .topo-btn-del     { background: rgba(224,82,82,0.1);   color: var(--danger);  border-color: transparent; margin-left: auto; }
+  .topo-btn-close   { background: transparent; color: var(--text-muted); border-color: transparent; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>⚡ Simulator Manager</h1>
-  <span class="subtitle">EMS Edge & Device Management</span>
+  <span class="subtitle">EMS Edge &amp; Device Management</span>
 </header>
 
 <div class="layout">
@@ -302,7 +319,7 @@
     </ul>
   </aside>
 
-  <!-- Right: Device table + Topology -->
+  <!-- Right: Device table + Topology canvas -->
   <section class="devices-panel">
     <div class="devices-header">
       <div style="display:flex;align-items:center;gap:4px;">
@@ -318,16 +335,39 @@
       </div>
     </div>
 
-    <!-- Topology panel -->
+    <!-- Topology SVG canvas panel -->
     <div class="topology-panel">
       <div class="panel-header">
-        <h2>Topology — Lines &amp; Switches</h2>
+        <h2>Topology</h2>
+        <span class="topo-hint" id="topo-hint">노드를 클릭해 연결을 시작하세요</span>
         <button class="btn btn-primary" onclick="loadTopology()" style="font-size:11px;padding:4px 10px;">Refresh</button>
       </div>
-      <div class="topology-table-wrap" id="topology-table-wrap">
-        <div class="empty-state" style="padding:20px">
-          <div>Loading topology...</div>
+
+      <div class="topo-canvas-wrap">
+        <svg id="topo-svg">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#8892a4"/>
+            </marker>
+          </defs>
+          <g id="topo-lines"></g>
+          <g id="topo-nodes"></g>
+        </svg>
+        <div class="topo-empty" id="topo-empty">
+          <div class="icon">⬡</div>
+          <div>Edge를 추가하면 노드가 나타납니다</div>
+          <div style="font-size:11px;margin-top:4px">노드를 클릭 → 다른 노드 클릭으로 전선을 연결하세요</div>
         </div>
+      </div>
+
+      <!-- Selected line control strip -->
+      <div class="topo-line-panel" id="topo-line-panel">
+        <span class="topo-line-id" id="topo-line-id"></span>
+        <span class="topo-line-status" id="topo-line-status"></span>
+        <span id="topo-sw-state" style="font-size:11px;color:var(--text-muted)"></span>
+        <div id="topo-line-actions" style="display:flex;gap:6px;align-items:center;"></div>
+        <button class="topo-btn topo-btn-del" onclick="deleteSelectedLine()">Delete Line</button>
+        <button class="topo-btn topo-btn-close" onclick="deselectLine()">✕</button>
       </div>
     </div>
   </section>
@@ -337,7 +377,6 @@
 <div class="modal-backdrop" id="add-edge-modal">
   <div class="modal">
     <h3>Add New Edge</h3>
-
     <div class="form-group">
       <label>Edge Type <span style="color:var(--danger)">*</span></label>
       <select id="new-edge-type" onchange="onEdgeTypeChange()">
@@ -347,16 +386,12 @@
         <option value="load">⚡ Load</option>
       </select>
     </div>
-
     <div class="form-group">
       <label>Edge ID <span style="color:var(--text-muted);font-weight:400;font-size:11px">(자동 생성, 수정 가능)</span></label>
       <input type="text" id="new-edge-id" placeholder="자동 생성됩니다">
     </div>
-
     <details style="margin-bottom:14px;">
-      <summary style="cursor:pointer;font-size:12px;color:var(--text-muted);user-select:none;">
-        고급 설정 (Plant ID / MQTT)
-      </summary>
+      <summary style="cursor:pointer;font-size:12px;color:var(--text-muted);user-select:none;">고급 설정 (Plant ID / MQTT)</summary>
       <div style="padding-top:12px;">
         <div class="form-group">
           <label>Plant ID</label>
@@ -374,7 +409,6 @@
         </div>
       </div>
     </details>
-
     <div class="error-msg" id="add-edge-err"></div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeModal('add-edge-modal')">Cancel</button>
@@ -397,10 +431,22 @@
 </div>
 
 <script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const NODE_W = 144, NODE_H = 58, NODE_RX = 8;
+const TYPE_COLOR = { solar: '#f59e0b', diesel: '#6366f1', ess: '#3ecf8e', load: '#e05252' };
+const LINE_COLOR = { NORMAL: '#3ecf8e', FAULT: '#e05252', BLOCKED: '#f59e0b' };
+
 // ── State ──────────────────────────────────────────────────────────────────
 let edges = [];
 let selectedEdgeId = null;
 let selectedEdgeType = null;
+
+let topoData = { nodes: [], lines: [] };
+const nodePositions = {};   // node_id → {x, y}
+let selectedNodeId = null;  // line-draw mode: first node clicked
+let selectedLineId = null;  // line selected for control panel
+let dragging = null;        // {nodeId, offsetX, offsetY}
+let _wasDragging = false;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 loadEdges();
@@ -414,9 +460,7 @@ async function loadEdges() {
     edges = await res.json();
     renderEdges();
     if (selectedEdgeId) loadDevices(selectedEdgeId);
-  } catch (e) {
-    console.error('loadEdges failed', e);
-  }
+  } catch (e) { console.error('loadEdges failed', e); }
 }
 
 function renderEdges() {
@@ -458,32 +502,29 @@ async function deleteEdge(edgeId) {
   const data = await res.json();
   if (!res.ok) { alert(`Error: ${data.error}`); return; }
   if (selectedEdgeId === edgeId) {
-    selectedEdgeId = null;
-    selectedEdgeType = null;
+    selectedEdgeId = null; selectedEdgeType = null;
     document.getElementById('selected-edge-label').textContent = '— select an edge';
     document.getElementById('add-device-btn').disabled = true;
     document.getElementById('device-table-wrap').innerHTML =
       '<div class="empty-state"><div class="icon">◈</div><div>Select an edge to manage devices</div></div>';
   }
   await loadEdges();
+  await loadTopology();
 }
 
 // ── Devices ────────────────────────────────────────────────────────────────
 async function loadDevices(edgeId) {
   const res = await fetch(`/api/edges/${edgeId}/devices`);
-  const devices = await res.json();
-  renderDevices(devices, edgeId);
+  renderDevices(await res.json(), edgeId);
 }
 
 function renderDevices(devices, edgeId) {
   const wrap = document.getElementById('device-table-wrap');
   const edgeType = edges.find(e => e.edge_id === edgeId)?.edge_type || selectedEdgeType;
-
   if (devices.length === 0) {
     wrap.innerHTML = '<div class="empty-state"><div class="icon">○</div><div>No devices — click "+ Add Device"</div></div>';
     return;
   }
-
   const cols = getColumns(edgeType);
   const thead = cols.map(c => `<th>${c.label}</th>`).join('') + '<th style="width:70px"></th>';
   const tbody = devices.map(d => {
@@ -493,42 +534,25 @@ function renderDevices(devices, edgeId) {
         : `<span class="muted">${d[c.key] ?? '—'}</span>`;
       return `<td>${val}</td>`;
     }).join('');
-    return `<tr>${cells}<td><button class="btn-danger-sm"
-      onclick="removeDevice('${edgeId}', '${d.device_id}')">Remove</button></td></tr>`;
+    return `<tr>${cells}<td><button class="btn-danger-sm" onclick="removeDevice('${edgeId}','${d.device_id}')">Remove</button></td></tr>`;
   }).join('');
-
   wrap.innerHTML = `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
 }
 
 function getColumns(edgeType) {
   switch (edgeType) {
-    case 'solar':
-      return [{ key: 'device_id', label: 'Device ID' }];
-    case 'diesel':
-      return [
-        { key: 'device_id', label: 'Device ID' },
-        { key: 'max_capacity_kw', label: 'Max kW' },
-      ];
-    case 'ess':
-      return [
-        { key: 'device_id', label: 'Device ID' },
-        { key: 'initial_soc', label: 'SoC (%)' },
-        { key: 'power_limit_kw', label: 'Power Limit kW' },
-        { key: 'capacity_kwh', label: 'Capacity kWh' },
-        { key: 'temperature_c', label: 'Temp °C' },
-      ];
-    case 'load':
-      return [
-        { key: 'device_id', label: 'Device ID' },
-        { key: 'panel_id', label: 'Panel ID' },
-        { key: 'name', label: 'Name' },
-        { key: 'rated_kw', label: 'Rated kW' },
-        { key: 'base_kw', label: 'Base kW' },
-        { key: 'enabled', label: 'Enabled' },
-        { key: 'scenario_profile', label: 'Profile' },
-      ];
-    default:
-      return [{ key: 'device_id', label: 'Device ID' }];
+    case 'solar':  return [{ key: 'device_id', label: 'Device ID' }];
+    case 'diesel': return [{ key: 'device_id', label: 'Device ID' }, { key: 'max_capacity_kw', label: 'Max kW' }];
+    case 'ess':    return [
+      { key: 'device_id', label: 'Device ID' }, { key: 'initial_soc', label: 'SoC (%)' },
+      { key: 'power_limit_kw', label: 'Power Limit kW' }, { key: 'capacity_kwh', label: 'Capacity kWh' },
+      { key: 'temperature_c', label: 'Temp °C' }];
+    case 'load':   return [
+      { key: 'device_id', label: 'Device ID' }, { key: 'panel_id', label: 'Panel ID' },
+      { key: 'name', label: 'Name' }, { key: 'rated_kw', label: 'Rated kW' },
+      { key: 'base_kw', label: 'Base kW' }, { key: 'enabled', label: 'Enabled' },
+      { key: 'scenario_profile', label: 'Profile' }];
+    default: return [{ key: 'device_id', label: 'Device ID' }];
   }
 }
 
@@ -541,25 +565,22 @@ async function removeDevice(edgeId, deviceId) {
   await loadEdges();
 }
 
-// ── Add Edge Modal ─────────────────────────────────────────────────────────
-
+// ── Add Edge Modal ──────────────────────────────────────────────────────────
 function generateEdgeId(type) {
   const existing = new Set(edges.map(e => e.edge_id));
   for (let n = 1; n <= 99; n++) {
-    const candidate = `${type}-edge-${String(n).padStart(2, '0')}`;
-    if (!existing.has(candidate)) return candidate;
+    const c = `${type}-edge-${String(n).padStart(2, '0')}`;
+    if (!existing.has(c)) return c;
   }
   return `${type}-edge-${Date.now()}`;
 }
 
 function onEdgeTypeChange() {
-  const type = document.getElementById('new-edge-type').value;
-  document.getElementById('new-edge-id').value = generateEdgeId(type);
+  document.getElementById('new-edge-id').value = generateEdgeId(document.getElementById('new-edge-type').value);
 }
 
 function openAddEdgeModal() {
   document.getElementById('add-edge-err').style.display = 'none';
-  // Edge Type 기본값(solar)으로 Edge ID 자동 생성
   onEdgeTypeChange();
   openModal('add-edge-modal');
 }
@@ -574,22 +595,15 @@ async function submitAddEdge() {
     mqtt_broker_host: document.getElementById('new-edge-mqtt-host').value.trim(),
     mqtt_broker_port: parseInt(document.getElementById('new-edge-mqtt-port').value),
   };
-  const res = await fetch('/api/edges', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const res = await fetch('/api/edges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (!res.ok) {
-    errEl.textContent = data.error;
-    errEl.style.display = 'block';
-    return;
-  }
+  if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
   closeModal('add-edge-modal');
   await loadEdges();
+  await loadTopology();
 }
 
-// ── Add Device Modal ───────────────────────────────────────────────────────
+// ── Add Device Modal ────────────────────────────────────────────────────────
 function openAddDeviceModal() {
   document.getElementById('add-device-err').style.display = 'none';
   document.getElementById('device-form-fields').innerHTML = buildDeviceForm(selectedEdgeType);
@@ -598,126 +612,67 @@ function openAddDeviceModal() {
 
 function buildDeviceForm(edgeType) {
   const f = (id, label, type = 'text', value = '', placeholder = '') =>
-    `<div class="form-group">
-      <label>${label}</label>
-      <input type="${type}" id="df-${id}" value="${value}" placeholder="${placeholder}">
-    </div>`;
-  const row = (...fields) =>
-    `<div class="form-row">${fields.join('')}</div>`;
-
+    `<div class="form-group"><label>${label}</label>
+     <input type="${type}" id="df-${id}" value="${value}" placeholder="${placeholder}"></div>`;
+  const row = (...fields) => `<div class="form-row">${fields.join('')}</div>`;
   const base = f('device_id', 'Device ID *', 'text', '', 'e.g. solar-03');
-
   switch (edgeType) {
-    case 'solar':
-      return base;
-
-    case 'diesel':
-      return base + f('max_capacity_kw', 'Max Capacity (kW)', 'number', '1000');
-
-    case 'ess':
-      return base
-        + row(f('initial_soc', 'Initial SoC (%)', 'number', '50'),
-               f('power_limit_kw', 'Power Limit (kW)', 'number', '42'))
-        + row(f('capacity_kwh', 'Capacity (kWh)', 'number', '420'),
-               f('temperature_c', 'Temperature (°C)', 'number', '25'))
-        + row(f('low_soc_threshold', 'Low SoC %', 'number', '20'),
-               f('high_soc_threshold', 'High SoC %', 'number', '90'))
-        + row(f('min_safe_soc_threshold', 'Min Safe SoC %', 'number', '10'),
-               f('max_safe_soc_threshold', 'Max Safe SoC %', 'number', '95'))
-        + row(f('max_temperature_c', 'Max Temp (°C)', 'number', '45'),
-               f('publish_interval_sec', 'Pub Interval (s)', 'number', '0.5'));
-
-    case 'load':
-      return base
-        + row(f('panel_id', 'Panel ID *', 'text', 'PANEL-MAIN', 'e.g. PANEL-MAIN'),
-               f('name', 'Name', 'text', 'load-name', 'e.g. load-name'))
-        + row(f('rated_kw', 'Rated kW', 'number', '100'),
-               f('base_kw', 'Base kW', 'number', '60'))
-        + row(f('power_factor', 'Power Factor', 'number', '0.98'),
-               f('voltage_v', 'Voltage (V)', 'number', '380'))
-        + row(f('frequency_hz', 'Frequency (Hz)', 'number', '60'),
-               `<div class="form-group">
-                  <label>Scenario Profile</label>
-                  <select id="df-profile">
-                    <option value="office-day">office-day</option>
-                    <option value="hvac-heavy">hvac-heavy</option>
-                    <option value="off-hours">off-hours</option>
-                  </select>
-                </div>`)
-        + `<div class="form-group">
-             <label>Enabled</label>
-             <select id="df-enabled">
-               <option value="true">Yes</option>
-               <option value="false">No</option>
-             </select>
-           </div>`;
-
-    default:
-      return base;
+    case 'solar': return base;
+    case 'diesel': return base + f('max_capacity_kw', 'Max Capacity (kW)', 'number', '1000');
+    case 'ess': return base
+      + row(f('initial_soc','Initial SoC (%)','number','50'), f('power_limit_kw','Power Limit (kW)','number','42'))
+      + row(f('capacity_kwh','Capacity (kWh)','number','420'), f('temperature_c','Temperature (°C)','number','25'))
+      + row(f('low_soc_threshold','Low SoC %','number','20'), f('high_soc_threshold','High SoC %','number','90'))
+      + row(f('min_safe_soc_threshold','Min Safe SoC %','number','10'), f('max_safe_soc_threshold','Max Safe SoC %','number','95'))
+      + row(f('max_temperature_c','Max Temp (°C)','number','45'), f('publish_interval_sec','Pub Interval (s)','number','0.5'));
+    case 'load': return base
+      + row(f('panel_id','Panel ID *','text','PANEL-MAIN','e.g. PANEL-MAIN'), f('name','Name','text','load-name'))
+      + row(f('rated_kw','Rated kW','number','100'), f('base_kw','Base kW','number','60'))
+      + row(f('power_factor','Power Factor','number','0.98'), f('voltage_v','Voltage (V)','number','380'))
+      + row(f('frequency_hz','Frequency (Hz)','number','60'),
+            `<div class="form-group"><label>Scenario Profile</label>
+             <select id="df-profile">
+               <option value="office-day">office-day</option>
+               <option value="hvac-heavy">hvac-heavy</option>
+               <option value="off-hours">off-hours</option>
+             </select></div>`)
+      + `<div class="form-group"><label>Enabled</label>
+         <select id="df-enabled"><option value="true">Yes</option><option value="false">No</option></select></div>`;
+    default: return base;
   }
 }
 
-function gv(id) {
-  const el = document.getElementById(`df-${id}`);
-  return el ? el.value : undefined;
-}
-
-function gn(id) {
-  const v = gv(id);
-  return v !== undefined ? parseFloat(v) : undefined;
-}
+function gv(id) { const el = document.getElementById(`df-${id}`); return el ? el.value : undefined; }
+function gn(id) { const v = gv(id); return v !== undefined ? parseFloat(v) : undefined; }
 
 async function submitAddDevice() {
   const errEl = document.getElementById('add-device-err');
   errEl.style.display = 'none';
-
   let body = { device_id: gv('device_id') };
-
   switch (selectedEdgeType) {
-    case 'diesel':
-      body.max_capacity_kw = gn('max_capacity_kw');
-      break;
+    case 'diesel': body.max_capacity_kw = gn('max_capacity_kw'); break;
     case 'ess':
       Object.assign(body, {
-        resource_type: 'ess',
-        publish_interval_sec: gn('publish_interval_sec'),
-        initial_soc: gn('initial_soc'),
-        power_limit_kw: gn('power_limit_kw'),
-        capacity_kwh: gn('capacity_kwh'),
-        low_soc_threshold: gn('low_soc_threshold'),
-        high_soc_threshold: gn('high_soc_threshold'),
-        min_safe_soc_threshold: gn('min_safe_soc_threshold'),
-        max_safe_soc_threshold: gn('max_safe_soc_threshold'),
-        temperature_c: gn('temperature_c'),
+        resource_type: 'ess', publish_interval_sec: gn('publish_interval_sec'),
+        initial_soc: gn('initial_soc'), power_limit_kw: gn('power_limit_kw'),
+        capacity_kwh: gn('capacity_kwh'), low_soc_threshold: gn('low_soc_threshold'),
+        high_soc_threshold: gn('high_soc_threshold'), min_safe_soc_threshold: gn('min_safe_soc_threshold'),
+        max_safe_soc_threshold: gn('max_safe_soc_threshold'), temperature_c: gn('temperature_c'),
         max_temperature_c: gn('max_temperature_c'),
-      });
-      break;
+      }); break;
     case 'load':
       Object.assign(body, {
-        panel_id: gv('panel_id'),
-        name: gv('name'),
-        rated_kw: gn('rated_kw'),
-        base_kw: gn('base_kw'),
-        power_factor: gn('power_factor'),
-        voltage_v: gn('voltage_v'),
-        frequency_hz: gn('frequency_hz'),
-        enabled: gv('enabled') === 'true',
-        scenario_profile: gv('profile'),
-      });
-      break;
+        panel_id: gv('panel_id'), name: gv('name'),
+        rated_kw: gn('rated_kw'), base_kw: gn('base_kw'), power_factor: gn('power_factor'),
+        voltage_v: gn('voltage_v'), frequency_hz: gn('frequency_hz'),
+        enabled: gv('enabled') === 'true', scenario_profile: gv('profile'),
+      }); break;
   }
-
   const res = await fetch(`/api/edges/${selectedEdgeId}/devices`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (!res.ok) {
-    errEl.textContent = data.error;
-    errEl.style.display = 'block';
-    return;
-  }
+  if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
   closeModal('add-device-modal');
   await loadDevices(selectedEdgeId);
   await loadEdges();
@@ -728,68 +683,301 @@ async function loadTopology() {
   try {
     const res = await fetch('/api/topology');
     if (!res.ok) throw new Error(res.statusText);
-    const data = await res.json();
-    renderTopology(data);
+    topoData = await res.json();
+    renderTopologySVG();
+    renderLinePanel();
   } catch (e) {
-    document.getElementById('topology-table-wrap').innerHTML =
-      `<div class="empty-state" style="padding:20px;color:var(--danger)">Topology 서비스 연결 불가: ${e.message}</div>`;
+    document.getElementById('topo-empty').innerHTML =
+      `<div class="icon">⚠</div><div style="color:var(--danger)">Topology 서비스 연결 불가: ${e.message}</div>`;
+    document.getElementById('topo-empty').style.display = 'flex';
   }
 }
 
-function renderTopology(data) {
-  const wrap = document.getElementById('topology-table-wrap');
-  const lines = data.lines || [];
-  const nodeMap = {};
-  (data.nodes || []).forEach(n => { nodeMap[n.node_id] = n.resource_id; });
+// ── Auto-layout ─────────────────────────────────────────────────────────────
+function autoLayout() {
+  const svg = document.getElementById('topo-svg');
+  const W = svg.clientWidth || 800;
+  const H = svg.clientHeight || 320;
 
-  if (lines.length === 0) {
-    wrap.innerHTML = '<div class="empty-state" style="padding:20px">No lines defined</div>';
+  // node_type별 x 위치 (GENERATION left, STORAGE center, LOAD right)
+  const colX = { GENERATION: W * 0.2, STORAGE: W * 0.5, LOAD: W * 0.8 };
+  const groups = { GENERATION: [], STORAGE: [], LOAD: [] };
+
+  topoData.nodes.forEach(n => {
+    if (!nodePositions[n.node_id]) groups[n.node_type]?.push(n.node_id);
+  });
+
+  Object.entries(groups).forEach(([type, ids]) => {
+    const x = (colX[type] ?? W * 0.5) - NODE_W / 2;
+    ids.forEach((nid, i) => {
+      nodePositions[nid] = { x, y: (H / (ids.length + 1)) * (i + 1) - NODE_H / 2 };
+    });
+  });
+}
+
+// ── SVG Render ─────────────────────────────────────────────────────────────
+function renderTopologySVG() {
+  autoLayout();
+
+  const nodes = topoData.nodes || [];
+  const lines = topoData.lines || [];
+
+  // empty state overlay
+  const emptyEl = document.getElementById('topo-empty');
+  emptyEl.style.display = nodes.length === 0 ? 'flex' : 'none';
+
+  const linesG = document.getElementById('topo-lines');
+  const nodesG = document.getElementById('topo-nodes');
+
+  // ── Draw lines ──
+  linesG.innerHTML = '';
+  const nodeMap = {};
+  nodes.forEach(n => nodeMap[n.node_id] = n);
+
+  lines.forEach(line => {
+    const fp = nodePositions[line.from_node_id];
+    const tp = nodePositions[line.to_node_id];
+    if (!fp || !tp) return;
+
+    const x1 = fp.x + NODE_W / 2, y1 = fp.y + NODE_H / 2;
+    const x2 = tp.x + NODE_W / 2, y2 = tp.y + NODE_H / 2;
+    const mx = (x1 + x2) / 2,    my = (y1 + y2) / 2;
+    const color = LINE_COLOR[line.status] || '#8892a4';
+    const isSel = line.line_id === selectedLineId;
+    const sw = line.switch || {};
+
+    const g = svgEl('g');
+    g.style.cursor = 'pointer';
+    g.addEventListener('click', e => { e.stopPropagation(); selectLine(line.line_id); });
+
+    // Hit area (wider transparent line for easier clicking)
+    const hit = svgEl('line');
+    setAttrs(hit, { x1, y1, x2, y2, stroke: 'transparent', 'stroke-width': 18 });
+
+    // Visible line
+    const l = svgEl('line');
+    setAttrs(l, {
+      x1, y1, x2, y2,
+      stroke: color,
+      'stroke-width': isSel ? 4 : 2.5,
+      'stroke-dasharray': line.status === 'BLOCKED' ? '10,5' : 'none',
+    });
+
+    // Switch open indicator: small gap at midpoint
+    if (sw.position === 'OPEN') {
+      const gap = svgEl('line');
+      setAttrs(gap, {
+        x1: mx - 10, y1: my - 10, x2: mx + 10, y2: my + 10,
+        stroke: color, 'stroke-width': 3,
+      });
+    }
+
+    // Midpoint marker
+    const circle = svgEl('circle');
+    setAttrs(circle, {
+      cx: mx, cy: my, r: isSel ? 9 : 6,
+      fill: color,
+      stroke: isSel ? '#ffffff' : 'none', 'stroke-width': 2,
+    });
+
+    // Switch state text near midpoint
+    const swLabel = svgEl('text');
+    setAttrs(swLabel, { x: mx + 10, y: my - 8, 'font-size': '10', fill: color, 'font-weight': '600' });
+    swLabel.textContent = sw.position === 'OPEN' ? 'OPEN' : '';
+
+    g.append(hit, l, circle, swLabel);
+    linesG.appendChild(g);
+  });
+
+  // ── Draw nodes ──
+  nodesG.innerHTML = '';
+  nodes.forEach(node => {
+    const pos = nodePositions[node.node_id];
+    if (!pos) return;
+
+    const edgeType = node.edge_id?.split('-')[0] || 'unknown';
+    const color = TYPE_COLOR[edgeType] || '#8892a4';
+    const isSel = node.node_id === selectedNodeId;
+
+    const g = svgEl('g');
+    g.style.cursor = 'pointer';
+    g.style.userSelect = 'none';
+
+    // Shadow/glow when selected
+    if (isSel) {
+      const glow = svgEl('rect');
+      setAttrs(glow, {
+        x: pos.x - 4, y: pos.y - 4,
+        width: NODE_W + 8, height: NODE_H + 8,
+        rx: NODE_RX + 3, ry: NODE_RX + 3,
+        fill: 'none', stroke: '#ffffff', 'stroke-width': 2, opacity: 0.6,
+      });
+      g.appendChild(glow);
+    }
+
+    // Background rect
+    const rect = svgEl('rect');
+    setAttrs(rect, {
+      x: pos.x, y: pos.y, width: NODE_W, height: NODE_H,
+      rx: NODE_RX, ry: NODE_RX,
+      fill: '#1a1d27',
+      stroke: isSel ? '#ffffff' : color,
+      'stroke-width': isSel ? 2.5 : 1.5,
+    });
+
+    // Color bar at top
+    const bar = svgEl('rect');
+    setAttrs(bar, {
+      x: pos.x, y: pos.y, width: NODE_W, height: 5,
+      rx: NODE_RX, ry: NODE_RX, fill: color,
+    });
+
+    // Type label
+    const typeLabel = svgEl('text');
+    setAttrs(typeLabel, { x: pos.x + 10, y: pos.y + 22, 'font-size': '10', fill: color, 'font-weight': '700' });
+    typeLabel.textContent = edgeType.toUpperCase();
+
+    // Edge ID label
+    const idLabel = svgEl('text');
+    setAttrs(idLabel, { x: pos.x + 10, y: pos.y + 40, 'font-size': '12', fill: '#e2e8f0', 'font-weight': '500' });
+    idLabel.textContent = node.edge_id;
+
+    // Click: node selection for line drawing
+    g.addEventListener('click', e => {
+      e.stopPropagation();
+      if (_wasDragging) { _wasDragging = false; return; }
+      handleNodeClick(node.node_id);
+    });
+
+    // Drag: reposition node
+    g.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      const pt = getSVGPoint(e);
+      dragging = { nodeId: node.node_id, offsetX: pt.x - pos.x, offsetY: pt.y - pos.y };
+    });
+
+    g.append(rect, bar, typeLabel, idLabel);
+    nodesG.appendChild(g);
+  });
+}
+
+// ── Node click: line drawing mode ──────────────────────────────────────────
+function handleNodeClick(nodeId) {
+  if (!selectedNodeId) {
+    selectedNodeId = nodeId;
+    setHint(`"${nodeId}" 선택됨 — 연결할 노드를 클릭하세요 (같은 노드 클릭 시 취소)`);
+    renderTopologySVG();
+  } else if (selectedNodeId === nodeId) {
+    selectedNodeId = null;
+    setHint('노드를 클릭해 연결을 시작하세요');
+    renderTopologySVG();
+  } else {
+    connectNodes(selectedNodeId, nodeId);
+  }
+}
+
+async function connectNodes(fromNodeId, toNodeId) {
+  // 양방향 중복 체크: A→B이든 B→A이든 이미 연결됐으면 차단
+  const alreadyConnected = (topoData.lines || []).some(l =>
+    (l.from_node_id === fromNodeId && l.to_node_id === toNodeId) ||
+    (l.from_node_id === toNodeId   && l.to_node_id === fromNodeId)
+  );
+  if (alreadyConnected) {
+    setHint('이미 연결된 노드입니다. 다른 노드를 선택하세요.');
+    selectedNodeId = null;
+    renderTopologySVG();
     return;
   }
 
-  const rows = lines.map(line => {
-    const sw = line.switch || {};
-    const affected = [nodeMap[line.from_node_id], nodeMap[line.to_node_id]]
-      .filter(Boolean).join(', ');
-    const statusCls = { NORMAL: 'tl-normal', FAULT: 'tl-fault', BLOCKED: 'tl-blocked' }[line.status] || '';
-    const swCls = sw.position === 'CLOSED' ? 'sw-closed' : 'sw-open';
+  const fromPart = fromNodeId.replace(/^node-/, '');
+  const toPart   = toNodeId.replace(/^node-/, '');
+  const lineId   = `line-${fromPart}-${toPart}`;
 
-    const lineActions = line.status === 'FAULT'
-      ? `<button class="topo-btn topo-btn-restore" onclick="topoFault('${line.line_id}', false)">복구</button>`
-      : `<button class="topo-btn topo-btn-fault" onclick="topoFault('${line.line_id}', true)">Fault</button>`;
+  const res = await fetch('/api/lines', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ line_id: lineId, from_node_id: fromNodeId, to_node_id: toNodeId }),
+  });
+  if (!res.ok) {
+    const d = await res.json();
+    setHint(`연결 실패: ${d.error}`);
+    selectedNodeId = null;
+    renderTopologySVG();
+    return;
+  }
 
-    const isolateAction = line.status === 'BLOCKED'
-      ? `<button class="topo-btn topo-btn-restore" onclick="topoCmd('${line.line_id}', 'RESTORE_LINE')">Restore</button>`
-      : `<button class="topo-btn topo-btn-isolate" onclick="topoCmd('${line.line_id}', 'ISOLATE_LINE')">Isolate</button>`;
+  selectedNodeId = null;
+  // 연결 완료 후: 같은 노드에서 추가 연결 가능함을 안내
+  setHint('연결 완료! 노드를 다시 클릭하면 추가 연결할 수 있습니다.');
+  await loadTopology();
+}
 
-    const swAction = sw.switch_id
-      ? (sw.position === 'CLOSED'
-          ? `<button class="topo-btn topo-btn-sw" onclick="swCmd('${sw.switch_id}', 'OPEN_SWITCH')">Open</button>`
-          : `<button class="topo-btn topo-btn-restore" onclick="swCmd('${sw.switch_id}', 'CLOSE_SWITCH')">Close</button>`)
-      : '';
+// ── Line selection & control ────────────────────────────────────────────────
+function selectLine(lineId) {
+  selectedLineId = lineId === selectedLineId ? null : lineId;
+  selectedNodeId = null;
+  setHint('노드를 클릭해 연결을 시작하세요');
+  renderTopologySVG();
+  renderLinePanel();
+}
 
-    return `<tr>
-      <td class="muted">${line.line_id}</td>
-      <td><span class="${statusCls}">${line.status}</span></td>
-      <td><span class="${swCls}">${sw.position || '—'}</span></td>
-      <td class="muted" style="font-size:11px">${affected}</td>
-      <td>${lineActions}${isolateAction}${swAction}</td>
-    </tr>`;
-  }).join('');
+function deselectLine() {
+  selectedLineId = null;
+  renderTopologySVG();
+  renderLinePanel();
+}
 
-  wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>Line ID</th><th>상태</th><th>Switch</th><th>연결 장치</th><th>Actions</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+function renderLinePanel() {
+  const panel = document.getElementById('topo-line-panel');
+  if (!selectedLineId) { panel.classList.remove('visible'); return; }
+
+  const line = topoData.lines?.find(l => l.line_id === selectedLineId);
+  if (!line) { panel.classList.remove('visible'); return; }
+
+  const sw = line.switch || {};
+  document.getElementById('topo-line-id').textContent = line.line_id;
+
+  const statusEl = document.getElementById('topo-line-status');
+  statusEl.textContent = line.status;
+  statusEl.className = `topo-line-status ${line.status}`;
+
+  document.getElementById('topo-sw-state').textContent =
+    sw.switch_id ? `Switch: ${sw.position}` : '';
+
+  const actions = [];
+  if (line.status === 'FAULT')
+    actions.push(`<button class="topo-btn topo-btn-restore" onclick="topoFault('${line.line_id}',false)">복구</button>`);
+  else
+    actions.push(`<button class="topo-btn topo-btn-fault" onclick="topoFault('${line.line_id}',true)">Fault</button>`);
+
+  if (line.status === 'BLOCKED')
+    actions.push(`<button class="topo-btn topo-btn-restore" onclick="topoCmd('${line.line_id}','RESTORE_LINE')">Restore</button>`);
+  else
+    actions.push(`<button class="topo-btn topo-btn-isolate" onclick="topoCmd('${line.line_id}','ISOLATE_LINE')">Isolate</button>`);
+
+  if (sw.switch_id) {
+    if (sw.position === 'CLOSED')
+      actions.push(`<button class="topo-btn topo-btn-sw" onclick="swCmd('${sw.switch_id}','OPEN_SWITCH')">Open SW</button>`);
+    else
+      actions.push(`<button class="topo-btn topo-btn-restore" onclick="swCmd('${sw.switch_id}','CLOSE_SWITCH')">Close SW</button>`);
+  }
+
+  document.getElementById('topo-line-actions').innerHTML = actions.join('');
+  panel.classList.add('visible');
+}
+
+async function deleteSelectedLine() {
+  if (!selectedLineId) return;
+  if (!confirm(`Delete line "${selectedLineId}"?`)) return;
+  const res = await fetch(`/api/lines/${selectedLineId}`, { method: 'DELETE' });
+  if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
+  selectedLineId = null;
+  await loadTopology();
 }
 
 async function topoFault(lineId, fault) {
   const res = await fetch(`/api/lines/${lineId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fault }),
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fault }),
   });
   if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
   await loadTopology();
@@ -797,9 +985,7 @@ async function topoFault(lineId, fault) {
 
 async function topoCmd(lineId, command) {
   const res = await fetch(`/api/lines/${lineId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command }),
   });
   if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
   await loadTopology();
@@ -807,16 +993,48 @@ async function topoCmd(lineId, command) {
 
 async function swCmd(switchId, command) {
   const res = await fetch(`/api/switches/${switchId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command }),
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command }),
   });
   if (!res.ok) { const d = await res.json(); alert(`Error: ${d.error}`); return; }
   await loadTopology();
 }
 
+// ── SVG drag ───────────────────────────────────────────────────────────────
+const svgCanvas = document.getElementById('topo-svg');
+
+function getSVGPoint(e) {
+  const r = svgCanvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+svgCanvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  _wasDragging = true;
+  const pt = getSVGPoint(e);
+  nodePositions[dragging.nodeId] = { x: pt.x - dragging.offsetX, y: pt.y - dragging.offsetY };
+  renderTopologySVG();
+});
+
+svgCanvas.addEventListener('mouseup', () => { dragging = null; });
+svgCanvas.addEventListener('mouseleave', () => { dragging = null; });
+
+// Click on SVG background → deselect everything
+svgCanvas.addEventListener('click', () => {
+  if (_wasDragging) { _wasDragging = false; return; }
+  selectedNodeId = null;
+  selectedLineId = null;
+  setHint('노드를 클릭해 연결을 시작하세요');
+  renderTopologySVG();
+  renderLinePanel();
+});
+
+// ── SVG helpers ─────────────────────────────────────────────────────────────
+function svgEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+function setAttrs(el, attrs) { Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v)); }
+function setHint(msg) { const el = document.getElementById('topo-hint'); if (el) el.textContent = msg; }
+
 // ── Modal helpers ──────────────────────────────────────────────────────────
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 document.querySelectorAll('.modal-backdrop').forEach(el => {
