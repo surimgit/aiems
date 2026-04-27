@@ -29,20 +29,8 @@ _mqtt_client: mqtt.Client | None = None
 
 _DEFAULT_TOPOLOGY = {
     "plant_id": "PLANT-ALPHA",
-    "nodes": [
-        {"node_id": "node-solar-01",  "node_type": "GENERATION", "edge_id": "solar-edge-01",  "resource_id": "solar-01"},
-        {"node_id": "node-diesel-01", "node_type": "GENERATION", "edge_id": "diesel-edge-01", "resource_id": "diesel-01"},
-        {"node_id": "node-ess-01",    "node_type": "STORAGE",    "edge_id": "ess-edge-01",    "resource_id": "ess-01"},
-        {"node_id": "node-load-01",   "node_type": "LOAD",       "edge_id": "load-edge-01",   "resource_id": "load-01"},
-    ],
-    "lines": [
-        {"line_id": "line-solar01-ess01",  "from_node_id": "node-solar-01",  "to_node_id": "node-ess-01",   "flow_kw": 0.0, "status": "NORMAL",
-         "switch": {"switch_id": "sw-solar01-ess01",  "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
-        {"line_id": "line-diesel01-ess01", "from_node_id": "node-diesel-01", "to_node_id": "node-ess-01",   "flow_kw": 0.0, "status": "NORMAL",
-         "switch": {"switch_id": "sw-diesel01-ess01", "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
-        {"line_id": "line-ess01-load01",   "from_node_id": "node-ess-01",   "to_node_id": "node-load-01",  "flow_kw": 0.0, "status": "NORMAL",
-         "switch": {"switch_id": "sw-ess01-load01",   "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
-    ],
+    "nodes": [],
+    "lines": [],
 }
 
 

@@ -103,6 +103,60 @@ EDGE_TYPE_NODE_TYPE = {
     "load": "LOAD",
 }
 
+
+def _default_device_id(edge_type: str, edge_id: str) -> str:
+    """edge_id에서 -edge-<n> 패턴을 떼고 -<n>으로 변환.
+    예: solar-edge-01 -> solar-01, ess-edge-01 -> ess-01.
+    매칭 실패 시 edge_id 그대로 반환.
+    """
+    m = re.match(r"^(.+)-edge-(\d+)$", edge_id)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    return edge_id
+
+
+def _default_device_spec(edge_type: str, edge_id: str) -> dict:
+    """edge_type별 기본 device 1개의 spec을 반환. EMS 규약 device_id 사용."""
+    device_id = _default_device_id(edge_type, edge_id)
+    if edge_type == "solar":
+        return {"device_id": device_id}
+    if edge_type == "diesel":
+        return {"device_id": device_id}
+    if edge_type == "ess":
+        return {
+            "device_id": device_id,
+            "resource_type": "ess",
+            "publish_interval_sec": 0.5,
+            "initial_soc": 62.0,
+            "power_limit_kw": 50.0,
+            "capacity_kwh": 500.0,
+            "low_soc_threshold": 20.0,
+            "high_soc_threshold": 90.0,
+            "min_safe_soc_threshold": 10.0,
+            "max_safe_soc_threshold": 95.0,
+            "temperature_c": 24.5,
+            "max_temperature_c": 45.0,
+            "profile": {
+                "module": "core.profiles.default_profile",
+                "class_name": "DefaultEssProfile",
+                "seed": 101,
+            },
+        }
+    if edge_type == "load":
+        return {
+            "device_id": device_id,
+            "panel_id": "PANEL-MAIN",
+            "name": "office-panel",
+            "rated_kw": 120.0,
+            "base_kw": 80.0,
+            "power_factor": 0.98,
+            "voltage_v": 380.0,
+            "frequency_hz": 60.0,
+            "enabled": True,
+            "scenario_profile": "office-day",
+        }
+    return {"device_id": device_id}
+
 TOPOLOGY_URL = os.environ.get("TOPOLOGY_URL", "http://topology:8081")
 
 EDGE_TYPE_CMD: dict[str, list[str] | None] = {
@@ -268,6 +322,8 @@ def create_edge(body: dict) -> dict:
     }
     (d / "edge_info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
 
+    default_device = _default_device_spec(edge_type, edge_id)
+
     if edge_type == "load":
         cfg = {
             "site_id": plant_id,
@@ -275,20 +331,7 @@ def create_edge(body: dict) -> dict:
             "mqtt_broker_host": mqtt_host,
             "mqtt_broker_port": mqtt_port,
             "publish_interval_sec": 1.0,
-            "loads": [
-                {
-                    "device_id": f"{edge_id}-load-01",
-                    "panel_id": "PANEL-MAIN",
-                    "name": "office-panel",
-                    "rated_kw": 120.0,
-                    "base_kw": 80.0,
-                    "power_factor": 0.98,
-                    "voltage_v": 380.0,
-                    "frequency_hz": 60.0,
-                    "enabled": True,
-                    "scenario_profile": "office-day",
-                }
-            ],
+            "loads": [default_device],
         }
         # 템플릿 시나리오 파일 복사 강화
         scenario_template = EDGES_DIR.parent / "load-simulator" / "config" / "scenario.yaml"
@@ -331,7 +374,7 @@ def create_edge(body: dict) -> dict:
             "plant_id": plant_id,
             "mqtt_broker_host": mqtt_host,
             "mqtt_broker_port": mqtt_port,
-            "devices": [],
+            "devices": [default_device],
         }
     with (d / "devices.yaml").open("w", encoding="utf-8") as f:
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
@@ -343,7 +386,7 @@ def create_edge(body: dict) -> dict:
         "node_id": f"node-{edge_id}",
         "node_type": EDGE_TYPE_NODE_TYPE.get(edge_type, "LOAD"),
         "edge_id": edge_id,
-        "resource_id": edge_id,
+        "resource_id": _default_device_id(edge_type, edge_id),
     })
 
     return {"edge_id": edge_id, "status": "created"}
@@ -545,7 +588,7 @@ def _start_existing_edges() -> None:
             "node_id": f"node-{edge_id}",
             "node_type": EDGE_TYPE_NODE_TYPE.get(edge_type, "LOAD"),
             "edge_id": edge_id,
-            "resource_id": edge_id,
+            "resource_id": _default_device_id(edge_type, edge_id),
         })
 
         status = edge.get("status", "unknown")
