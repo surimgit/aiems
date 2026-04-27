@@ -246,7 +246,7 @@ def create_edge(body: dict) -> dict:
     edge_id = body.get("edge_id", "").strip()
     edge_type = body.get("edge_type", "").strip()
     plant_id = body.get("plant_id", "PLANT-ALPHA").strip()
-    mqtt_host = body.get("mqtt_broker_host", "mqtt-broker").strip()
+    mqtt_host = body.get("mqtt_broker_host", os.environ.get("MQTT_HOST", "host.docker.internal")).strip()
     mqtt_port = int(body.get("mqtt_broker_port", 1883))
 
     if not edge_id:

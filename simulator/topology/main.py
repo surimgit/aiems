@@ -27,9 +27,36 @@ _mqtt_client: mqtt.Client | None = None
 
 # ── YAML persistence ─────────────────────────────────────────────────────────
 
+_DEFAULT_TOPOLOGY = {
+    "plant_id": "PLANT-ALPHA",
+    "nodes": [
+        {"node_id": "node-solar-01",  "node_type": "GENERATION", "edge_id": "solar-edge-01",  "resource_id": "solar-01"},
+        {"node_id": "node-diesel-01", "node_type": "GENERATION", "edge_id": "diesel-edge-01", "resource_id": "diesel-01"},
+        {"node_id": "node-ess-01",    "node_type": "STORAGE",    "edge_id": "ess-edge-01",    "resource_id": "ess-01"},
+        {"node_id": "node-load-01",   "node_type": "LOAD",       "edge_id": "load-edge-01",   "resource_id": "load-01"},
+    ],
+    "lines": [
+        {"line_id": "line-solar01-ess01",  "from_node_id": "node-solar-01",  "to_node_id": "node-ess-01",   "flow_kw": 0.0, "status": "NORMAL",
+         "switch": {"switch_id": "sw-solar01-ess01",  "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
+        {"line_id": "line-diesel01-ess01", "from_node_id": "node-diesel-01", "to_node_id": "node-ess-01",   "flow_kw": 0.0, "status": "NORMAL",
+         "switch": {"switch_id": "sw-diesel01-ess01", "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
+        {"line_id": "line-ess01-load01",   "from_node_id": "node-ess-01",   "to_node_id": "node-load-01",  "flow_kw": 0.0, "status": "NORMAL",
+         "switch": {"switch_id": "sw-ess01-load01",   "position": "CLOSED", "switch_type": "CB", "controllable": True, "interlock_blocked": False}},
+    ],
+}
+
+
 def _load_topology() -> dict:
     if not TOPOLOGY_PATH.exists():
-        return {"plant_id": "PLANT-ALPHA", "nodes": [], "lines": []}
+        # 파일 없으면 기본 토폴로지로 초기화하고 저장
+        TOPOLOGY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        default = json.loads(json.dumps(_DEFAULT_TOPOLOGY))
+        with open(TOPOLOGY_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(default, f, default_flow_style=False, allow_unicode=True)
+        print(f"[topology] 기본 토폴로지 생성: {TOPOLOGY_PATH}")
+        return default
+    if TOPOLOGY_PATH.is_dir():
+        raise RuntimeError(f"TOPOLOGY_PATH({TOPOLOGY_PATH})가 파일이 아닌 디렉토리입니다. Docker 볼륨 마운트를 확인하세요.")
     return yaml.safe_load(TOPOLOGY_PATH.read_text(encoding="utf-8")) or {}
 
 
