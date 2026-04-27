@@ -18,6 +18,11 @@ class DeviceManager:
     def get_device(self, device_id: str) -> Optional[DieselDevice]:
         return self.devices.get(device_id)
 
+    def unregister_device(self, device_id: str):
+        if device_id in self.devices:
+            del self.devices[device_id]
+            print(f"Unregistered device: {device_id}")
+
     def notify_comms_alive(self, device_id: str = None):
         """통신 생존 신호 전달. device_id 지정 시 해당 기기만, 없으면 전체."""
         if device_id is None:
@@ -31,7 +36,7 @@ class DeviceManager:
         telemetries = []
         events = []
         
-        for device_id, device in self.devices.items():
+        for device_id, device in list(self.devices.items()):
             event_data = device.tick(real_time, real_time)
             if event_data:
                 # Wrap event — device.tick()은 (event_type, severity, message, data) 튜플 반환

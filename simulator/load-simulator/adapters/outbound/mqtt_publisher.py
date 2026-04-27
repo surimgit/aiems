@@ -51,8 +51,8 @@ class MqttPublisher:
 
     # 장치 스냅샷을 telemetry JSON으로 직렬화한다.
     @staticmethod
-    def serialize_telemetry(device: LoadDevice) -> str:
-        return json.dumps(snapshot_to_telemetry(device), separators=(",", ":"))
+    def serialize_telemetry(device: LoadDevice, *, wire_fault: bool = False) -> str:
+        return json.dumps(snapshot_to_telemetry(device, wire_fault=wire_fault), separators=(",", ":"))
 
     # ACK 객체를 MQTT 응답 JSON으로 직렬화한다.
     @staticmethod
@@ -82,11 +82,11 @@ class MqttPublisher:
         self.client.disconnect()
 
     # 분전함 telemetry를 MQTT로 발행한다.
-    def publish_telemetry(self, device: LoadDevice) -> None:
+    def publish_telemetry(self, device: LoadDevice, *, wire_fault: bool = False) -> None:
         if self.client is None or not self.connected:
             return
         topic = self.build_topic(device.site_id, RESOURCE_TYPE, device.device_id, "telemetry")
-        self.client.publish(topic, self.serialize_telemetry(device), qos=1)
+        self.client.publish(topic, self.serialize_telemetry(device, wire_fault=wire_fault), qos=1)
 
     # 명령 처리 결과 ACK를 MQTT로 발행한다.
     def publish_ack(self, site_id: str, resource_type: str, device_id: str, ack: CommandAck) -> None:

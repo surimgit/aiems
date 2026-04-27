@@ -77,7 +77,7 @@ class TelemetryStatusData(ContractModel):
 
     SOC: float
     operating_mode: OperatingMode
-    comms_health: Literal["ok", "error"]
+    comms_health: Literal["ok", "error", "wire_fault"]
 
 
 class TelemetryData(ContractModel):
@@ -229,7 +229,12 @@ def to_simulator_command(message: EssCommandMessage) -> SimulatorCommand:
     return parse_simulator_command(message.model_dump())
 
 
-def snapshot_to_telemetry(snapshot: SimulatorSnapshot, *, timestamp: datetime | None = None) -> TelemetryMessage:
+def snapshot_to_telemetry(
+    snapshot: SimulatorSnapshot,
+    *,
+    timestamp: datetime | None = None,
+    comms_health: str = "ok",
+) -> TelemetryMessage:
     """ESS snapshot을 브로커 문서에 맞는 telemetry payload로 변환한다."""
 
     observed_at = timestamp or datetime.now(timezone.utc)
@@ -257,7 +262,7 @@ def snapshot_to_telemetry(snapshot: SimulatorSnapshot, *, timestamp: datetime | 
             status=TelemetryStatusData(
                 SOC=snapshot["soc"],
                 operating_mode=cast(OperatingMode, snapshot["operating_mode"]),
-                comms_health="ok",
+                comms_health=cast(Literal["ok", "error", "wire_fault"], comms_health),
             ),
         ),
     )

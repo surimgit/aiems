@@ -1,0 +1,49 @@
+lines:
+- flow_kw: 0.0
+  from_node_id: node-solar-01
+  line_id: line-solar01-ess01
+  status: NORMAL
+  switch:
+    controllable: true
+    interlock_blocked: false
+    position: CLOSED
+    switch_id: sw-solar01-ess01
+  to_node_id: node-ess-01
+- flow_kw: 0.0
+  from_node_id: node-diesel-01
+  line_id: line-diesel01-ess01
+  status: NORMAL
+  switch:
+    controllable: true
+    interlock_blocked: false
+    position: CLOSED
+    switch_id: sw-diesel01-ess01
+  to_node_id: node-ess-01
+- flow_kw: 0.0
+  from_node_id: node-ess-01
+  line_id: line-ess01-load01
+  status: NORMAL
+  switch:
+    controllable: true
+    interlock_blocked: false
+    position: CLOSED
+    switch_id: sw-ess01-load01
+  to_node_id: node-load-01
+nodes:
+- edge_id: solar-edge-01
+  node_id: node-solar-01
+  node_type: GENERATION
+  resource_id: solar-01
+- edge_id: diesel-edge-01
+  node_id: node-diesel-01
+  node_type: GENERATION
+  resource_id: diesel-01
+- edge_id: ess-edge-01
+  node_id: node-ess-01
+  node_type: STORAGE
+  resource_id: ess-01
+- edge_id: load-edge-01
+  node_id: node-load-01
+  node_type: LOAD
+  resource_id: load-01
+plant_id: PLANT-ALPHA

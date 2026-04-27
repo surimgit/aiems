@@ -29,7 +29,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 async def async_main(config_path: Path, *, interactive: bool) -> None:
     config = load_config(config_path)
-    app = EssSimulatorApp(config, interactive=interactive)
+    app = EssSimulatorApp(config, config_path, interactive=interactive)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

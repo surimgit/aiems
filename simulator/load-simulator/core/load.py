@@ -130,8 +130,8 @@ class LoadState:
     def __post_init__(self) -> None:
         if not 0.0 <= self.shed_ratio <= 1.0:
             raise ValueError("shed_ratio must be between 0.0 and 1.0")
-        if self.comms_health not in {"ok", "error"}:
-            raise ValueError("comms_health must be either 'ok' or 'error'")
+        if self.comms_health not in {"ok", "error", "wire_fault"}:
+            raise ValueError("comms_health must be 'ok', 'error', or 'wire_fault'")
 
 
 @dataclass(slots=True)
@@ -269,6 +269,13 @@ class LoadFleet:
     # 활성화된 장치만 골라 반환한다.
     def list_enabled(self) -> list[LoadDevice]:
         return [device for device in self._devices.values() if device.state.enabled]
+
+    # 장치를 fleet에서 제거한다.
+    def unregister(self, device_id: str) -> None:
+        device = self._devices.pop(device_id, None)
+        if device is not None:
+            self._panel_index.pop(device.panel_id, None)
+            print(f"Unregistered device: {device_id}")
 
     # 현재 측정 기준 유효전력 합계를 계산한다.
     def total_active_power_kw(self, *, enabled_only: bool = True) -> float:
