@@ -36,6 +36,7 @@ class MqttCommandSubscriber:
         resource_type: str,
         broker_host: str,
         broker_port: int,
+        topology_callback=None,
     ) -> None:
         self.handler = handler
         self.publisher = publisher
@@ -43,6 +44,7 @@ class MqttCommandSubscriber:
         self.resource_type = resource_type
         self.broker_host = broker_host
         self.broker_port = broker_port
+        self.topology_callback = topology_callback
         self.connected = False
         if mqtt is None:
             self.client = None
@@ -81,14 +83,24 @@ class MqttCommandSubscriber:
         self.client.loop_stop()
         self.client.disconnect()
 
-    # 연결이 열리면 load command wildcard 토픽을 구독한다.
+    # 연결이 열리면 load command wildcard 토픽과 topology 토픽을 구독한다.
     def _on_connect(self, client: Any, _userdata: Any, _flags: Any, _reason_code: Any, _properties: Any) -> None:
         self.connected = True
         topic = f"{self.site_id}/{self.resource_type}/+/command"
         client.subscribe(topic)
+        topology_topic = f"{self.site_id}/topology/#"
+        client.subscribe(topology_topic)
 
     # 수신 메시지를 처리하고 결과 ACK를 발행한다.
     def _on_message(self, _client: Any, _userdata: Any, message: InboundMqttMessage) -> None:
+        if "/topology/" in message.topic:
+            if self.topology_callback is not None:
+                try:
+                    payload = json.loads(self._decode_payload(message.payload))
+                    self.topology_callback(message.topic, payload)
+                except Exception:
+                    pass
+            return
         payload = self._decode_payload(message.payload)
         device_id = self._extract_device_id(message.topic)
         try:

@@ -64,10 +64,10 @@ class MqttPublisher:
             self.client.disconnect()
 
     @staticmethod
-    def serialize_telemetry(snapshot: SimulatorSnapshot) -> str:
+    def serialize_telemetry(snapshot: SimulatorSnapshot, *, comms_health: str = "ok") -> str:
         """시뮬레이터 snapshot을 브로커 telemetry JSON으로 직렬화한다."""
 
-        return snapshot_to_telemetry(snapshot).model_dump_json()
+        return snapshot_to_telemetry(snapshot, comms_health=comms_health).model_dump_json()
 
     @staticmethod
     def serialize_ack(ack: CommandAck) -> str:
@@ -81,13 +81,13 @@ class MqttPublisher:
 
         return serialize_heartbeat(plant_id, resource_type, device_id)
 
-    def publish_telemetry(self, snapshot: SimulatorSnapshot) -> None:
+    def publish_telemetry(self, snapshot: SimulatorSnapshot, *, comms_health: str = "ok") -> None:
         """연결된 경우에만 telemetry를 문서 규격 토픽으로 발행한다."""
 
         if not self.connected:
             return
         topic = self.build_topic(snapshot["plant_id"], snapshot["resource_type"], snapshot["device_id"], "telemetry")
-        self.client.publish(topic, self.serialize_telemetry(snapshot), qos=1)
+        self.client.publish(topic, self.serialize_telemetry(snapshot, comms_health=comms_health), qos=1)
 
     def publish_ack(self, plant_id: str, resource_type: str, device_id: str, ack: CommandAck) -> None:
         """연결된 경우에만 ACK를 문서 규격 토픽으로 발행한다."""

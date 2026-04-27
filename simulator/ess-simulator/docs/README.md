@@ -11,8 +11,18 @@
 - 생성된 값을 MQTT 브로커로 telemetry/heartbeat 형태로 발행
 - TUI에서 여러 저장소 상태를 한눈에 확인
 
-현재는 외부 발전기, 부하, 실제 전력 흐름과 직접 연계하지 않습니다.
-즉, ESS 자체가 독립적으로 "그럴싸한 상태값"을 만들어 보내는 단계입니다.
+`topology` 서비스와 연동해 선로 장애(wire_fault) 상태를 구독하고,  
+장애 시 `power_kw=0`, `comms_health="wire_fault"`, SOC 고정 동작을 수행합니다.
+
+## Wire Fault 동작
+
+`topology` 서비스가 발행하는 `{plant_id}/topology/#` 토픽을 구독합니다.  
+연결된 선로가 FAULT 또는 BLOCKED 상태이거나 스위치가 OPEN이면 wire_fault로 판단합니다.
+
+| 상태 | `power_kw` | `comms_health` | SOC |
+|---|---|---|---|
+| 정상 | 실제 계산값 | `"ok"` | 정상 변화 |
+| wire_fault | `0.0` | `"wire_fault"` | 진입 시점 값 고정 |
 
 ## 현재 구조
 

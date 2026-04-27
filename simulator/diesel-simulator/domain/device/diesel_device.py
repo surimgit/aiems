@@ -38,6 +38,9 @@ class DieselDevice:
         self._start_failure_count: int = 0
         self._MAX_START_FAILURES: int = 3
 
+        # 전선 장애 상태 (topology 서비스에서 수신)
+        self.wire_fault = False
+
     def _update_engine_metrics(self, dt_sec: float):
         """상태에 따른 엔진 물리 지표 업데이트"""
         if self.state == DeviceState.RUNNING:
@@ -109,17 +112,22 @@ class DieselDevice:
                 {"remaining_liters": 0.0}
             )
 
+        # 전선 장애 시 물리값 억제 (topology spec §7.4)
+        if self.wire_fault:
+            actual_p = 0.0
+
         # 3. 데이터 업데이트
         self.data.fuel.remaining_liters = round(self.current_fuel_l, 2)
         self.data.fuel.level_percent = round((self.current_fuel_l / self.fuel_tank_capacity_l) * 100, 1)
-        
+
         self.data.instantaneous.P = actual_p
         self.data.instantaneous.V = 380.0 if self.state == DeviceState.RUNNING else 0.0
         self.data.instantaneous.I = (actual_p * 1000.0) / 380.0 if actual_p > 0 else 0.0
         self.data.energy.kWh += (actual_p / 3600.0) * dt_sec
+        self.data.status.comms_health = "wire_fault" if self.wire_fault else "ok"
 
         self._update_engine_metrics(dt_sec)
-        
+
         return event_data
 
     def execute_command(self, cmd: dict, current_time: datetime) -> Tuple[str, Optional[str]]:
