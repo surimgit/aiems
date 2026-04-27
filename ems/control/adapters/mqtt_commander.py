@@ -24,6 +24,8 @@ _ACK_TIMEOUT_BY_TYPE: dict[str, float] = {
     "load_shed": 10.0,
     "curtailment": 15.0,
     "clear_curtailment": 15.0,
+    "open": 10.0,    # switch 개방 — 설계문서 §7.4: 2초 이내 전이, 10초 ACK timeout
+    "close": 10.0,   # switch 투입
 }
 
 
@@ -315,6 +317,12 @@ def _check_physical_result(command_type: str, payload: dict, state: dict) -> boo
         target_kw = payload.get("target_kw")
         if target_kw is not None:
             return abs(p - target_kw) <= target_kw * 0.1 + 1.0  # 10% + 1kW 허용 오차
+
+    if command_type == "open":
+        return (rs.get("switch_state") or "").upper() == "OPEN"
+
+    if command_type == "close":
+        return (rs.get("switch_state") or "").upper() == "CLOSED"
 
     # 알 수 없는 명령 타입 → 낙관적 True
     return True

@@ -30,6 +30,10 @@ services:
       - timescaledb_data:/var/lib/postgresql/data
       - ./ems/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./ems/db/aggregation.sql:/docker-entrypoint-initdb.d/02-aggregation.sql
+      - ./ems/db/migrate_001_verified_column.sql:/docker-entrypoint-initdb.d/03-migrate_001.sql
+      - ./ems/db/migrate_002_alarm_columns.sql:/docker-entrypoint-initdb.d/04-migrate_002.sql
+      - ./ems/db/migrate_003_topology.sql:/docker-entrypoint-initdb.d/05-migrate_003.sql
+      - ./ems/db/migrate_004_policy_seed.sql:/docker-entrypoint-initdb.d/06-migrate_004.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ems -d emsdb"]
       interval: 5s

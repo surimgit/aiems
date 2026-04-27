@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 _SOC_EMERGENCY = 5.0
 
 
-_KNOWN_TYPES = {"ESS", "SOLAR", "LOAD", "DIESEL"}
+_KNOWN_TYPES = {"ESS", "SOLAR", "LOAD", "DIESEL", "SWITCH"}
 
 
 def calculate(envelope: dict) -> dict:
@@ -59,6 +59,20 @@ def calculate(envelope: dict) -> dict:
         coolant = engine.get("coolant_temp")
         if coolant is not None and coolant > 95:
             emergency = True
+
+    elif resource_type == "SWITCH":
+        # SWITCH는 전기값(P/Q/V 등) 없음 — 상태 enum만 관리
+        reported_state = {
+            "switch_state":      status.get("switch_state", "UNKNOWN"),
+            "switch_type":       status.get("switch_type", "CB"),
+            "controllable":      status.get("controllable", True),
+            "interlock_blocked": status.get("interlock_blocked", False),
+            "last_transition_at": status.get("last_transition_at"),
+        }
+        if status.get("switch_state") == "FAULT":
+            emergency = True
+        if status.get("interlock_blocked"):
+            interlock = True
 
     return {
         "site_id": envelope.get("site_id"),

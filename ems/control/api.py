@@ -243,9 +243,9 @@ def _register_routes(app: Flask) -> None:
         "STOP_GENERATOR":  {"command_type": "stop",     "payload": {}},
         "STANDBY":         {"command_type": "ess_mode", "payload": {"mode": "standby",   "target_power_kw": 0.0}},
         "SHED_LOAD":       {"command_type": "load_shed",      "payload": {"reduction_ratio": 1.0}},
-        "RESTORE_LOAD":    {"command_type": "load_restore",   "payload": {}},
-        "OPEN_SWITCH":     {"command_type": "open_switch",    "payload": {}},
-        "CLOSE_SWITCH":    {"command_type": "close_switch",   "payload": {}},
+        "RESTORE_LOAD":    {"command_type": "load_shed",      "payload": {"reduction_ratio": 0.0}},
+        "OPEN_SWITCH":     {"command_type": "open",           "payload": {}},
+        "CLOSE_SWITCH":    {"command_type": "close",          "payload": {}},
         "SET_POWER_LIMIT": {"command_type": "update_device_spec", "payload": {}},
     }
 
