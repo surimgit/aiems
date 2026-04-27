@@ -51,3 +51,6 @@ Thumbs.db
 # simulator에 추가되는 edge, devices, topology
 simulator/simulator-manager/edges/
 simulator/topology/topology.yaml
+
+# cluade
+.cluade
