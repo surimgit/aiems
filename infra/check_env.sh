@@ -35,6 +35,7 @@ _get_env_value() {
 #     apikey   : 'sk-' 로 시작해야 함 (OpenAI)
 #     plain    : 비공란만 체크
 # ---------------------------------------------------------------------------
+# 필수 변수 (공란이면 파이프라인 중단)
 RULES=(
     "TIMESCALE_PASSWORD|24|password"
     "TIMESCALE_ROOT_PASSWORD|24|password"
@@ -47,6 +48,13 @@ RULES=(
     "MQTT_PASSWORD|24|password"
     "API_SECRET_KEY|32|hex"
     "JWT_SECRET|32|hex"
+)
+
+# 선택 변수 (값이 있을 때만 형식 검증, 공란이면 경고만)
+#   - OPENAI_API_KEY: 현재 ai-service 는 외부 서버리스 GPU 추론 결과 중계 역할이라
+#                     OpenAI SDK 직접 호출 없음. 추후 OpenAI 직접 호출로 전환되면
+#                     RULES 로 이동
+OPTIONAL_RULES=(
     "OPENAI_API_KEY|1|apikey"
 )
 
@@ -91,6 +99,40 @@ for rule in "${RULES[@]}"; do
     esac
 
     echo "  ✅ $VAR_NAME : OK (${LEN}자)"
+    PASS_COUNT=$((PASS_COUNT + 1))
+done
+
+# ---------------------------------------------------------------------------
+# 선택 변수 검증 (공란은 경고만, 값 있으면 형식 체크)
+# ---------------------------------------------------------------------------
+for rule in "${OPTIONAL_RULES[@]}"; do
+    IFS='|' read -r VAR_NAME MIN_LEN CHECK_TYPE <<< "$rule"
+    VALUE=$(_get_env_value "$VAR_NAME")
+
+    if [ -z "$VALUE" ]; then
+        echo "  ⚠️  $VAR_NAME : 공란 (선택 변수, skip)"
+        continue
+    fi
+
+    LEN=${#VALUE}
+    case "$CHECK_TYPE" in
+        apikey)
+            if ! [[ "$VALUE" =~ ^sk- ]]; then
+                echo "  ❌ $VAR_NAME : 'sk-' 로 시작해야 함 (값이 있으면 반드시 OpenAI 형식)"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                continue
+            fi
+            ;;
+        hex)
+            if ! [[ "$VALUE" =~ ^[a-f0-9]+$ ]]; then
+                echo "  ❌ $VAR_NAME : hex(a-f, 0-9) 만 허용"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                continue
+            fi
+            ;;
+    esac
+
+    echo "  ✅ $VAR_NAME : OK (${LEN}자, 선택)"
     PASS_COUNT=$((PASS_COUNT + 1))
 done
 
