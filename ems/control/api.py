@@ -89,12 +89,15 @@ def _start_worker() -> None:
             requested_mode = cmd["payload"].get("mode", "standby")
             return current_mode != requested_mode
 
-        if cmd["command_type"] == "diesel_command":
-            action = cmd["payload"].get("action", "")
-            if action == "start":
-                return current_mode.lower() not in ("running",)
-            if action == "stop":
-                return current_mode.lower() not in ("stopped", "idle")
+        if cmd["command_type"] == "start":
+            return current_mode.lower() not in ("running", "starting")
+
+        if cmd["command_type"] == "stop":
+            return current_mode.lower() not in ("off", "stopped", "stopping", "idle")
+
+        if cmd["command_type"] == "load_control":
+            # 운전 중일 때만 부하조정 의미 있음
+            return current_mode.lower() == "running"
 
         return True
 
@@ -240,9 +243,9 @@ def _register_routes(app: Flask) -> None:
         "STOP_GENERATOR":  {"command_type": "stop",     "payload": {}},
         "STANDBY":         {"command_type": "ess_mode", "payload": {"mode": "standby",   "target_power_kw": 0.0}},
         "SHED_LOAD":       {"command_type": "load_shed",      "payload": {"reduction_ratio": 1.0}},
-        "RESTORE_LOAD":    {"command_type": "load_restore",   "payload": {}},
-        "OPEN_SWITCH":     {"command_type": "open_switch",    "payload": {}},
-        "CLOSE_SWITCH":    {"command_type": "close_switch",   "payload": {}},
+        "RESTORE_LOAD":    {"command_type": "load_shed",      "payload": {"reduction_ratio": 0.0}},
+        "OPEN_SWITCH":     {"command_type": "open",           "payload": {}},
+        "CLOSE_SWITCH":    {"command_type": "close",          "payload": {}},
         "SET_POWER_LIMIT": {"command_type": "update_device_spec", "payload": {}},
     }
 

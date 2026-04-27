@@ -43,9 +43,6 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
         return commands
 
     # --- 제한 조건: 잉여 + ESS 만충 ---
-    if ess_devices and any_can_charge:
-        return []
-
     target_total_kw = max(solar_p - net_power, 0.0)
     per_device_limit = round(target_total_kw / len(solar_targets), 1)
 

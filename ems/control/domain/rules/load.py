@@ -82,15 +82,13 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
 
         device_p = abs(states[device_id].get("reported_state", {}).get("P", 0) or 0)
         if device_p <= 0:
-            reduction_ratio = round(min(remaining_deficit / load_p, 1.0), 3)
+            continue
+        if device_p >= remaining_deficit:
+            reduction_ratio = round(min(remaining_deficit / device_p, 1.0), 3)
             remaining_deficit = 0
         else:
-            if device_p >= remaining_deficit:
-                reduction_ratio = round(min(remaining_deficit / device_p, 1.0), 3)
-                remaining_deficit = 0
-            else:
-                reduction_ratio = 1.0
-                remaining_deficit -= device_p
+            reduction_ratio = 1.0
+            remaining_deficit -= device_p
 
         # 동일 장치에 중복 권고 방지 (hold_sec 이내)
         if device_id in _shed_recommended_at:

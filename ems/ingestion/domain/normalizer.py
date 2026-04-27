@@ -12,7 +12,7 @@ def normalize(topic: str, raw_payload: bytes) -> dict:
 
     data = json.loads(raw_payload)
 
-    return {
+    envelope = {
         "message_type": message_type,
         "schema_version": "1.0",
         "site_id": site_id,
@@ -23,3 +23,10 @@ def normalize(topic: str, raw_payload: bytes) -> dict:
         "trace_id": f"trc-{uuid.uuid4().hex[:12]}",
         "payload": data.get("data", {}),
     }
+
+    # event/emergency 메시지는 상위 필드(event_type, severity, message)를 보존
+    for field in ("event_type", "severity", "message"):
+        if field in data:
+            envelope[field] = data[field]
+
+    return envelope
