@@ -45,9 +45,30 @@ def _mqtt_connect() -> None:
 
     def on_connect(client, userdata, flags, rc, props=None):
         print(f"[topology] MQTT connected (rc={rc})")
+        plant_id = _topology.get("plant_id", "PLANT-ALPHA")
+        cmd_topic = f"{plant_id}/switch/+/command"
+        client.subscribe(cmd_topic)
+        print(f"[topology] subscribed to {cmd_topic}")
+
+    def on_message(client, userdata, message):
+        topic = message.topic
+        try:
+            payload = json.loads(message.payload.decode("utf-8"))
+        except Exception:
+            return
+        parts = topic.split("/")
+        # {plant_id}/switch/{switch_id}/command
+        if len(parts) == 4 and parts[1] == "switch" and parts[3] == "command":
+            switch_id = parts[2]
+            threading.Thread(
+                target=_handle_switch_command,
+                args=(switch_id, payload),
+                daemon=True,
+            ).start()
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
+    client.on_message = on_message
 
     while True:
         try:
@@ -120,11 +141,33 @@ def _publish_switch_state(line: dict) -> None:
     _publish(topic, payload)
 
 
+def _publish_switch_telemetry(line: dict) -> None:
+    sw = line.get("switch")
+    if not sw:
+        return
+    plant_id = _topology.get("plant_id", "PLANT-ALPHA")
+    topic = f"{plant_id}/switch/{sw['switch_id']}/telemetry"
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data": {
+            "status": {
+                "switch_state": sw["position"],
+                "switch_type": sw.get("switch_type", "CB"),
+                "controllable": sw.get("controllable", True),
+                "interlock_blocked": sw.get("interlock_blocked", False),
+                "last_transition_at": sw.get("last_transition_at"),
+            }
+        },
+    }
+    _publish(topic, payload)
+
+
 def _republish_all() -> None:
     """브로커 재연결 시 전체 상태를 retained로 재발행."""
     for line in _topology.get("lines", []):
         _publish_line_state(line)
         _publish_switch_state(line)
+        _publish_switch_telemetry(line)
 
 
 # ── Topology helpers ──────────────────────────────────────────────────────────
@@ -164,6 +207,12 @@ def create_line(body: dict) -> dict:
         if _find_line(line_id):
             raise ValueError(f"line '{line_id}' already exists")
 
+        # 양방향 중복 체크 (A→B이든 B→A이든 이미 연결된 쌍이면 거부)
+        for existing in _topology.get("lines", []):
+            if (existing["from_node_id"] == from_node and existing["to_node_id"] == to_node) or \
+               (existing["from_node_id"] == to_node and existing["to_node_id"] == from_node):
+                raise ValueError("이미 연결된 노드입니다")
+
         switch_id = body.get("switch_id", f"sw-{line_id}")
         line = {
             "line_id": line_id,
@@ -182,6 +231,7 @@ def create_line(body: dict) -> dict:
         _save_topology()
         _publish_line_state(line)
         _publish_switch_state(line)
+        _publish_switch_telemetry(line)
 
     return {"line_id": line_id, "status": "created"}
 
@@ -248,16 +298,148 @@ def update_switch(switch_id: str, body: dict) -> dict:
 
         sw["position"] = "TRANSITIONING"
         _publish_switch_state(line)
+        _publish_switch_telemetry(line)
 
         new_position = "OPEN" if command == "OPEN_SWITCH" else "CLOSED"
         sw["position"] = new_position
+        sw["last_transition_at"] = datetime.now(timezone.utc).isoformat()
         _save_topology()
         _publish_switch_state(line)
+        _publish_switch_telemetry(line)
 
     event = "SWITCH_OPENED" if new_position == "OPEN" else "SWITCH_CLOSED"
     _publish_event(event, {"switch_id": switch_id, "line_id": line["line_id"]})
     print(f"[topology] {event}: {switch_id}")
     return {"switch_id": switch_id, "position": new_position}
+
+
+def _handle_switch_command(switch_id: str, raw_payload: dict) -> None:
+    command_id = raw_payload.get("command_id", "unknown")
+    command_type = str(raw_payload.get("command_type", "")).lower()
+    cmd_payload = raw_payload.get("payload", {})
+
+    plant_id = _topology.get("plant_id", "PLANT-ALPHA")
+    ack_topic = f"{plant_id}/switch/{switch_id}/ack"
+
+    def _reject(reason: str) -> None:
+        if _mqtt_client:
+            _mqtt_client.publish(ack_topic, json.dumps(
+                {"command_id": command_id, "status": "rejected", "reason": reason},
+                ensure_ascii=False,
+            ))
+
+    def _accept() -> None:
+        if _mqtt_client:
+            _mqtt_client.publish(ack_topic, json.dumps(
+                {"command_id": command_id, "status": "accepted"},
+                ensure_ascii=False,
+            ))
+
+    # mode_change RESET — FAULT → UNKNOWN 복구
+    if command_type == "mode_change":
+        action = cmd_payload.get("action", "")
+        if action != "RESET":
+            _reject(f"unknown action: {action}")
+            return
+        with _lock:
+            line = _find_switch_line(switch_id)
+            if line is None:
+                _reject(f"switch '{switch_id}' not found")
+                return
+            sw = line["switch"]
+            if sw.get("position") != "FAULT":
+                _reject("switch is not in FAULT state")
+                return
+            sw["position"] = "UNKNOWN"
+            sw["controllable"] = True
+            _save_topology()
+            _publish_switch_state(line)
+            _publish_switch_telemetry(line)
+        _accept()
+        print(f"[topology] SWITCH_RESET: {switch_id}")
+        return
+
+    if command_type not in ("open", "close"):
+        _reject(f"unknown command_type: {command_type}")
+        return
+
+    with _lock:
+        line = _find_switch_line(switch_id)
+        if line is None:
+            _reject(f"switch '{switch_id}' not found")
+            return
+        sw = line["switch"]
+
+        if sw.get("interlock_blocked"):
+            _reject("switch control blocked by interlock")
+            return
+        if not sw.get("controllable", True):
+            _reject("switch is not controllable")
+            return
+        if sw.get("position") == "TRANSITIONING":
+            _reject("switch is already TRANSITIONING")
+            return
+        if sw.get("position") == "FAULT":
+            _reject("switch is in FAULT state, send mode_change RESET first")
+            return
+
+        sw["position"] = "TRANSITIONING"
+        _save_topology()
+        _publish_switch_state(line)
+        _publish_switch_telemetry(line)
+
+    _accept()
+
+    new_position = "OPEN" if command_type == "open" else "CLOSED"
+
+    def _on_fault_timeout():
+        with _lock:
+            timed_line = _find_switch_line(switch_id)
+            if timed_line is None:
+                return
+            timed_sw = timed_line["switch"]
+            if timed_sw.get("position") != "TRANSITIONING":
+                return
+            timed_sw["position"] = "FAULT"
+            timed_sw["controllable"] = False
+            _save_topology()
+            _publish_switch_state(timed_line)
+            _publish_switch_telemetry(timed_line)
+        _publish_event("SWITCH_FAILED", {"switch_id": switch_id, "event_code": "EVT-E-006"})
+        if _mqtt_client:
+            emergency_topic = f"{plant_id}/switch/{switch_id}/emergency"
+            _mqtt_client.publish(emergency_topic, json.dumps({
+                "event_code": "EVT-E-006",
+                "event_name": "SWITCH_FAILED",
+                "switch_id": switch_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }, ensure_ascii=False))
+        print(f"[topology] SWITCH_FAILED (timeout): {switch_id} → FAULT (EVT-E-006)")
+
+    fault_timer = threading.Timer(5.0, _on_fault_timeout)
+    fault_timer.start()
+
+    def _do_transition():
+        time.sleep(1.0)
+        fault_timer.cancel()
+        with _lock:
+            trans_line = _find_switch_line(switch_id)
+            if trans_line is None:
+                return
+            trans_sw = trans_line["switch"]
+            if trans_sw.get("position") != "TRANSITIONING":
+                return
+            line_id = trans_line["line_id"]
+            trans_sw["position"] = new_position
+            trans_sw["last_transition_at"] = datetime.now(timezone.utc).isoformat()
+            _save_topology()
+            _publish_switch_state(trans_line)
+            _publish_switch_telemetry(trans_line)
+        event = "SWITCH_OPENED" if new_position == "OPEN" else "SWITCH_CLOSED"
+        _publish_event(event, {"switch_id": switch_id, "line_id": line_id})
+        print(f"[topology] {event}: {switch_id}")
+
+    threading.Thread(target=_do_transition, daemon=True).start()
 
 
 def delete_line(line_id: str) -> dict:
@@ -272,6 +454,62 @@ def delete_line(line_id: str) -> dict:
     if _mqtt_client:
         _mqtt_client.publish(f"{plant_id}/topology/line/{line_id}", "", retain=True)
     return {"line_id": line_id, "status": "deleted"}
+
+
+# ── Node CRUD ─────────────────────────────────────────────────────────────────
+
+def create_node(body: dict) -> dict:
+    node_id = body.get("node_id", "").strip()
+    node_type = body.get("node_type", "").strip()
+    edge_id = body.get("edge_id", "").strip()
+    resource_id = body.get("resource_id", edge_id).strip()
+
+    if not node_id:
+        raise ValueError("node_id is required")
+    if node_type not in ("GENERATION", "STORAGE", "LOAD"):
+        raise ValueError("node_type must be GENERATION, STORAGE, or LOAD")
+
+    with _lock:
+        nodes = _topology.setdefault("nodes", [])
+        # 이미 존재하면 upsert (idempotent)
+        for i, n in enumerate(nodes):
+            if n["node_id"] == node_id:
+                nodes[i] = {"node_id": node_id, "node_type": node_type,
+                             "edge_id": edge_id, "resource_id": resource_id}
+                _save_topology()
+                return {"node_id": node_id, "status": "updated"}
+        nodes.append({"node_id": node_id, "node_type": node_type,
+                       "edge_id": edge_id, "resource_id": resource_id})
+        _save_topology()
+
+    return {"node_id": node_id, "status": "created"}
+
+
+def delete_node(node_id: str) -> dict:
+    """노드 삭제 + 해당 노드가 양 끝인 라인도 함께 삭제."""
+    with _lock:
+        nodes = _topology.get("nodes", [])
+        if not any(n["node_id"] == node_id for n in nodes):
+            raise FileNotFoundError(f"node '{node_id}' not found")
+
+        # 연결된 라인 수집 후 삭제
+        removed_lines = [
+            l for l in _topology.get("lines", [])
+            if l["from_node_id"] == node_id or l["to_node_id"] == node_id
+        ]
+        _topology["lines"] = [
+            l for l in _topology.get("lines", [])
+            if l["from_node_id"] != node_id and l["to_node_id"] != node_id
+        ]
+        _topology["nodes"] = [n for n in nodes if n["node_id"] != node_id]
+        _save_topology()
+
+    plant_id = _topology.get("plant_id", "PLANT-ALPHA")
+    if _mqtt_client:
+        for line in removed_lines:
+            _mqtt_client.publish(f"{plant_id}/topology/line/{line['line_id']}", "", retain=True)
+
+    return {"node_id": node_id, "status": "deleted", "removed_lines": [l["line_id"] for l in removed_lines]}
 
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -327,6 +565,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return _send_err(self, str(e), 500)
 
+        if p == "/api/nodes":
+            try:
+                return _send_json(self, create_node(_read_body(self)), 201)
+            except ValueError as e:
+                return _send_err(self, str(e), 400)
+            except Exception as e:
+                return _send_err(self, str(e), 500)
+
         _send_err(self, "Not found", 404)
 
     def do_PATCH(self):
@@ -371,6 +617,15 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             try:
                 return _send_json(self, delete_line(m.group(1)))
+            except FileNotFoundError as e:
+                return _send_err(self, str(e), 404)
+            except Exception as e:
+                return _send_err(self, str(e), 500)
+
+        m = re.match(r"^/api/nodes/([^/]+)$", p)
+        if m:
+            try:
+                return _send_json(self, delete_node(m.group(1)))
             except FileNotFoundError as e:
                 return _send_err(self, str(e), 404)
             except Exception as e:
