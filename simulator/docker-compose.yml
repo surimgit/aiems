@@ -79,3 +79,38 @@ services:
     networks:
       - ems_default
 
+  # ── 아래 서비스들은 이미지 빌드 전용 ────────────────────────────────────────
+  # up -d 시 이미지를 빌드한 뒤 즉시 종료 (restart: no)
+  # simulator-manager가 동적으로 이 이미지들을 사용함
+
+  solar-simulator:
+    build:
+      context: ./solar-simulator
+      dockerfile: Dockerfile
+    image: solar-simulator:latest
+    restart: "no"
+    entrypoint: ["sh", "-c", "exit 0"]
+
+  diesel-simulator:
+    build:
+      context: ./diesel-simulator
+      dockerfile: Dockerfile
+    image: diesel-simulator:latest
+    restart: "no"
+    entrypoint: ["sh", "-c", "exit 0"]
+
+  ess-simulator:
+    build:
+      context: ./ess-simulator
+      dockerfile: Dockerfile
+    image: ess-simulator:latest
+    restart: "no"
+    entrypoint: ["sh", "-c", "exit 0"]
+
+  load-simulator:
+    build:
+      context: ./load-simulator
+      dockerfile: Dockerfile
+    image: load-simulator:latest
+    restart: "no"
+    entrypoint: ["sh", "-c", "exit 0"]

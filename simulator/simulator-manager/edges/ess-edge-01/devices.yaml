@@ -1,0 +1,16 @@
+devices:
+- capacity_kwh: 420
+  device_id: ess-01
+  high_soc_threshold: 90
+  initial_soc: 50
+  low_soc_threshold: 20
+  max_safe_soc_threshold: 95
+  max_temperature_c: 45
+  min_safe_soc_threshold: 10
+  power_limit_kw: 42
+  publish_interval_sec: 0.5
+  resource_type: ess
+  temperature_c: 25
+mqtt_broker_host: mqtt-broker
+mqtt_broker_port: 1883
+plant_id: PLANT-ALPHA

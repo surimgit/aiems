@@ -5,6 +5,8 @@ import mimetypes
 import os
 import re
 import shutil
+import signal
+import sys
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -520,12 +522,33 @@ def _start_existing_edges() -> None:
             except Exception as e:
                 print(f"[manager] Failed to auto-start {edge_id}: {e}")
 
+def _cleanup_all_edges() -> None:
+    if not DOCKER_AVAILABLE:
+        return
+    print("[manager] Stopping all edge containers...")
+    for edge in list_edges():
+        edge_id = edge["edge_id"]
+        print(f"[manager] Stopping edge: {edge_id}")
+        try:
+            _stop_container(edge_id)
+        except Exception as e:
+            print(f"[manager] Failed to stop {edge_id}: {e}")
+
+
+def _sigterm_handler(signum, frame) -> None:
+    print("[manager] SIGTERM received, cleaning up edges...")
+    _cleanup_all_edges()
+    sys.exit(0)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+
     EDGES_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[simulator-manager] edges dir : {EDGES_DIR}")
     print(f"[simulator-manager] host edges: {HOST_EDGES_PATH}")
     print(f"[simulator-manager] docker    : {'available' if DOCKER_AVAILABLE else 'unavailable'}")
-    
+
     if DOCKER_AVAILABLE:
         _start_existing_edges()
 
@@ -534,4 +557,4 @@ if __name__ == "__main__":
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        _cleanup_all_edges()
