@@ -73,30 +73,31 @@ def main():
 
     # 3. Simulation Loop
     try:
+        last_heartbeat_time = time.time()
         while True:
             # 현실의 현재 시간(UTC)
             real_current_time = datetime.now(timezone.utc)
-            
+
             # 데이터 재생을 위한 시뮬레이션 타임 계산
             elapsed_real_seconds = time.time() - real_start_time
             sim_time = data_start_time.timestamp() + (elapsed_real_seconds * time_speed_multiplier)
             sim_datetime = datetime.fromtimestamp(sim_time, tz=timezone.utc)
-            
+
             # Update all devices state via Manager
             telemetries, events = manager.tick_all(sim_datetime, real_current_time)
-            
+
             # Publish Data for all devices
             for event in events:
                 publisher.publish_event(event)
-            
+
             for telemetry in telemetries:
                 publisher.publish_telemetry(telemetry)
-            
-            # Publish Heartbeat every 10 seconds (approx)
-            # 0.1초 주기이므로 100번마다 한 번씩 보냄
-            if int(elapsed_real_seconds * 10) % 100 == 0:
+
+            # Publish Heartbeat every 10 seconds
+            if time.time() - last_heartbeat_time >= 10:
                 for d_id in manager.devices.keys():
                     heartbeat_publisher.publish(d_id)
+                last_heartbeat_time = time.time()
 
             # 수집 주기 명세 반영: 0.1초 (100ms)
             time.sleep(0.1)
