@@ -89,12 +89,15 @@ def _start_worker() -> None:
             requested_mode = cmd["payload"].get("mode", "standby")
             return current_mode != requested_mode
 
-        if cmd["command_type"] == "diesel_command":
-            action = cmd["payload"].get("action", "")
-            if action == "start":
-                return current_mode.lower() not in ("running",)
-            if action == "stop":
-                return current_mode.lower() not in ("stopped", "idle")
+        if cmd["command_type"] == "start":
+            return current_mode.lower() not in ("running", "starting")
+
+        if cmd["command_type"] == "stop":
+            return current_mode.lower() not in ("off", "stopped", "stopping", "idle")
+
+        if cmd["command_type"] == "load_control":
+            # 운전 중일 때만 부하조정 의미 있음
+            return current_mode.lower() == "running"
 
         return True
 

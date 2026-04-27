@@ -40,6 +40,12 @@ async def _consume_normal(client: aioredis.Redis, publisher: StatePublisher,
             for msg_id, fields in messages:
                 try:
                     envelope = json.loads(fields["data"])
+                    # control 발 WARNING/INFO 이벤트는 event_publisher가 이미 DB에 직접 insert함
+                    # — 여기서 calculate() 태우면 telemetry 스키마 없으므로 reported_state가
+                    #   전부 None인 snapshot이 만들어져 state:{site}:{device} 키를 오염시킴.
+                    if envelope.get("source") == "control":
+                        await client.xack(REDIS_NORMAL_STREAM, CONSUMER_GROUP, msg_id)
+                        continue
                     snapshot = calculate(envelope)
                     if snapshot is None:
                         await client.xack(REDIS_NORMAL_STREAM, CONSUMER_GROUP, msg_id)
@@ -75,11 +81,23 @@ async def _consume_emergency(client: aioredis.Redis, db: DBWriter) -> None:
             for msg_id, fields in messages:
                 try:
                     envelope = json.loads(fields["data"])
+                    # control 발 이벤트는 event_publisher가 이미 DB에 직접 insert함
+                    # — 여기서 또 insert하면 중복 저장되므로 xack만 하고 skip
+                    if envelope.get("source") == "control":
+                        await client.xack(REDIS_EMERGENCY_STREAM, CONSUMER_GROUP, msg_id)
+                        continue
+                    # control 발 envelope는 device_id 키 사용 — resource_id로 정규화
+                    if "resource_id" not in envelope and "device_id" in envelope:
+                        envelope["resource_id"] = envelope["device_id"]
                     snapshot = calculate(envelope)
+                    if snapshot is None:
+                        await client.xack(REDIS_EMERGENCY_STREAM, CONSUMER_GROUP, msg_id)
+                        print(f"[state-processor] emergency envelope 무시 (calculate=None): {envelope.get('resource_id') or envelope.get('device_id')}")
+                        continue
                     await db.insert_event(
                         snapshot,
                         event_type=envelope.get("event_type", "EVT-E-000"),
-                        severity="EMERGENCY",
+                        severity=envelope.get("severity", "EMERGENCY"),
                         message=envelope.get("message", ""),
                     )
                     await client.xack(REDIS_EMERGENCY_STREAM, CONSUMER_GROUP, msg_id)

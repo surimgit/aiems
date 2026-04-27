@@ -18,11 +18,12 @@ _RETRY_DELAY_SEC = 2.0
 # 명령 타입별 ACK 타임아웃 (초) — diesel 기동은 워밍업 시간 고려
 _ACK_TIMEOUT_BY_TYPE: dict[str, float] = {
     "ess_mode": 30.0,
-    "diesel_command": 60.0,
+    "start": 60.0,       # diesel 기동 — 워밍업 30초 + 여유
+    "stop": 30.0,
+    "load_control": 20.0,
     "load_shed": 10.0,
     "curtailment": 15.0,
     "clear_curtailment": 15.0,
-    "diesel_load_control": 20.0,
 }
 
 
@@ -288,24 +289,32 @@ def _check_physical_result(command_type: str, payload: dict, state: dict) -> boo
         if mode == "standby":
             return current_mode == "standby" or abs(p) < 1.0
 
-    if command_type == "diesel_command":
-        action = payload.get("action")
-        operating_mode = rs.get("operating_mode") or ""
-        if action == "start":
-            return operating_mode.lower() in ("running",)
-        if action == "stop":
-            return operating_mode.lower() in ("stopped", "idle")
+    if command_type == "start":
+        operating_mode = (rs.get("operating_mode") or "").lower()
+        return operating_mode in ("running", "starting")
+
+    if command_type == "stop":
+        operating_mode = (rs.get("operating_mode") or "").lower()
+        return operating_mode in ("off", "stopped", "stopping", "idle")
 
     if command_type == "load_shed":
-        # 이전 P값 없이 정확한 검증 불가 (minimum_load_ratio 등 시뮬레이터 특성 변수 있음)
-        # ACK accepted 자체를 성공으로 간주 → 낙관적 True
+        # 이전 P값 없이 정확한 검증 불가 — ACK accepted 자체를 성공으로 간주
         return True
 
-    if command_type == "set_curtailment":
-        target = payload.get("curtailment_ratio", 1.0)
-        rated = rs.get("rated_power") or p
-        if rated > 0:
-            return (p / rated) <= target + 0.1
+    if command_type == "curtailment":
+        limit_kw = payload.get("limit_kw")
+        if limit_kw is not None and p > 0:
+            return p <= limit_kw + 1.0  # 1kW 허용 오차
+
+    if command_type == "clear_curtailment":
+        # 해제 명령 — P가 curtailment 전보다 높아야 하지만 기준값 없음
+        # ACK accepted 자체를 성공으로 간주
+        return True
+
+    if command_type == "load_control":
+        target_kw = payload.get("target_kw")
+        if target_kw is not None:
+            return abs(p - target_kw) <= target_kw * 0.1 + 1.0  # 10% + 1kW 허용 오차
 
     # 알 수 없는 명령 타입 → 낙관적 True
     return True

@@ -80,8 +80,8 @@ def _start(diesel: dict, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
         "resource_type": "diesel",
-        "command_type": "diesel_command",
-        "payload": {"action": "start"},
+        "command_type": "start",
+        "payload": {},
         "reason": reason,
         "priority": PRIORITY,
     }
@@ -91,8 +91,8 @@ def _stop(diesel: dict, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
         "resource_type": "diesel",
-        "command_type": "diesel_command",
-        "payload": {"action": "stop"},
+        "command_type": "stop",
+        "payload": {},
         "reason": reason,
         "priority": PRIORITY,
     }
@@ -102,7 +102,7 @@ def _load_control(diesel: dict, target_kw: float, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
         "resource_type": "diesel",
-        "command_type": "diesel_load_control",
+        "command_type": "load_control",
         "payload": {"target_kw": target_kw},
         "reason": reason,
         "priority": PRIORITY,
