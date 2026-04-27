@@ -23,10 +23,13 @@ class DeviceManager:
             del self.devices[device_id]
             print(f"Unregistered device: {device_id}")
 
-    def notify_comms_alive(self):
-        """가입된 모든 기기에 통신 생존 신호를 전달합니다."""
-        for device in self.devices.values():
-            device.notify_comms_alive()
+    def notify_comms_alive(self, device_id: str = None):
+        """통신 생존 신호 전달. device_id 지정 시 해당 기기만, 없으면 전체."""
+        if device_id is None:
+            for device in self.devices.values():
+                device.notify_comms_alive()
+        elif device_id in self.devices:
+            self.devices[device_id].notify_comms_alive()
 
     def tick_all(self, real_time: datetime) -> Tuple[List[TelemetryMessage], List[EventMessage]]:
         """모든 등록된 기기를 순회하며 현장 상황을 시뮬레이션하고, 결과 데이터를 수집합니다."""
