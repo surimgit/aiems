@@ -1,7 +1,0 @@
-{
-  "edge_id": "ess-edge-01",
-  "edge_type": "ess",
-  "plant_id": "PLANT-ALPHA",
-  "mqtt_broker_host": "mqtt-broker",
-  "mqtt_broker_port": 1883
-}

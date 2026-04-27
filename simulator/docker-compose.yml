@@ -64,6 +64,7 @@ services:
     container_name: simulator-manager
     hostname: simulator-manager
     restart: always
+    stop_grace_period: 30s
     ports:
       - "8080:8080"
     volumes:

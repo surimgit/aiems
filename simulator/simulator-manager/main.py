@@ -198,8 +198,7 @@ def _start_container(edge_id: str, edge_type: str) -> None:
 def _stop_container(edge_id: str) -> None:
     try:
         c = _docker_client.containers.get(edge_id)
-        c.stop(timeout=10)
-        c.remove()
+        c.remove(force=True)  # force=True: restart policy 무시하고 즉시 제거
     except Exception as e:
         print(f"[docker] stop/remove {edge_id}: {e}")
 
