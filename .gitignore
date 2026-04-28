@@ -28,6 +28,10 @@ wheels/
 venv/
 ENV/
 
+### Local environment overrides (실제 값은 commit 금지) ###
+.env
+**/.env
+
 ### IDE ###
 .vscode/
 .idea/

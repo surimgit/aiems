@@ -251,6 +251,9 @@ def _start_container(edge_id: str, edge_type: str) -> None:
         volumes=volumes,
         network=REAL_NETWORK_NAME,
         restart_policy={"Name": "always"},
+        # Linux Docker에서 host.docker.internal 해석 가능하도록 host-gateway 매핑.
+        # macOS/Windows는 자동 동작하지만 Linux에서는 명시 필요.
+        extra_hosts={"host.docker.internal": "host-gateway"},
     )
     if cmd:
         kwargs["command"] = cmd
