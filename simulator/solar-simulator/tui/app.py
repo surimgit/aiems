@@ -13,6 +13,7 @@ from widgets.device_table import DeviceTable
 from widgets.control_panel import ControlPanel
 from widgets.command_log import CommandLog
 from widgets.command_tracker import CommandTracker
+from widgets.topology_panel import TopologyPanel
 
 class MetaHeader(Static):
     def compose(self) -> ComposeResult:
@@ -50,12 +51,13 @@ class SolarTUI(App):
     .meta-val-err { color: #f7768e; text-style: bold; }
     #main-layout { layout: grid; grid-size: 2 2; grid-columns: 1fr 1fr; grid-rows: 2fr 1fr; padding: 0 1; }
     #left-panel { height: 100%; }
-    
+
     DeviceTable { background: #24283b; border: solid cyan; margin: 1 1 0 0; padding: 1; height: auto; }
     ControlPanel { background: #24283b; border: solid yellow; margin: 1 1 0 0; padding: 1; height: auto; }
+    TopologyPanel { background: #24283b; border: solid blue; margin: 1 1 0 0; padding: 1; height: auto; }
     CommandTracker { background: #24283b; border: solid magenta; margin: 1 0 0 0; padding: 1; height: 100%; }
     CommandLog { background: #24283b; border: solid green; margin: 1 0 0 0; padding: 1; column-span: 2; height: 100%; }
-    
+
     Button { width: 100%; margin-bottom: 1; }
     #curtail-input-group { height: 3; margin-top: 1; }
     #input-limit { width: 1fr; margin-right: 1; }
@@ -82,6 +84,8 @@ class SolarTUI(App):
         
         # State Tracking
         self.device_states = {} # device_id -> dict
+        self.topology_lines = {}   # line_id -> {status, affected_devices}
+        self.topology_switches = {} # switch_id -> {status, affected_devices}
         
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -90,6 +94,7 @@ class SolarTUI(App):
             with Vertical(id="left-panel"):
                 yield DeviceTable(id="device-table")
                 yield ControlPanel(id="control-panel")
+                yield TopologyPanel(id="topology-panel")
             yield CommandTracker(id="command-tracker")
             yield CommandLog(id="command-log")
         yield Footer()
@@ -123,8 +128,9 @@ class SolarTUI(App):
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
-            # Subscribe to the entire plant exactly like test_client
             client.subscribe(f"{self.plant_id}/#")
+            client.subscribe(f"{self.plant_id}/topology/line/+")
+            client.subscribe(f"{self.plant_id}/topology/switch/+")
             self.call_from_thread(self.query_one("#meta-header").update_mqtt_status, True)
             self.call_from_thread(self.query_one("#command-log").log_message, "Connected to MQTT Broker", "success")
         else:
@@ -151,9 +157,20 @@ class SolarTUI(App):
                     self.device_states[d_id]["health"] = payload.get("status", "ok")
                 return
 
-            if len(topic_parts) < 4: 
+            # topology handling: PLANT_ID/topology/line/{line_id} or .../switch/{switch_id}
+            if len(topic_parts) >= 4 and topic_parts[1] == "topology":
+                topo_type = topic_parts[2]  # line or switch
+                topo_id = topic_parts[3]
+                if topo_type == "line":
+                    self.topology_lines[topo_id] = payload
+                elif topo_type == "switch":
+                    self.topology_switches[topo_id] = payload
+                self.call_from_thread(self._refresh_topology)
                 return
-                
+
+            if len(topic_parts) < 4:
+                return
+
             device_id = topic_parts[2]
             
             # auto-register device
@@ -203,6 +220,12 @@ class SolarTUI(App):
         comms_health = data.get("status", {}).get("comms_health", state_data.get("health", "ok"))
             
         self.query_one("#device-table").update_data(device_id, data, comms_health, current_state)
+
+    def _refresh_topology(self):
+        device_ids = set(self.device_states.keys())
+        self.query_one("#topology-panel").refresh_topology(
+            self.topology_lines, self.topology_switches, device_ids
+        )
 
     # --- Commands ---
     def on_button_pressed(self, event: Button.Pressed) -> None:

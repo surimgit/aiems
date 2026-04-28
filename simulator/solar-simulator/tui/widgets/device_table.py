@@ -14,7 +14,7 @@ class DeviceTable(Static):
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable)
-        table.add_columns("Device ID", "Comm State", "Op State", "Alarm", "Power (kW)", "Voltage (V)", "Current (A)")
+        table.add_columns("Device ID", "Comm State", "Op State", "Alarm", "Power (kW)", "Voltage (V)", "Current (A)", "Energy (kWh)")
 
     def update_data(self, device_id: str, payload_data: dict, comms_health: str, current_state: str):
         table = self.query_one(DataTable)
@@ -23,15 +23,21 @@ class DeviceTable(Static):
         p_val = inst.get("P", 0.0)
         v_val = inst.get("V", 0.0)
         i_val = inst.get("I", 0.0)
-        
+        kwh_val = payload_data.get("energy", {}).get("kWh", 0.0)
+
         # State Formatting
         state_str = f"[green]GENERATING[/]" if current_state == "GENERATING" else f"[white]{current_state}[/]"
         if current_state == "FAULT":
             state_str = f"[bold red]FAULT[/]"
-            
+
         alarm_str = "[red]FAULT DETECTED[/]" if current_state == "FAULT" else "[green]NORMAL[/]"
-        comm_str = f"[green]{comms_health.upper()}[/]" if comms_health == "ok" else f"[red]{comms_health.upper()}[/]"
-        
+        if comms_health == "ok":
+            comm_str = "[green]OK[/]"
+        elif comms_health == "wire_fault":
+            comm_str = "[red]WIRE_FAULT[/]"
+        else:
+            comm_str = f"[yellow]{comms_health.upper()}[/]"
+
         row_data = (
             device_id,
             comm_str,
@@ -39,7 +45,8 @@ class DeviceTable(Static):
             alarm_str,
             f"{p_val:.2f}",
             f"{v_val:.1f}",
-            f"{i_val:.2f}"
+            f"{i_val:.2f}",
+            f"{kwh_val:.1f}"
         )
 
         if device_id not in self.device_rows:
