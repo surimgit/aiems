@@ -13,6 +13,7 @@ from widgets.device_panel import DevicePanel
 from widgets.control_panel import ControlPanel
 from widgets.command_log import CommandLog
 from widgets.command_tracker import CommandTracker
+from widgets.topology_panel import TopologyPanel
 
 class MetaHeader(Static):
     """시스템 메타 정보 (Section 9.2 기반)"""
@@ -88,6 +89,14 @@ class DieselTUI(App):
         height: auto;
     }
 
+    TopologyPanel {
+        background: #24283b;
+        border: solid blue;
+        margin: 1 1 0 0;
+        padding: 1;
+        height: auto;
+    }
+
     CommandTracker {
         background: #24283b;
         border: solid magenta;
@@ -147,6 +156,10 @@ class DieselTUI(App):
         # Rate tracking
         self.msg_count = 0
         self.last_rate_time = time.time()
+
+        # Topology state
+        self.topology_lines = {}
+        self.topology_switches = {}
         
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -155,6 +168,7 @@ class DieselTUI(App):
             with Vertical(id="left-panel"):
                 yield DevicePanel(id="device-panel")
                 yield ControlPanel(id="control-panel")
+                yield TopologyPanel(id="topology-panel")
             yield CommandTracker(id="command-tracker")
             yield CommandLog(id="command-log")
         yield Footer()
@@ -186,9 +200,10 @@ class DieselTUI(App):
             self.query_one("#command-log").log_message(f"MQTT Connection Failed: {e}", "error")
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
-        # paho-mqtt 버전에 따라 rc 파라미터가 다를 수 있으므로 분기처리 대신 에러 무시로 로직 간소화
         if rc == 0:
             client.subscribe(f"{self.base_topic}/#")
+            client.subscribe(f"{self.plant_id}/topology/line/+")
+            client.subscribe(f"{self.plant_id}/topology/switch/+")
             self.call_from_thread(self.query_one("#meta-header").update_mqtt_status, True)
             self.call_from_thread(self.query_one("#command-log").log_message, "Connected to MQTT Broker", "success")
         else:
@@ -202,7 +217,19 @@ class DieselTUI(App):
         try:
             payload = json.loads(msg.payload.decode())
             topic = msg.topic
-            
+            topic_parts = topic.split("/")
+
+            # topology handling
+            if len(topic_parts) >= 4 and topic_parts[1] == "topology":
+                topo_type = topic_parts[2]
+                topo_id = topic_parts[3]
+                if topo_type == "line":
+                    self.topology_lines[topo_id] = payload
+                elif topo_type == "switch":
+                    self.topology_switches[topo_id] = payload
+                self.call_from_thread(self._refresh_topology)
+                return
+
             if topic.endswith("telemetry"):
                 self.call_from_thread(self.update_telemetry, payload)
             elif topic.endswith("event"):
@@ -228,6 +255,11 @@ class DieselTUI(App):
         data = payload.get("data", {})
         state = "RUNNING" if data.get("engine", {}).get("rpm", 0) > 0 else "OFF"
         self.query_one("#device-panel").update_data(state, data)
+
+    def _refresh_topology(self):
+        self.query_one("#topology-panel").refresh_topology(
+            self.topology_lines, self.topology_switches, {self.device_id}
+        )
 
     # --- Commands ---
     def action_send_command(self, cmd_type: str):
