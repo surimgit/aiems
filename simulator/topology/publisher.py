@@ -9,6 +9,14 @@ from state import _topology
 
 _mqtt_client: mqtt.Client | None = None
 
+_EVENT_CODES = {
+    "SWITCH_OPENED": "EVT-N-014",
+    "SWITCH_CLOSED": "EVT-N-015",
+    "LINE_BLOCKED":  "EVT-N-016",
+    "SWITCH_FAILED": "EVT-E-006",
+    "LINE_FAULT":    "EVT-E-007",
+}
+
 
 def set_client(client: mqtt.Client) -> None:
     global _mqtt_client
@@ -27,7 +35,12 @@ def publish(topic: str, payload: dict, *, retain: bool = True) -> None:
 def publish_event(event: str, extra: dict) -> None:
     plant_id = _topology.get("plant_id", "PLANT-ALPHA")
     topic = f"{plant_id}/topology/event"
-    payload = {"event": event, "timestamp": datetime.now(timezone.utc).isoformat(), **extra}
+    payload = {
+        "event": event,
+        "event_code": _EVENT_CODES.get(event, ""),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
     if _mqtt_client:
         try:
             _mqtt_client.publish(topic, json.dumps(payload, ensure_ascii=False))

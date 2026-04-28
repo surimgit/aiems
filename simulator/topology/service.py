@@ -290,16 +290,16 @@ def handle_switch_command(switch_id: str, raw_payload: dict) -> None:
             repository.save()
             publisher.publish_switch_state(timed_line)
             publisher.publish_switch_telemetry(timed_line)
-        publisher.publish_event("SWITCH_FAILED", {"switch_id": switch_id, "event_code": "EVT-E-006"})
+        publisher.publish_event("SWITCH_FAILED", {"switch_id": switch_id})
         if _mqtt_client:
             emergency_topic = f"{plant_id}/switch/{switch_id}/emergency"
             _mqtt_client.publish(emergency_topic, json.dumps({
-                "event_code": "EVT-E-006",
+                "event_code": publisher._EVENT_CODES["SWITCH_FAILED"],
                 "event_name": "SWITCH_FAILED",
                 "switch_id": switch_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }, ensure_ascii=False))
-        print(f"[topology] SWITCH_FAILED (timeout): {switch_id} → FAULT (EVT-E-006)")
+        print(f"[topology] SWITCH_FAILED (timeout): {switch_id} → FAULT ({publisher._EVENT_CODES['SWITCH_FAILED']})")
 
     fault_timer = threading.Timer(5.0, _on_fault_timeout)
     fault_timer.start()
