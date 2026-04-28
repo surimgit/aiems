@@ -12,7 +12,7 @@ from train.checkpoint import load_latest_checkpoint, save_checkpoint
 from train.config import load_config
 from train.dataset import TabularDataset, load_dataframe
 from train.logger import append_metrics, create_logger
-from train.metrics import mae, mape, rmse
+from train.metrics import mae, mape, masked_mape, rmse
 from train.model import BaselineMLP
 
 
@@ -77,6 +77,7 @@ def run_epoch(model, loader, criterion, device, optimizer=None):
         "mae": mae(predictions, targets),
         "rmse": rmse(predictions, targets),
         "mape": mape(predictions, targets),
+        "masked_mape_target_gte_1": masked_mape(predictions, targets, minimum_target=1.0),
     }
 
 
@@ -150,10 +151,12 @@ def main() -> None:
             "train_mae": train_metrics["mae"],
             "train_rmse": train_metrics["rmse"],
             "train_mape": train_metrics["mape"],
+            "train_masked_mape_target_gte_1": train_metrics["masked_mape_target_gte_1"],
             "val_loss": val_metrics["loss"],
             "val_mae": val_metrics["mae"],
             "val_rmse": val_metrics["rmse"],
             "val_mape": val_metrics["mape"],
+            "val_masked_mape_target_gte_1": val_metrics["masked_mape_target_gte_1"],
         }
 
         logger.info(

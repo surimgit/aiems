@@ -1,0 +1,30 @@
+source: kpx_solar_by_region_hourly
+region_slug: jeonnam
+
+request:
+  auth_env_candidates:
+    - DATA_DECODING
+    - KPX_SOLAR_SERVICE_KEY
+    - DATA_ENCODING
+  env_file: "G:/내 드라이브/s305-ai-data/.env"
+  base_url: https://apis.data.go.kr/B552115/PvAmountByLocHr/getPvAmountByLocHr
+  timeout_seconds: 30
+  sleep_seconds: 0.5
+  retries: 5
+  num_of_rows: 500
+  data_type: json
+
+range:
+  start_date: 2024-09-07
+  end_date: 2025-12-31
+  max_requests: 100
+
+filter:
+  regions:
+    - 전라남도
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/kepco"
+  save_raw_response: true
+  save_daily_csv: true
+  save_hourly_csv: true

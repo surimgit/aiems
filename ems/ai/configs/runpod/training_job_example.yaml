@@ -1,0 +1,31 @@
+endpoint_id: ""
+mode: async
+wait_ms: 300000
+
+test_storage:
+  # Team Google Drive folder used during RunPod tests.
+  # Upload the training data zip here, then put that file's direct-download URL
+  # into input.data_zip_url below.
+  google_drive_folder_name: S3
+  google_drive_folder_url: "https://drive.google.com/drive/folders/1Ex0M6QFooN46ndDP_J7FlEbfrNHMXo2x?usp=sharing"
+
+input:
+  # Must be an HTTP(S) URL reachable by RunPod. Do not put the zip bytes in the
+  # request payload because RunPod Serverless payloads are size-limited.
+  # For tests, use a zip file uploaded inside test_storage.google_drive_folder_url.
+  data_zip_url: ""
+  result_upload_url: ""
+  # Test only. Returns the result zip in the API response if it is small enough.
+  # For production, keep this false and use result_upload_url/S3 instead.
+  include_artifact_base64: true
+  stages:
+    - mlp
+    - lightgbm
+    - site_correction
+  repo_root: /app
+  data_root: /workspace/s305-ai-data
+  output_root: /workspace/runs
+
+cost_guard:
+  require_workers_min_zero: true
+  recommended_workers_max: 1

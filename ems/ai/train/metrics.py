@@ -18,3 +18,11 @@ def mape(predictions: torch.Tensor, targets: torch.Tensor, epsilon: float = 1e-6
     denominator = torch.clamp(torch.abs(targets), min=epsilon)
     value = torch.mean(torch.abs((targets - predictions) / denominator)).item()
     return value * 100.0
+
+
+def masked_mape(predictions: torch.Tensor, targets: torch.Tensor, minimum_target: float = 1.0) -> float | None:
+    mask = torch.abs(targets) >= minimum_target
+    if not torch.any(mask):
+        return None
+    value = torch.mean(torch.abs((targets[mask] - predictions[mask]) / targets[mask])).item()
+    return value * 100.0

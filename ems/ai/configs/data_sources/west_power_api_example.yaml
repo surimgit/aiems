@@ -2,7 +2,7 @@ source: west_power_re_generation
 region_slug: jeonnam
 
 request:
-  auth_env: KMA_AUTH_KEY
+  auth_env: WEST_POWER_SERVICE_KEY
   env_file: "G:/내 드라이브/s305-ai-data/.env"
   base_url: http://apis.data.go.kr/B552522/pg/reGeneration/getReGeneration
   timeout_seconds: 30
