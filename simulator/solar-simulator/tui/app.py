@@ -72,7 +72,7 @@ class SolarTUI(App):
         super().__init__()
         self.plant_id = os.getenv("PLANT_ID", "PLANT-ALPHA")
         self.mqtt_host = os.getenv("MQTT_HOST", "localhost")
-        self.mqtt_port = 1884 # Host mapped port for docker
+        self.mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
         
         try:
             self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
