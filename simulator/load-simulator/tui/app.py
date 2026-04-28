@@ -81,7 +81,7 @@ class LoadTUI(App):
         super().__init__()
         self.plant_id = os.getenv("PLANT_ID", "PLANT-ALPHA")
         self.mqtt_host = os.getenv("MQTT_HOST", "localhost")
-        self.mqtt_port = int(os.getenv("MQTT_PORT", "1884"))
+        self.mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
         try:
             self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         except AttributeError:
