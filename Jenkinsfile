@@ -52,6 +52,7 @@ pipeline {
                 script {
                     def isMR = env.gitlabActionType == 'MERGE' || env.gitlabMergeRequestIid?.trim()
                     def targetBranch = env.gitlabTargetBranch ?: 'master'
+                    def currentBranch = env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'
 
                     def changes
                     if (isMR) {
@@ -78,13 +79,26 @@ pipeline {
                     env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
 
-                    // MR 이벤트이고 target 이 master 가 아니면 (예: feature → ems) 배포 skip
-                    // master push 또는 ems→master / feature→master MR 일 때만 배포 허용
-                    env.SHOULD_DEPLOY = (!isMR || targetBranch == 'master') ? 'true' : 'false'
+                    // 배포 정책 (명시적 분기로 의도 명확화):
+                    //   ✅ master push                            → 배포
+                    //   ✅ feature/ems → master MR                → 배포
+                    //   ❌ ems push (직접 또는 MR 머지로 인한)    → CI 만 (배포 X)
+                    //   ❌ feature push                           → CI 만
+                    //   ❌ feature → ems MR                       → CI 만
+                    //
+                    // 주의: 기존 "(!isMR || targetBranch == 'master')" 로직은
+                    //       모든 push 가 deploy 트리거되는 버그가 있었음 (ems push 도 배포됨).
+                    def shouldDeploy = false
+                    if (isMR && targetBranch == 'master') {
+                        shouldDeploy = true
+                    } else if (!isMR && currentBranch == 'master') {
+                        shouldDeploy = true
+                    }
+                    env.SHOULD_DEPLOY = shouldDeploy ? 'true' : 'false'
 
                     echo """
                     === 변경 감지 결과 ===
-                    이벤트 타입:     ${isMR ? 'MR (target=' + targetBranch + ')' : 'Push'}
+                    이벤트 타입:     ${isMR ? 'MR (target=' + targetBranch + ')' : 'Push (branch=' + currentBranch + ')'}
                     Gateway:         ${env.CHANGED_GATEWAY}
                     Ingestion:       ${env.CHANGED_INGESTION}
                     State+DBWriter:  ${env.CHANGED_STATE} / ${env.CHANGED_DBWRITER}
