@@ -3,11 +3,19 @@ topology wire_fault 통합 테스트 러너
 
 실행:
   docker run --rm --network simulator_ems_default \\
-    -e MQTT_HOST=mqtt-broker \\
+    --add-host host.docker.internal:host-gateway \\
+    -e MQTT_HOST=host.docker.internal \\
     -e SM_URL=http://simulator-manager:8080 \\
     -e TOPO_URL=http://topology:8081 \\
     -v $(pwd)/tests:/tests -w /tests \\
     python:3.10-slim sh -c "pip install paho-mqtt requests -q && python run_tests.py"
+
+선행 조건:
+  1. EMS control 일시 정지 권장: docker stop control
+     (운영 rule이 새 test edge에 명령 race 보내는 것 방지)
+  2. solar 관련 테스트(solar/shared/toggle)는 시뮬레이터 시간이 야간이면 P=0
+     이 됨. 낮 시간대(현지 06~18시)에 실행 권장.
+  3. 테스트 종료 후: docker start control
 
 특정 시나리오만 실행:
   python run_tests.py solar ess diesel load

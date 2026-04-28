@@ -11,16 +11,20 @@ import time
 import traceback
 
 from utils import (
-    FAULT_PROPAGATE_SEC, PLANT_ID,
-    MqttCapture, create_edge, delete_edge, restore_topology, topo,
+    ESS_DEVICE_DEFAULTS, FAULT_PROPAGATE_SEC, PLANT_ID,
+    MqttCapture, create_edge, create_test_line, cleanup_test_line,
+    delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
 
-EDGE_ID   = "test-load-fault"
-DEVICE_ID = "load-01"
-TOPIC     = f"{PLANT_ID}/load/{DEVICE_ID}/telemetry"
-LINE_ID   = "line-ess01-load01"
-SW_ID     = "sw-ess01-load01"
+# 테스트 격리: 운영 device/line과 충돌하지 않도록 test-prefix 사용
+EDGE_ID         = "test-load-fault"
+DEVICE_ID       = "test-load-fault-01"
+PEER_EDGE_ID    = "test-load-fault-peer"
+PEER_DEVICE_ID  = "test-load-fault-peer-01"
+TOPIC           = f"{PLANT_ID}/load/{DEVICE_ID}/telemetry"
+LINE_ID         = "test-line-load-fault"
+SW_ID           = "test-sw-load-fault"
 
 MSG_COUNT = 3
 
@@ -32,6 +36,9 @@ def run():
 
     try:
         create_edge("load", EDGE_ID, DEVICE_ID)
+        create_edge("ess", PEER_EDGE_ID, PEER_DEVICE_ID, extra_device_fields=ESS_DEVICE_DEFAULTS)
+        create_test_line(LINE_ID, PEER_EDGE_ID, EDGE_ID, switch_id=SW_ID)
+        time.sleep(FAULT_PROPAGATE_SEC)
 
         print("\n[Scenario 6] Load LINE FAULT / SWITCH 테스트")
 
@@ -109,8 +116,10 @@ def run():
         traceback.print_exc()
         results.append(("예외", False))
     finally:
+        cleanup_test_line(LINE_ID)
         restore_topology()
         delete_edge(EDGE_ID)
+        delete_edge(PEER_EDGE_ID)
         cap.stop()
 
     return results

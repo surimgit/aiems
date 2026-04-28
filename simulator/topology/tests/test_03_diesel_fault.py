@@ -13,16 +13,21 @@ import time
 import traceback
 
 from utils import (
-    EDGE_STARTUP_SEC, FAULT_PROPAGATE_SEC, PLANT_ID,
-    MqttCapture, create_edge, delete_edge, restore_topology, topo,
+    EDGE_STARTUP_SEC, ESS_DEVICE_DEFAULTS, FAULT_PROPAGATE_SEC, PLANT_ID,
+    MqttCapture, create_edge, create_test_line, cleanup_test_line,
+    delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
 
-EDGE_ID   = "test-diesel-fault"
-DEVICE_ID = "diesel-01"
-TOPIC     = f"{PLANT_ID}/diesel/{DEVICE_ID}/telemetry"
-CMD_TOPIC = f"{PLANT_ID}/diesel/{DEVICE_ID}/command"
-LINE_ID   = "line-diesel01-ess01"
+# 테스트 격리: 운영 device/line과 충돌하지 않도록 test-prefix 사용
+EDGE_ID         = "test-diesel-fault"
+DEVICE_ID       = "test-diesel-fault-01"
+PEER_EDGE_ID    = "test-diesel-fault-peer"
+PEER_DEVICE_ID  = "test-diesel-fault-peer-01"
+TOPIC           = f"{PLANT_ID}/diesel/{DEVICE_ID}/telemetry"
+CMD_TOPIC       = f"{PLANT_ID}/diesel/{DEVICE_ID}/command"
+LINE_ID         = "test-line-diesel-fault"
+SW_ID           = "test-sw-diesel-fault"
 
 # diesel 기동 시간 30s + 여유
 DIESEL_STARTUP_WAIT = 35
@@ -41,8 +46,8 @@ def _start_command() -> dict:
 def _set_power_command(kw: float) -> dict:
     return {
         "command_id": "test-diesel-power-001",
-        "command_type": "set_power",
-        "payload": {"target_p_kw": kw},
+        "command_type": "load_control",
+        "payload": {"target_kw": kw},
     }
 
 
@@ -53,13 +58,18 @@ def run():
 
     try:
         create_edge("diesel", EDGE_ID, DEVICE_ID)
+        create_edge("ess", PEER_EDGE_ID, PEER_DEVICE_ID, extra_device_fields=ESS_DEVICE_DEFAULTS)
+        create_test_line(LINE_ID, EDGE_ID, PEER_EDGE_ID, switch_id=SW_ID)
+        time.sleep(FAULT_PROPAGATE_SEC)
 
         # ── 기동 명령 전송 ────────────────────────────────────────────────────
         time.sleep(3)
         cap.publish(CMD_TOPIC, _start_command())
-        cap.publish(CMD_TOPIC, _set_power_command(500.0))
         print(f"  [setup] diesel 기동 명령 전송. RUNNING 대기 ({DIESEL_STARTUP_WAIT}s)...")
         time.sleep(DIESEL_STARTUP_WAIT)
+        # RUNNING 상태에서만 load_control accept되므로 워밍업 후 발행
+        cap.publish(CMD_TOPIC, _set_power_command(500.0))
+        time.sleep(2)
 
         print("\n[Scenario 5] Diesel LINE FAULT 테스트")
 
@@ -115,8 +125,10 @@ def run():
         traceback.print_exc()
         results.append(("예외", False))
     finally:
+        cleanup_test_line(LINE_ID)
         restore_topology()
         delete_edge(EDGE_ID)
+        delete_edge(PEER_EDGE_ID)
         cap.stop()
 
     return results

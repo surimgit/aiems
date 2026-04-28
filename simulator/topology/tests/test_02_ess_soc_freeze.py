@@ -17,15 +17,20 @@ import traceback
 
 from utils import (
     FAULT_PROPAGATE_SEC, PLANT_ID, ESS_DEVICE_DEFAULTS,
-    MqttCapture, create_edge, delete_edge, restore_topology, topo,
+    MqttCapture, create_edge, create_test_line, cleanup_test_line,
+    delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
 
-EDGE_ID   = "test-ess-soc"
-DEVICE_ID = "ess-01"
-TOPIC     = f"{PLANT_ID}/ess/{DEVICE_ID}/telemetry"
-CMD_TOPIC = f"{PLANT_ID}/ess/{DEVICE_ID}/command"
-LINE_ID   = "line-diesel01-ess01"   # ess-01 관련 선로
+# 테스트 격리: 운영 device/line과 충돌하지 않도록 test-prefix 사용
+EDGE_ID         = "test-ess-soc"
+DEVICE_ID       = "test-ess-soc-01"
+PEER_EDGE_ID    = "test-ess-soc-peer"
+PEER_DEVICE_ID  = "test-ess-soc-peer-01"
+TOPIC           = f"{PLANT_ID}/ess/{DEVICE_ID}/telemetry"
+CMD_TOPIC       = f"{PLANT_ID}/ess/{DEVICE_ID}/command"
+LINE_ID         = "test-line-ess-soc"
+SW_ID           = "test-sw-ess-soc"
 
 MSG_COUNT = 5
 
@@ -46,6 +51,10 @@ def run():
 
     try:
         create_edge("ess", EDGE_ID, DEVICE_ID, extra_device_fields=ESS_DEVICE_DEFAULTS)
+        # peer는 line의 반대쪽 끝 — diesel로 만들어 wire_fault 테스트 격리
+        create_edge("diesel", PEER_EDGE_ID, PEER_DEVICE_ID)
+        create_test_line(LINE_ID, PEER_EDGE_ID, EDGE_ID, switch_id=SW_ID)
+        time.sleep(FAULT_PROPAGATE_SEC)
 
         # ── 충전 명령 전송 (ESS를 charge 모드로 전환) ─────────────────────────
         time.sleep(2)
@@ -122,8 +131,10 @@ def run():
         traceback.print_exc()
         results.append(("예외", False))
     finally:
+        cleanup_test_line(LINE_ID)
         restore_topology()
         delete_edge(EDGE_ID)
+        delete_edge(PEER_EDGE_ID)
         cap.stop()
 
     return results

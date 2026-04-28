@@ -107,12 +107,13 @@ EDGE_TYPE_NODE_TYPE = {
 def _default_device_id(edge_type: str, edge_id: str) -> str:
     """edge_id에서 -edge-<n> 패턴을 떼고 -<n>으로 변환.
     예: solar-edge-01 -> solar-01, ess-edge-01 -> ess-01.
-    매칭 실패 시 edge_id 그대로 반환.
+    -edge-<n> 패턴이 아니면 edge_id에 -01 접미를 붙여 device_id 충돌을 막는다.
+    예: test-solar-fault -> test-solar-fault-01.
     """
     m = re.match(r"^(.+)-edge-(\d+)$", edge_id)
     if m:
         return f"{m.group(1)}-{m.group(2)}"
-    return edge_id
+    return f"{edge_id}-01"
 
 
 def _default_device_spec(edge_type: str, edge_id: str) -> dict:
@@ -250,6 +251,9 @@ def _start_container(edge_id: str, edge_type: str) -> None:
         volumes=volumes,
         network=REAL_NETWORK_NAME,
         restart_policy={"Name": "always"},
+        # Linux Docker에서 host.docker.internal 해석 가능하도록 host-gateway 매핑.
+        # macOS/Windows는 자동 동작하지만 Linux에서는 명시 필요.
+        extra_hosts={"host.docker.internal": "host-gateway"},
     )
     if cmd:
         kwargs["command"] = cmd
