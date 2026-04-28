@@ -78,6 +78,7 @@ class TelemetryStatusData(ContractModel):
     SOC: float
     operating_mode: OperatingMode
     comms_health: Literal["ok", "error", "wire_fault"]
+    temperature_c: float = 24.0
 
 
 class TelemetryData(ContractModel):
@@ -116,6 +117,7 @@ class SimulatorSnapshot(TypedDict):
     power_kw: float
     operating_mode: str
     accumulated_energy_kwh: float
+    temperature_c: float
 
 
 class HeartbeatMessage(ContractModel):
@@ -139,6 +141,7 @@ def coerce_simulator_snapshot(raw_snapshot: Mapping[str, object]) -> SimulatorSn
         power_kw=_require_float(raw_snapshot["power_kw"], "power_kw"),
         operating_mode=_require_str(raw_snapshot["operating_mode"], "operating_mode"),
         accumulated_energy_kwh=_require_float(raw_snapshot["accumulated_energy_kwh"], "accumulated_energy_kwh"),
+        temperature_c=_require_float(raw_snapshot.get("temperature_c", 24.0), "temperature_c"),
     )
 
 
@@ -263,6 +266,7 @@ def snapshot_to_telemetry(
                 SOC=snapshot["soc"],
                 operating_mode=cast(OperatingMode, snapshot["operating_mode"]),
                 comms_health=cast(Literal["ok", "error", "wire_fault"], comms_health),
+                temperature_c=snapshot.get("temperature_c", 24.0),
             ),
         ),
     )
