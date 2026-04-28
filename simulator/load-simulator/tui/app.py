@@ -18,7 +18,9 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from widgets.command_log import CommandLog
+from widgets.command_tracker import CommandTracker
 from widgets.control_panel import ControlPanel
+from widgets.demand_panel import DemandPanel
 from widgets.device_panel import DeviceTable
 from widgets.topology_panel import TopologyPanel
 
@@ -52,12 +54,18 @@ class LoadTUI(App):
     .meta-val { color: #7aa2f7; text-style: bold; }
     .meta-val-ok { color: #9ece6a; text-style: bold; }
     .meta-val-err { color: #f7768e; text-style: bold; }
-    #main-layout { layout: grid; grid-size: 2 2; grid-columns: 2fr 1fr; grid-rows: 2fr 1fr; padding: 0 1; }
+    #main-layout { layout: grid; grid-size: 2 3; grid-columns: 2fr 1fr; grid-rows: auto auto 1fr; padding: 0 1; }
     #left-panel { height: 100%; }
+    #right-panel { height: 100%; }
     DeviceTable { background: #24283b; border: solid cyan; margin: 1 1 0 0; padding: 1; height: auto; }
     ControlPanel { background: #24283b; border: solid yellow; margin: 1 0 0 0; padding: 1; height: auto; }
     TopologyPanel { background: #24283b; border: solid blue; margin: 1 0 0 0; padding: 1; height: auto; }
+    DemandPanel { background: #24283b; border: solid orange; margin: 1 1 0 0; padding: 1; height: auto; }
+    CommandTracker { background: #24283b; border: solid magenta; margin: 1 0 0 0; padding: 1; height: 100%; }
     CommandLog { background: #24283b; border: solid green; margin: 1 0 0 0; padding: 1; column-span: 2; height: 100%; }
+    .stat-row { height: 1; margin-bottom: 1; }
+    .stat-label { color: #7aa2f7; text-style: bold; }
+    ProgressBar { width: 100%; }
     .ctrl-label { color: #7aa2f7; text-style: bold; }
     #select-row { height: 3; margin-bottom: 1; }
     #action-buttons { height: 3; margin-bottom: 1; }
@@ -90,9 +98,11 @@ class LoadTUI(App):
         with Container(id="main-layout"):
             with Vertical(id="left-panel"):
                 yield DeviceTable(id="device-table")
+                yield DemandPanel(id="demand-panel")
             with Vertical(id="right-panel"):
                 yield ControlPanel(id="control-panel")
                 yield TopologyPanel(id="topology-panel")
+                yield CommandTracker(id="command-tracker")
             yield CommandLog(id="command-log")
         yield Footer()
 
@@ -169,6 +179,7 @@ class LoadTUI(App):
                 log_msg = f"[{device_id}] ACK: {status}" + (f" ({reason})" if reason else "")
                 level = "warning" if status == "REJECTED" else "success"
                 self.call_from_thread(self.query_one(CommandLog).log_message, log_msg, level)
+                self.call_from_thread(self.query_one(CommandTracker).update_status, cmd_id, status)
         except Exception:
             pass
 
@@ -179,6 +190,18 @@ class LoadTUI(App):
     def _handle_telemetry(self, device_id: str, payload: dict) -> None:
         data = payload.get("data", {})
         self.query_one(DeviceTable).update_device(device_id, data)
+        # Aggregate demand across all devices for the panel
+        inst = data.get("instantaneous", {})
+        energy = data.get("energy", {})
+        # Store per-device values to sum across fleet
+        if not hasattr(self, "_device_p"):
+            self._device_p: dict[str, float] = {}
+            self._device_demand_max: dict[str, float] = {}
+        self._device_p[device_id] = inst.get("P", 0.0)
+        self._device_demand_max[device_id] = energy.get("demand_max", 0.0)
+        total_p = sum(self._device_p.values())
+        total_max = sum(self._device_demand_max.values())
+        self.query_one(DemandPanel).update_demand(total_p, total_max)
 
     def _refresh_topology(self) -> None:
         self.query_one(TopologyPanel).refresh_topology(
@@ -218,6 +241,8 @@ class LoadTUI(App):
         topic = f"{self.plant_id}/load/{device_id}/command"
         self.mqtt_client.publish(topic, json.dumps(cmd))
         self.query_one(CommandLog).log_message(f"[{device_id}] Sent: {cmd_type} {payload}")
+        ratio_str = str(payload.get("shed_ratio", "-"))
+        self.query_one(CommandTracker).add_command(cmd_id, cmd_type, f"{device_id} ({ratio_str})", "SENT")
 
 
 if __name__ == "__main__":
