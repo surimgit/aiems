@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 import time
 import threading
@@ -139,10 +140,10 @@ class DieselTUI(App):
         ("q", "quit", "Quit TUI"),
     ]
 
-    def __init__(self, plant_id="PLANT-ALPHA", device_id="diesel-01"):
+    def __init__(self, plant_id: str | None = None, device_id: str | None = None):
         super().__init__()
-        self.plant_id = plant_id
-        self.device_id = device_id
+        self.plant_id = plant_id or os.getenv("PLANT_ID", "PLANT-ALPHA")
+        self.device_id = device_id or os.getenv("DEVICE_ID", "diesel-01")
         
         # MQTT Setup (Callback API 버전 명시로 경고 해결)
         try:
@@ -153,6 +154,9 @@ class DieselTUI(App):
         self.base_topic = f"{plant_id}/diesel/{device_id}"
         self.cmd_topic = f"{self.base_topic}/command"
         
+        self.mqtt_host = os.getenv("MQTT_HOST", "localhost")
+        self.mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+
         # Rate tracking
         self.msg_count = 0
         self.last_rate_time = time.time()
@@ -193,7 +197,7 @@ class DieselTUI(App):
         self.mqtt_client.on_message = self.on_message
         
         try:
-            self.mqtt_client.connect("localhost", 1884, 60)
+            self.mqtt_client.connect(self.mqtt_host, self.mqtt_port, 60)
             self.mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             self.mqtt_thread.start()
         except Exception as e:
