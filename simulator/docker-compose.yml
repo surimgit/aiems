@@ -8,33 +8,6 @@ networks:
 
 services:
 
-  mqtt-broker:
-    image: eclipse-mosquitto:2.0
-    container_name: mqtt-broker
-    command: >
-      sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
-             echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
-             /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
-    ports:
-      - "1883:1883"
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-h", "localhost"]
-      interval: 2s
-      timeout: 5s
-      retries: 10
-    networks:
-      - ems_default
-
-  mqtt-logger:
-    image: eclipse-mosquitto:2.0
-    container_name: mqtt-logger
-    restart: always
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    command: mosquitto_sub -h host.docker.internal -p 1883 -t "#" -v
-    networks:
-      - ems_default
-
   topology:
     build:
       context: ./topology
