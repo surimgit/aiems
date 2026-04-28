@@ -15,8 +15,8 @@ services:
       sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
              echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
              /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
-    ports:
-      - "1883:1883"
+    # 포트 노출 제거: 모든 simulator 서비스는 EMS mosquitto(host.docker.internal:1883)에 연결.
+    # 1883 포트 매핑 시 EMS mosquitto와 충돌하므로 내부 네트워크 전용으로 유지.
     healthcheck:
       test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-h", "localhost"]
       interval: 2s
