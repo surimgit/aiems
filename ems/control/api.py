@@ -309,6 +309,25 @@ def _register_routes(app: Flask) -> None:
                 # ACK 추적 + cooldown 등록
                 _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)
                 _device_cooldown[device_id] = _time.monotonic()
+                # desired_state Redis 저장 (rule 경로와 동일하게 폐루프 추적 가능하도록)
+                try:
+                    import redis as _redis_sync
+                    _r = _redis_sync.Redis(host=REDIS_HOST, port=REDIS_PORT, socket_connect_timeout=2)
+                    translated = _translate_action(payload["action"])
+                    _r.set(
+                        f"desired:{SITE_ID}:{device_id}",
+                        json.dumps({
+                            "command_id": command_id,
+                            "command_type": translated["command_type"],
+                            "payload": translated["payload"],
+                            "issued_by": payload["requested_by"],
+                            "issued_at": _time.time(),
+                        }, ensure_ascii=False),
+                        ex=43200,
+                    )
+                    _r.close()
+                except Exception as e:
+                    print(f"[control][operator] desired_state 저장 실패: {e}")
             except Exception as e:
                 print(f"[control][operator] MQTT 전송 실패: {e}")
 
