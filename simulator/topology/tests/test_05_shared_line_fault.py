@@ -15,25 +15,30 @@ import traceback
 
 from utils import (
     FAULT_PROPAGATE_SEC, PLANT_ID, ESS_DEVICE_DEFAULTS,
-    MqttCapture, create_edge, delete_edge, restore_topology, topo,
+    MqttCapture, create_edge, create_test_line, cleanup_test_line,
+    delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
 
+# 테스트 격리: 운영 device/line과 충돌하지 않도록 test-prefix 사용
 SOLAR_EDGE_ID = "test-shared-solar"
 ESS_EDGE_ID   = "test-shared-ess"
-SOLAR_DEVICE  = "solar-01"
-ESS_DEVICE    = "ess-01"
+SOLAR_DEVICE  = "test-shared-solar-01"
+ESS_DEVICE    = "test-shared-ess-01"
 SOLAR_TOPIC   = f"{PLANT_ID}/solar/{SOLAR_DEVICE}/telemetry"
 ESS_TOPIC     = f"{PLANT_ID}/ess/{ESS_DEVICE}/telemetry"
-LINE_ID       = "line-solar01-ess01"
+LINE_ID       = "test-line-shared"
+SW_ID         = "test-sw-shared"
 
 MSG_COUNT = 3
 
 
 def _create_both_edges():
-    """두 엣지를 연속 생성. 두 번째 엣지 sleep 종료 시점에 둘 다 기동 완료."""
+    """두 엣지를 연속 생성 + 둘을 잇는 테스트 전용 line 추가."""
     create_edge("solar", SOLAR_EDGE_ID, SOLAR_DEVICE)
     create_edge("ess",   ESS_EDGE_ID,   ESS_DEVICE, extra_device_fields=ESS_DEVICE_DEFAULTS)
+    create_test_line(LINE_ID, SOLAR_EDGE_ID, ESS_EDGE_ID, switch_id=SW_ID)
+    time.sleep(FAULT_PROPAGATE_SEC)
 
 
 def run():
@@ -131,6 +136,7 @@ def run():
         traceback.print_exc()
         results.append(("예외", False))
     finally:
+        cleanup_test_line(LINE_ID)
         restore_topology()
         delete_edge(SOLAR_EDGE_ID)
         delete_edge(ESS_EDGE_ID)

@@ -1,7 +1,11 @@
 import math
 import random
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from abc import ABC, abstractmethod
+
+# 한국 운영 환경 고정 (위도 37.5665도와 일치하는 KST)
+_LOCAL_TZ = ZoneInfo("Asia/Seoul")
 
 # --- 추후 확장성을 위한 추상 베이스 클래스 ---
 class SolarDataProvider(ABC):
@@ -31,12 +35,18 @@ class PhysicsSolarGenerator(SolarDataProvider):
             self.efficiency_multiplier = max(0.0, efficiency)
 
     def get_value(self, target_time: datetime) -> float:
-        # 1. 시각 계산 (0 ~ 24)
-        current_hour = target_time.hour + (target_time.minute / 60.0) + (target_time.second / 3600.0)
-        
+        # 위도(서울 37.5N)와 일치시키기 위해 KST로 변환 후 시각 계산.
+        # target_time이 naive면 UTC로 가정.
+        if target_time.tzinfo is None:
+            target_time = target_time.replace(tzinfo=ZoneInfo("UTC"))
+        local_time = target_time.astimezone(_LOCAL_TZ)
+
+        # 1. 시각 계산 (0 ~ 24, KST 기준)
+        current_hour = local_time.hour + (local_time.minute / 60.0) + (local_time.second / 3600.0)
+
         # 2. 1년 중 특성 (계절별 태양 고도 반영용 적위 계산)
         # Julian Day 식별 (1월 1일 = 1)
-        day_of_year = target_time.timetuple().tm_yday
+        day_of_year = local_time.timetuple().tm_yday
         # 태양 적위 곡선 (Solar Declination): -23.45 ~ +23.45 도
         declination = math.radians(23.45 * math.sin(math.radians((360 / 365.25) * (day_of_year - 81))))
         

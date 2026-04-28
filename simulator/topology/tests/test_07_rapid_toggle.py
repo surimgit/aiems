@@ -16,15 +16,20 @@ import time
 import traceback
 
 from utils import (
-    FAULT_PROPAGATE_SEC, PLANT_ID,
-    MqttCapture, create_edge, delete_edge, restore_topology, topo,
+    ESS_DEVICE_DEFAULTS, FAULT_PROPAGATE_SEC, PLANT_ID,
+    MqttCapture, create_edge, create_test_line, cleanup_test_line,
+    delete_edge, restore_topology, topo,
     assert_telemetry, log_result,
 )
 
-EDGE_ID   = "test-rapid-solar"
-DEVICE_ID = "solar-01"
-TOPIC     = f"{PLANT_ID}/solar/{DEVICE_ID}/telemetry"
-LINE_ID   = "line-solar01-ess01"
+# 테스트 격리: 운영 device/line과 충돌하지 않도록 test-prefix 사용
+EDGE_ID         = "test-rapid-solar"
+DEVICE_ID       = "test-rapid-solar-01"
+PEER_EDGE_ID    = "test-rapid-solar-peer"
+PEER_DEVICE_ID  = "test-rapid-solar-peer-01"
+TOPIC           = f"{PLANT_ID}/solar/{DEVICE_ID}/telemetry"
+LINE_ID         = "test-line-rapid"
+SW_ID           = "test-sw-rapid"
 
 CYCLES    = 3
 MSG_COUNT = 3
@@ -37,6 +42,9 @@ def run():
 
     try:
         create_edge("solar", EDGE_ID, DEVICE_ID)
+        create_edge("ess", PEER_EDGE_ID, PEER_DEVICE_ID, extra_device_fields=ESS_DEVICE_DEFAULTS)
+        create_test_line(LINE_ID, EDGE_ID, PEER_EDGE_ID, switch_id=SW_ID)
+        time.sleep(FAULT_PROPAGATE_SEC)
         print(f"\n[Scenario 9] 선로 장애 빠른 반복 토글 ({CYCLES}사이클) 테스트")
 
         # ─ 9-1: 초기 정상 상태 확인 ─────────────────────────────────────────
@@ -103,8 +111,10 @@ def run():
         traceback.print_exc()
         results.append(("예외", False))
     finally:
+        cleanup_test_line(LINE_ID)
         restore_topology()
         delete_edge(EDGE_ID)
+        delete_edge(PEER_EDGE_ID)
         cap.stop()
 
     return results

@@ -1,5 +1,14 @@
 # ================================================================
 # EMS Edge Simulator - Docker Compose
+#
+# MQTT broker는 EMS 측 mosquitto를 사용한다 (MSA 원칙: 인프라 공유).
+# 이 docker-compose는 MQTT broker를 제공하지 않으므로 사전에 EMS가
+# 떠있어야 한다.
+#
+# 환경 분리:
+#   .env (또는 환경변수)로 MQTT_HOST 지정
+#     - 같은 PC 통합 테스트: MQTT_HOST=host.docker.internal (기본값)
+#     - 운영/원격 EMS:        MQTT_HOST=<EMS 서버 IP/도메인>
 # ================================================================
 
 networks:
@@ -8,30 +17,16 @@ networks:
 
 services:
 
-  mqtt-broker:
-    image: eclipse-mosquitto:2.0
-    container_name: mqtt-broker
-    command: >
-      sh -c "echo 'listener 1883' > /mosquitto/config/mosquitto.conf &&
-             echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf &&
-             /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
-    ports:
-      - "1883:1883"
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-h", "localhost"]
-      interval: 2s
-      timeout: 5s
-      retries: 10
-    networks:
-      - ems_default
-
+  # 디버깅용: 모든 MQTT 토픽을 표준출력으로 흘려본다.
+  # 활성화: docker compose --profile debug up -d
   mqtt-logger:
+    profiles: ["debug"]
     image: eclipse-mosquitto:2.0
     container_name: mqtt-logger
     restart: always
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: mosquitto_sub -h host.docker.internal -p 1883 -t "#" -v
+    command: mosquitto_sub -h ${MQTT_HOST:-host.docker.internal} -p ${MQTT_PORT:-1883} -t "#" -v
     networks:
       - ems_default
 
@@ -50,8 +45,8 @@ services:
       - topology_data:/app/data
     environment:
       - PORT=8081
-      - MQTT_HOST=host.docker.internal
-      - MQTT_PORT=1883
+      - MQTT_HOST=${MQTT_HOST:-host.docker.internal}
+      - MQTT_PORT=${MQTT_PORT:-1883}
       - TOPOLOGY_PATH=/app/data/topology.yaml
     networks:
       - ems_default
@@ -79,8 +74,8 @@ services:
       - DIESEL_IMAGE=diesel-simulator:latest
       - ESS_IMAGE=ess-simulator:latest
       - LOAD_IMAGE=load-simulator:latest
-      - MQTT_HOST=host.docker.internal
-      - MQTT_PORT=1883
+      - MQTT_HOST=${MQTT_HOST:-host.docker.internal}
+      - MQTT_PORT=${MQTT_PORT:-1883}
     networks:
       - ems_default
 

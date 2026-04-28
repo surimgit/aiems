@@ -12,7 +12,7 @@ import paho.mqtt.client as mqtt
 import requests
 
 # ── 환경 설정 ─────────────────────────────────────────────────────────────────
-MQTT_HOST = os.environ.get("MQTT_HOST", "mqtt-broker")
+MQTT_HOST = os.environ.get("MQTT_HOST", "host.docker.internal")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 SM_URL    = os.environ.get("SM_URL", "http://simulator-manager:8080")
 TOPO_URL  = os.environ.get("TOPO_URL", "http://topology:8081")
@@ -116,13 +116,21 @@ def topo(method: str, path: str, body: dict | None = None) -> dict:
 
 def create_edge(edge_type: str, edge_id: str, device_id: str,
                 extra_device_fields: dict | None = None) -> None:
-    """엣지 생성 → 디바이스 추가 → 기동 대기."""
+    """엣지 생성 → (자동 시드된 device가 다르면) 디바이스 추가 → 기동 대기.
+    simulator-manager가 edge 생성 시 기본 device 1개를 자동 시드하므로,
+    test가 요청한 device_id가 그것과 다를 때만 add_device 호출.
+    """
     sm("POST", "/api/edges", {"edge_type": edge_type, "edge_id": edge_id})
 
-    device_body = {"device_id": device_id}
-    if extra_device_fields:
-        device_body.update(extra_device_fields)
-    sm("POST", f"/api/edges/{edge_id}/devices", device_body)
+    # 자동 시드된 device 목록 조회
+    seeded = sm("GET", f"/api/edges/{edge_id}/devices") or []
+    seeded_ids = {d.get("device_id") for d in seeded}
+
+    if device_id not in seeded_ids:
+        device_body = {"device_id": device_id}
+        if extra_device_fields:
+            device_body.update(extra_device_fields)
+        sm("POST", f"/api/edges/{edge_id}/devices", device_body)
 
     print(f"  [setup] {edge_id} 기동 대기 ({EDGE_STARTUP_SEC}s)...")
     time.sleep(EDGE_STARTUP_SEC)
@@ -135,6 +143,29 @@ def delete_edge(edge_id: str) -> None:
         print(f"  [teardown] {edge_id} 삭제 완료")
     except Exception as e:
         print(f"  [teardown] {edge_id} 삭제 실패 (무시): {e}")
+
+
+def create_test_line(line_id: str, from_edge_id: str, to_edge_id: str,
+                     switch_id: str | None = None) -> None:
+    """테스트 전용 line을 topology에 추가.
+    from_edge_id / to_edge_id 는 테스트가 create_edge로 만든 격리 edge들이어야 한다.
+    """
+    body = {
+        "line_id": line_id,
+        "from_node_id": f"node-{from_edge_id}",
+        "to_node_id": f"node-{to_edge_id}",
+    }
+    if switch_id:
+        body["switch_id"] = switch_id
+    topo("POST", "/api/lines", body)
+
+
+def cleanup_test_line(line_id: str) -> None:
+    """테스트 전용 line 삭제 (실패해도 무시)."""
+    try:
+        topo("DELETE", f"/api/lines/{line_id}")
+    except Exception:
+        pass
 
 
 def restore_topology() -> None:
