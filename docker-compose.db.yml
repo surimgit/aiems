@@ -8,11 +8,12 @@ services:
       TIMESCALE_USER: ${TIMESCALE_USER}
       TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${TIMESCALE_HOST_PORT:-5432}:5432"
     volumes:
       # DB EC2(172.31.44.52) 의 EBS 150GB 를 /data 에 마운트해둔 전제
-      # ems-db 인스턴스에서: /data/timescale (UID 999, 사전 생성 완료)
-      - /data/timescale:/var/lib/postgresql/data
+      # prod: /data/timescale (UID 999, 사전 생성 완료)
+      # dev:  /data/timescale-dev (dev 환경 분리, 사전 생성 필요)
+      - ${TIMESCALE_DATA_DIR:-/data/timescale}:/var/lib/postgresql/data
       - ./infra/init_timescale.sh:/docker-entrypoint-initdb.d/init_timescale.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -35,9 +36,10 @@ services:
       CONTROL_USER: ${CONTROL_USER}
       CONTROL_PASSWORD: ${CONTROL_PASSWORD}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
-      - /data/postgres:/var/lib/postgresql/data
+      # prod: /data/postgres / dev: /data/postgres-dev
+      - ${POSTGRES_DATA_DIR:-/data/postgres}:/var/lib/postgresql/data
       - ./infra/init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]

@@ -19,7 +19,7 @@ services:
       args:
         PORT: 5001
     ports:
-      - "5001:5001"
+      - "${INGESTION_PORT:-5001}:5001"
     env_file: .env
     environment:
       FLASK_APP: app.main:app
@@ -36,7 +36,7 @@ services:
     image: redis:7.2-alpine
     restart: always
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: >
@@ -53,8 +53,8 @@ services:
     image: eclipse-mosquitto:2.0.18
     restart: always
     ports:
-      - "1883:1883"
-      - "9001:9001"
+      - "${MQTT_HOST_PORT:-1883}:1883"
+      - "${MQTT_WS_HOST_PORT:-9001}:9001"
     environment:
       MQTT_USER: ${MQTT_USER}
       MQTT_PASSWORD: ${MQTT_PASSWORD}
