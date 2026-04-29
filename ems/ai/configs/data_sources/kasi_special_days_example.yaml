@@ -1,0 +1,32 @@
+source: kasi_special_days
+
+request:
+  auth_env_candidates:
+    - KASI_SERVICE_KEY
+    - PUBLIC_DATA_SERVICE_KEY
+    - PUBLIC_DATA_API_KEY
+    - DATA_GO_KR_SERVICE_KEY
+    - KMA_AUTH_KEY
+  env_file: "G:/내 드라이브/s305-ai-data/.env"
+  base_url: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService
+  timeout_seconds: 30
+  sleep_seconds: 0.3
+  retries: 3
+  num_of_rows: 100
+
+range:
+  start_year: 2021
+  end_year: 2026
+
+endpoints:
+  - path: getRestDeInfo
+    category: holiday
+  - path: getHoliDeInfo
+    category: national_day
+  - path: get24DivisionsInfo
+    category: solar_term
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/calendar/kasi_special_days"
+  processed_path: "G:/내 드라이브/s305-ai-data/processed/calendar/korea_special_days.csv"
+  save_raw_response: true

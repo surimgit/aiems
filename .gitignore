@@ -6,6 +6,16 @@ __pycache__/
 node_modules/
 .DS_Store
 *.log
+ems/ai/checkpoints/*
+ems/ai/data/raw/*
+ems/ai/data/processed/*
+ems/ai/logs/*
+ems/ai/outputs/*
+!ems/ai/checkpoints/.gitkeep
+!ems/ai/data/raw/.gitkeep
+!ems/ai/data/processed/.gitkeep
+!ems/ai/logs/.gitkeep
+!ems/ai/outputs/.gitkeep
 redis_data/
 pg_data/
 mqtt_data/

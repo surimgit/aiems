@@ -1,0 +1,43 @@
+seed: 42
+
+data:
+  train_path: "${S305_AI_DATA_ROOT}/processed/splits/solar_kpx_train.csv"
+  val_path: "${S305_AI_DATA_ROOT}/processed/splits/solar_kpx_val.csv"
+  target_column: future_solar_P_kw
+  feature_columns:
+    - past_solar_P_kw
+    - past_solar_P_kw_lag_1
+    - past_solar_P_kw_lag_24
+    - rolling_mean_3h
+    - rolling_mean_24h
+    - temperature
+    - humidity
+    - cloud_cover
+    - irradiance
+    - rainfall_mm
+    - wind_speed
+    - hour_of_day_sin
+    - hour_of_day_cos
+    - day_of_year_sin
+    - day_of_year_cos
+  file_format: csv
+
+model:
+  objective: regression
+  n_estimators: 1000
+  learning_rate: 0.03
+  num_leaves: 31
+  max_depth: -1
+  min_child_samples: 20
+  subsample: 0.9
+  colsample_bytree: 0.9
+  reg_alpha: 0.0
+  reg_lambda: 0.1
+  random_state: 42
+  n_jobs: -1
+  early_stopping_rounds: 50
+
+output:
+  artifact_dir: "${S305_AI_OUTPUT_ROOT}/artifacts"
+  log_dir: "${S305_AI_OUTPUT_ROOT}/logs"
+  run_name: solar_kpx_lightgbm

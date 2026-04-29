@@ -15,6 +15,18 @@
 
 - 지금 날씨와 최근 발전량으로 다음 1시간 발전량 예측
 
+현재 batch inference 엔트리포인트:
+
+```bash
+PYTHONPATH=ems/ai python -m train.infer --config ems/ai/configs/solar_kpx_baseline.yaml --include-target-metrics
+```
+
+기본 출력:
+
+- `outputs/solar_kpx_baseline_predictions.csv`
+- `predicted_solar_P_kw`
+- `predicted_solar_P_kw_clipped`
+
 ### Retraining
 
 - 새로 쌓인 데이터를 포함해 모델을 다시 학습한다.
@@ -68,6 +80,14 @@ Initial training
 - 오차 패턴 분석
 
 이 가능하다.
+
+현재 validation split 기준 1차 backtest 결과:
+
+- checkpoint: `checkpoints/solar_kpx_baseline/best.pt`
+- rows: `1440`
+- RMSE: `101042.55`
+- MAE: `64604.63`
+- clipped RMSE: `101017.68`
 
 ## Quarterly Retraining
 

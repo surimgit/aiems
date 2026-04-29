@@ -1,5 +1,33 @@
 # Python Scripts
 
+## Latest Added Collector
+
+### `scripts/collect_kasi_special_days.py`
+
+- 역할: 공휴일/국경일/24절기 calendar feature 수집
+- API endpoint:
+  - `https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService`
+- 사용하는 기능:
+  - `/getRestDeInfo`
+  - `/getHoliDeInfo`
+  - `/get24DivisionsInfo`
+  - 필요 시 `/getAnniversaryInfo`, `/getSundryDayInfo`
+- 주요 입력:
+  - `configs/data_sources/kasi_special_days_example.yaml`
+  - `.env`의 `KASI_SERVICE_KEY`
+- 주요 출력:
+  - `raw/calendar/kasi_special_days/YYYY/*.xml`
+  - `raw/calendar/kasi_special_days/metadata/collection_manifest.jsonl`
+  - `processed/calendar/korea_special_days.csv`
+- 현재 수집 상태:
+  - years: `2021 ~ 2026`
+  - rows: `381`
+- 예시:
+
+```bash
+python ems/ai/scripts/collect_kasi_special_days.py --config ems/ai/configs/data_sources/kasi_special_days_example.yaml
+```
+
 현재 `ems/ai`에서 사용하는 Python 스크립트와 역할을 정리한 문서다.
 
 ## 환경 및 데이터 수집
@@ -43,6 +71,51 @@ python ems/ai/scripts/collect_kma_asos.py --config ems/ai/configs/data_sources/k
 python ems/ai/scripts/check_kma_station.py --config ems/ai/configs/data_sources/kma_asos_example.yaml --station-id 165
 ```
 
+### Planned: KMA village forecast collector
+
+- 역할: 운영 추론용 현재/미래 날씨 feature 수집
+- 사용할 API:
+  - `getUltraSrtNcst`
+  - `getUltraSrtFcst`
+  - `getVilageFcst`
+  - `nph-dfs_xy_lonlat`
+- 주요 입력:
+  - `.env`의 `KMA_AUTH_KEY`
+  - `raw/weather/kma_vilage_forecast/grid_reference/동네예보지점좌표(위경도)_202601.xlsx`
+- 주요 출력 예정:
+  - `raw/weather/kma_vilage_forecast/ultra_srt_ncst`
+  - `raw/weather/kma_vilage_forecast/ultra_srt_fcst`
+  - `raw/weather/kma_vilage_forecast/vilage_fcst`
+
+### Planned: KASI special-day collector
+
+- 역할: 공휴일/국경일/24절기 calendar feature 수집
+- API endpoint:
+  - `https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService`
+- 사용할 기능:
+  - `/getRestDeInfo`
+  - `/getHoliDeInfo`
+  - `/get24DivisionsInfo`
+  - 필요 시 `/getAnniversaryInfo`, `/getSundryDayInfo`
+- 주요 입력:
+  - 공공데이터포털 일반 인증키 `.env` 변수
+- 주요 출력 예정:
+  - `raw/calendar/kasi_special_days/YYYY/*.xml`
+  - `processed/calendar/korea_special_days.csv`
+
+### Planned: load statistics normalizer
+
+- 역할: 소비 예측 baseline용 공공 통계 데이터를 long-format으로 정규화
+- 주요 입력:
+  - `raw/load/kepco_city_usage/downloads/*.xlsx`
+  - `raw/load/kepco_contract_legal_dong/downloads/2025/*.xlsx`
+  - `raw/load/kpx_national_demand/downloads/*.csv`
+- 주요 출력 예정:
+  - `processed/load/kepco_city_usage_long.csv`
+  - `processed/load/kepco_contract_legal_dong_2025_long.csv`
+  - `processed/load/kpx_national_hourly_profile.csv`
+  - `processed/load/load_prior_hourly.csv`
+
 ### `scripts/normalize_power_sources.py`
 
 - 역할: 전력거래소(KPX)와 서부발전 태양광 CSV를 시간 단위 long-format CSV로 정규화
@@ -61,6 +134,29 @@ python ems/ai/scripts/check_kma_station.py --config ems/ai/configs/data_sources/
 
 ```bash
 python ems/ai/scripts/normalize_power_sources.py
+```
+
+### `scripts/collect_kpx_solar_api.py`
+
+- 역할: 한국전력거래소 지역별 시간별 태양광 발전량 API를 날짜 단위로 수집
+- 주요 입력:
+  - `configs/data_sources/kpx_solar_api_example.yaml`
+  - `.env`의 `KPX_SOLAR_SERVICE_KEY`
+- 주요 출력:
+  - `raw/kepco/<region>/api/daily_raw/YYYY/YYYY-MM-DD.json`
+  - `raw/kepco/<region>/api/daily_csv/YYYY/YYYY-MM-DD.csv`
+  - `raw/kepco/<region>/api/hourly_csv/YYYY/YYYY-MM.csv`
+  - `raw/kepco/<region>/api/metadata/daily_manifest.jsonl`
+- 비고:
+  - API endpoint: `https://apis.data.go.kr/B552115/PvAmountByLocHr/getPvAmountByLocHr`
+  - 날짜별 `tradeYmd=YYYYMMDD` 기준으로 수집
+  - `numOfRows=500`이면 하루 전체 데이터가 보통 1회 요청으로 수집됨
+  - 개발계정 일일 요청 제한 때문에 `max_requests`로 하루 수집량을 제한
+  - 월별 hourly CSV는 설정의 `filter.regions` 기준으로 필터링
+- 예시:
+
+```bash
+python ems/ai/scripts/collect_kpx_solar_api.py --config ems/ai/configs/data_sources/kpx_solar_api_example.yaml
 ```
 
 ### `scripts/collect_west_power.py`
@@ -134,6 +230,7 @@ python ems/ai/scripts/prepare_solar_kpx_dataset.py
 - 역할: baseline MLP 학습 실행
 - 입력:
   - `configs/baseline.yaml`
+  - `configs/solar_kpx_baseline.yaml`
 - 기능:
   - config 로딩
   - csv/parquet dataset 로딩
@@ -143,7 +240,28 @@ python ems/ai/scripts/prepare_solar_kpx_dataset.py
 - 예시:
 
 ```bash
-python -m train.train --config ems/ai/configs/baseline.yaml
+PYTHONPATH=ems/ai python -m train.train --config ems/ai/configs/solar_kpx_baseline.yaml
+```
+
+### `train/infer.py`
+
+- 역할: 학습된 checkpoint로 batch inference 실행
+- 기본 입력:
+  - `configs/solar_kpx_baseline.yaml`
+  - `checkpoints/<run_name>/best.pt`
+  - config의 validation CSV
+- 주요 출력:
+  - `outputs/<run_name>_predictions.csv`
+- 기능:
+  - checkpoint 로드
+  - 입력 CSV 로딩
+  - `predicted_solar_P_kw` 생성
+  - 음수 발전량 보정용 `predicted_solar_P_kw_clipped` 생성
+  - target column이 있으면 MAE/RMSE/MAPE 계산
+- 예시:
+
+```bash
+PYTHONPATH=ems/ai python -m train.infer --config ems/ai/configs/solar_kpx_baseline.yaml --include-target-metrics
 ```
 
 ### `train/dataset.py`

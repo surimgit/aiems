@@ -20,8 +20,9 @@
 - 발전 예측:
   - `KMA + KPX`만으로 baseline 가능
 - 소비 예측:
-  - 공공 통계만으로는 한계가 큼
-  - 실제 현장 부하 데이터가 필요
+  - 현재 공공 통계 데이터는 확보됨
+  - 다만 시간 단위 현장 load label이 아니므로 supervised load model은 아직 이르다.
+  - 1차는 통계 기반 hourly load prior로 구현한다.
 
 ## Baseline Model Type
 
@@ -49,11 +50,34 @@ ESS는 1차적으로 별도 예측 모델로 학습시키지 않는다.
 
 - AI:
   - 발전 예측
-  - 이후 소비 예측
+  - 소비 baseline/prior
+  - 이후 실제 load log 기반 소비 예측
 - EMS 정책 엔진:
   - `net_power` 계산
   - SOC 계산
   - 충전/방전 판단
+
+## Load Baseline Strategy
+
+소비 예측은 아래 입력으로 시작한다.
+
+- 시군구별 전력사용량 `2021 ~ 2025`
+- 계약종별-법정동별 전력데이터 `2025`
+- 시간별 전국 전력수요량 profile
+- KMA 관측/예보 기상
+- 요일/공휴일/운영자 context
+
+1차 목표는 `predicted_load_kw`를 만드는 baseline이다.
+
+```text
+monthly usage kWh
+  -> daily allocation
+  -> hourly profile allocation
+  -> weather/context adjustment
+  -> predicted_load_kw
+```
+
+이 값은 EMS 운영 판단의 직접 제어값이 아니라 `predicted_net_power_kw = predicted_load_kw - predicted_generation_kw` 계산을 위한 보조 입력으로 둔다.
 
 ### LLM
 

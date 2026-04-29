@@ -1,5 +1,21 @@
 # EMS AI Workspace
 
+## Current Baseline Status
+
+- [EMS AI Current Design](./docs/AI_CURRENT_FINAL_DESIGN.md)
+- [Baseline Solar Training Result](./docs/ml/baseline-training-result.md)
+- [Load Profile And LLM Structuring](./docs/ml/load-profile-and-llm.md)
+- [AI Code Map](./docs/ops/ai-code-map.md)
+
+Current decision:
+
+```text
+initial training: SSAFY shared GPU
+runtime inference: RunPod Serverless
+runtime orchestration: EC2 Forecast-AI
+control: EMS Rule Engine
+```
+
 `ems/ai`는 EMS용 AI 데이터 수집, 데이터셋 생성, 모델 학습, 오프라인 검증을 담당하는 작업 폴더다.
 
 이 폴더의 목표는 다음 네 가지다.
