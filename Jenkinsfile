@@ -79,15 +79,19 @@ pipeline {
                     env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
 
-                    // 배포 정책 (명시적 분기로 의도 명확화):
-                    //   ✅ master push                            → 배포
-                    //   ✅ feature/ems → master MR                → 배포
-                    //   ❌ ems push (직접 또는 MR 머지로 인한)    → CI 만 (배포 X)
-                    //   ❌ feature push                           → CI 만
-                    //   ❌ feature → ems MR                       → CI 만
+                    // ──────────────────────────────────────
+                    // 배포 정책 (prod / dev 2개 환경 분리):
                     //
-                    // 주의: 기존 "(!isMR || targetBranch == 'master')" 로직은
-                    //       모든 push 가 deploy 트리거되는 버그가 있었음 (ems push 도 배포됨).
+                    //   prod (5대 EC2, 분산 배치, 8080 + 5xxx 포트, /home/ubuntu/app)
+                    //     ✅ master push                              → prod 배포
+                    //     ✅ feature/ems → master MR                  → prod 배포
+                    //     ❌ 그 외                                    → CI 만
+                    //
+                    //   dev (5대 EC2 공유, 별도 컨테이너, 9080 + 6xxx 포트, /home/ubuntu/dev)
+                    //     ✅ ems push (직접 또는 feature→ems MR 머지) → dev 배포
+                    //     ❌ master push, master 타겟 MR              → prod 만 (dev X)
+                    //     ❌ feature → ems MR (생성 시)               → CI 만
+                    // ──────────────────────────────────────
                     def shouldDeploy = false
                     if (isMR && targetBranch == 'master') {
                         shouldDeploy = true
@@ -95,6 +99,9 @@ pipeline {
                         shouldDeploy = true
                     }
                     env.SHOULD_DEPLOY = shouldDeploy ? 'true' : 'false'
+
+                    def shouldDeployDev = !isMR && currentBranch == 'ems'
+                    env.SHOULD_DEPLOY_DEV = shouldDeployDev ? 'true' : 'false'
 
                     echo """
                     === 변경 감지 결과 ===
@@ -104,7 +111,8 @@ pipeline {
                     State+DBWriter:  ${env.CHANGED_STATE} / ${env.CHANGED_DBWRITER}
                     Control+AI:      ${env.CHANGED_CONTROL} / ${env.CHANGED_AI}
                     Infra:           ${env.CHANGED_INFRA}
-                    Deploy 수행:     ${env.SHOULD_DEPLOY}
+                    Deploy (prod):   ${env.SHOULD_DEPLOY}
+                    Deploy (dev):    ${env.SHOULD_DEPLOY_DEV}
                     """
                 }
             }
@@ -284,6 +292,89 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/app/infra/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.db.yml up -d'
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                // ──────────────────────────────────────
+                //  Dev 환경 (ems push 시 배포, /home/ubuntu/dev, --project-name dev)
+                //   - ems-env-dev Managed File 의 시크릿/포트 사용 (9080, 6xxx, 7379, 2883, 6432/6433)
+                //   - bind mount: /data/postgres-dev, /data/timescale-dev (DB EC2 에 사전 생성 필요)
+                //   - prod 컨테이너와 격리됨 (project name 으로 컨테이너/네트워크/볼륨 자동 분리)
+                // ──────────────────────────────────────
+                stage('Deploy - Gateway (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_DEV == 'true' && (env.CHANGED_GATEWAY == 'true' || env.CHANGED_INFRA == 'true') } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('Deploy - Ingestion (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_DEV == 'true' && (env.CHANGED_INGESTION == 'true' || env.CHANGED_INFRA == 'true') } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'mkdir -p /home/ubuntu/dev/ems /home/ubuntu/dev/infra'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/dev/ems/
+                                    scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/dev/infra/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.ingestion.yml up -d --build'
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('Deploy - State+DBWriter (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_DEV == 'true' && (env.CHANGED_STATE == 'true' || env.CHANGED_DBWRITER == 'true' || env.CHANGED_INFRA == 'true') } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'mkdir -p /home/ubuntu/dev/ems'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.state.yml .env ubuntu@${STATE_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/state-processor ems/db-writer ubuntu@${STATE_IP}:/home/ubuntu/dev/ems/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.state.yml up -d --build'
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('Deploy - Control+AI (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_DEV == 'true' && (env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' || env.CHANGED_INFRA == 'true') } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/dev/ems'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai-service ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build'
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('Deploy - DB (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_DEV == 'true' && env.CHANGED_INFRA == 'true' } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'mkdir -p /home/ubuntu/dev/infra'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/dev/infra/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d'
                                 '''
                             }
                         }
