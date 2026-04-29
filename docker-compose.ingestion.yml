@@ -1,0 +1,72 @@
+services:
+  # Redis Streams Consumer Group 초기화 (oneshot)
+  # - 모든 서비스가 XREADGROUP 호출 전에 그룹을 미리 생성
+  # - Normal + Emergency 2개 이벤트 버스 커버
+  # - ingestion 기동 전에 반드시 완료 되어야 함
+  stream-init:
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.stream-init
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  ingestion:
+    build:
+      context: ./ems/ingestion
+      args:
+        PORT: 5001
+    ports:
+      - "${INGESTION_PORT:-5001}:5001"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+      stream-init:
+        condition: service_completed_successfully
+
+  redis:
+    image: redis:7.2-alpine
+    restart: always
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mqtt:
+    image: eclipse-mosquitto:2.0.18
+    restart: always
+    ports:
+      - "${MQTT_HOST_PORT:-1883}:1883"
+      - "${MQTT_WS_HOST_PORT:-9001}:9001"
+    environment:
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/acl.template:/mosquitto/config/acl.template:ro
+      - ./infra/mosquitto/entrypoint.sh:/mosquitto/config/entrypoint.sh:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+
+volumes:
+  redis_data:
+  mqtt_data:
+  mqtt_log:

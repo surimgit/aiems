@@ -1,0 +1,50 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.15.3-pg15
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${TIMESCALE_ROOT_PASSWORD}
+      TIMESCALE_DB: ${TIMESCALE_DB}
+      TIMESCALE_USER: ${TIMESCALE_USER}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
+    ports:
+      - "${TIMESCALE_HOST_PORT:-5432}:5432"
+    volumes:
+      # DB EC2(172.31.44.52) 의 EBS 150GB 를 /data 에 마운트해둔 전제
+      # prod: /data/timescale (UID 999, 사전 생성 완료)
+      # dev:  /data/timescale-dev (dev 환경 분리, 사전 생성 필요)
+      - ${TIMESCALE_DATA_DIR:-/data/timescale}:/var/lib/postgresql/data
+      - ./infra/init_timescale.sh:/docker-entrypoint-initdb.d/init_timescale.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15.5
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      STATE_DB: ${STATE_DB}
+      STATE_USER: ${STATE_USER}
+      STATE_PASSWORD: ${STATE_PASSWORD}
+      AI_DB: ${AI_DB}
+      AI_USER: ${AI_USER}
+      AI_PASSWORD: ${AI_PASSWORD}
+      CONTROL_DB: ${CONTROL_DB}
+      CONTROL_USER: ${CONTROL_USER}
+      CONTROL_PASSWORD: ${CONTROL_PASSWORD}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      # prod: /data/postgres / dev: /data/postgres-dev
+      - ${POSTGRES_DATA_DIR:-/data/postgres}:/var/lib/postgresql/data
+      - ./infra/init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# 네임드 볼륨은 사용하지 않음 — /data (EBS 150GB) 바인드 마운트로 전환

@@ -1,0 +1,35 @@
+# State + DB-Writer EC2 (172.31.33.89) 전용 compose
+# - redis 는 Ingestion EC2(172.31.45.48), postgres/timescaledb 는 DB EC2(172.31.44.52) 에 있음
+# - 컨테이너 내부에서 `redis`/`postgres`/`timescaledb` 호스트명으로 접속해야 하므로 extra_hosts 로 사설 IP 매핑
+services:
+  state-processor:
+    build:
+      context: ./ems/state-processor
+      args:
+        PORT: 5002
+    ports:
+      - "${STATE_PORT:-5002}:5002"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    restart: always
+    extra_hosts:
+      - "redis:172.31.45.48"
+      - "postgres:172.31.44.52"
+      - "timescaledb:172.31.44.52"
+
+  db-writer:
+    build:
+      context: ./ems/db-writer
+      args:
+        PORT: 5005
+    ports:
+      - "${DB_WRITER_PORT:-5005}:5005"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    restart: always
+    extra_hosts:
+      - "redis:172.31.45.48"
+      - "postgres:172.31.44.52"
+      - "timescaledb:172.31.44.52"
