@@ -1,0 +1,15 @@
+# ================================================
+# MQTT ACL
+# - ingestion 유저: sensor/#, event/# 구독 및 제어 응답 발행 허용
+# - device 유저(Edge 시뮬레이터): sensor/#, event/# 발행 + control/# 구독
+# - 그 외 계정·익명은 거부 (mosquitto.conf의 allow_anonymous false)
+# ================================================
+
+user ${MQTT_USER}
+topic readwrite #
+
+# 필요 시 device 유저 추가 예시 (현재는 MQTT_USER 하나만 사용)
+# user device
+# topic write sensor/#
+# topic write event/#
+# topic read control/#
