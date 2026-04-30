@@ -284,6 +284,15 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
   - 지역별 station/grid 매핑 테이블
   - 가능하면 지역별 태양광 설비용량 또는 capacity metadata
 
+## 2026-04-30 Mentor Feedback: Weather Feature Alignment
+
+- detailed rule: `ems/ai/docs/ml/weather-feature-alignment.md`
+- GK2A LE2 cloud archive is observed historical data, so it is valid for training, validation, and offline feature experiments.
+- Operational solar prediction must use future-available forecast features such as KMA ultra-short `SKY/PTY/RN1/T1H/REH/WSD` and short-term `SKY/POP/PCP/PTY/TMP/REH/WSD`.
+- Do not claim production quality from a model evaluated only with GK2A observed cloud features if live inference only receives KMA forecast categories.
+- `SKY` is coarse cloud-state data: `1` clear, `3` mostly cloudy, `4` cloudy/overcast. The old `2` category was merged into `1` after 2019-06-04.
+- Hourly remains the current baseline. 15-minute prediction is a future step after forecast ingestion, label resolution, and API stability are verified.
+
 ## Done
 
 - KMA ASOS 수집 스크립트 작성 및 수집 완료
@@ -380,8 +389,10 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
 - KPX 태양광 API `2024-09-07`부터 이어서 수집
 - 소비 데이터 정규화 스크립트 작성
 - KMA 동네예보 API 운영 수집 결과 검증
+- KMA 초단기/단기예보 `SKY/PTY/POP/PCP/TMP/REH/WSD` 기반 forecast-compatible feature table 작성
 - GK2A LE2 archive 수집 재개 및 완료
 - GK2A NetCDF에서 학습용 cloud feature 추출 스크립트 작성
+- GK2A observed cloud feature와 KMA forecast `SKY` 간 mismatch/정렬 실험 분리
 - 한국천문연구원 특일 정보를 load prior에 join
 - 소비 예측에 필요한 현장 데이터 스키마 정의
 - LLM context 입력 포맷 초안 정의

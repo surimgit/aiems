@@ -20,6 +20,7 @@ External source
 
 - 기존 hourly kW baseline: KMA ASOS + KPX hourly 발전량
 - 최신 운영 후보: KPX 5분 capacity factor + 시간/태양고도 feature + LightGBM
+- 운영 예측 확장 방향: KMA 초단기/단기예보 기반 forecast-compatible weather feature
 
 ### 1. KMA 수집
 
@@ -106,12 +107,15 @@ KPX solar generation
 ## GK2A Cloud Archive Pipeline
 
 위성 구름 산출물은 KMA APIHub GK2A LE2 archive로 별도 수집한다.
+단, GK2A LE2는 과거 관측 archive이므로 운영 예측 시점의 미래 날씨 feature가 아니다.
+여준 멘토 피드백에 따라, GK2A는 학습/검증/ablation용 cloud feature로 분리하고
+실제 운영 예측은 KMA 초단기/단기예보처럼 target timestamp 이전에 확보 가능한 forecast feature로 구성한다.
 
 ```text
 KMA APIHub GK2A LE2
   -> raw/weather/gk2a_le2/<PRODUCT>/KO/YYYY/MM/DD/*.nc
   -> monthly manifest
-  -> future cloud feature extraction
+  -> observed cloud feature extraction for offline training/validation
 ```
 
 수집 설정:
@@ -136,6 +140,33 @@ KMA APIHub GK2A LE2
 2. 성공하면 `run_gk2a_le2_archive_monthly.py`를 1~2병렬로 재개한다.
 3. 안정화되면 4병렬로 늘린다.
 4. `overwrite: false`라 기존 `.nc` 파일은 skip된다.
+
+### Forecast-Compatible Weather Feature Pipeline
+
+운영 예측 후보 모델은 inference 시점에 존재하는 feature만 사용해야 한다.
+따라서 GK2A archive 성능과 별개로 KMA forecast feature table을 별도로 만든다.
+
+```text
+KMA ultra-short/short forecast
+  -> raw forecast records
+  -> issue_time / target_time alignment
+  -> forecast-compatible weather feature table
+  -> solar capacity-factor inference
+```
+
+우선 feature 후보:
+
+- 초단기예보: `SKY`, `PTY`, `RN1`, `T1H`, `REH`, `WSD`
+- 단기예보: `SKY`, `POP`, `PCP`, `PTY`, `TMP`, `REH`, `WSD`
+
+`SKY`는 category feature로 처리한다.
+
+- `1`: 맑음
+- `3`: 구름많음
+- `4`: 흐림
+
+과거 `2` category는 2019-06-04 이후 `1`로 병합되었으므로 4-class cloud state로 가정하지 않는다.
+GK2A cloud feature로만 좋은 성능이 나온 모델은 production 후보가 아니라 archive-enhanced offline 후보로 기록한다.
 
 ## Why The Pipeline Is Split
 
