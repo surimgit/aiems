@@ -12,6 +12,26 @@ import { DEFAULT_SITE_ID } from '@/app/config'
 import type { AlarmData } from '@/types/common'
 import { getAlarmList } from '@/api/dashboard.client'
 
+const normalizeAlarmList = (payload: unknown): AlarmData[] => {
+  if (Array.isArray(payload)) {
+    return payload as AlarmData[]
+  }
+
+  if (payload && typeof payload === 'object') {
+    const maybeItems = (payload as { items?: unknown }).items
+    if (Array.isArray(maybeItems)) {
+      return maybeItems as AlarmData[]
+    }
+
+    const maybeData = (payload as { data?: unknown }).data
+    if (Array.isArray(maybeData)) {
+      return maybeData as AlarmData[]
+    }
+  }
+
+  return []
+}
+
 interface AlarmState {
   siteId: string
   alarms: AlarmData[]
@@ -52,14 +72,23 @@ export const useAlarmStore = defineStore<'alarm', AlarmState, AlarmGetters, Alar
     
     getters: {
       activeAlarms(): AlarmData[] {
+        if (!Array.isArray(this.alarms)) {
+          return []
+        }
         return this.alarms.filter((alarm) => !alarm.acknowledged)
       },
       
       criticalAlarms(): AlarmData[] {
+        if (!Array.isArray(this.alarms)) {
+          return []
+        }
         return this.alarms.filter((alarm) => alarm.level === 'critical' && !alarm.acknowledged)
       },
       
       unacknowledgedCount(): number {
+        if (!Array.isArray(this.alarms)) {
+          return 0
+        }
         return this.alarms.filter((alarm) => !alarm.acknowledged).length
       },
       
@@ -82,7 +111,8 @@ export const useAlarmStore = defineStore<'alarm', AlarmState, AlarmGetters, Alar
         this.error = null
         
         try {
-          this.alarms = await getAlarmList(siteId ?? this.siteId)
+          const alarms = await getAlarmList(siteId ?? this.siteId)
+          this.alarms = normalizeAlarmList(alarms)
         } catch (error) {
           this.error = (error as Error).message
           console.error('[AlarmStore] Fetch error:', error)

@@ -56,31 +56,37 @@ export const mapEventDto = (dto: EventDto): EventData => ({
   payload: dto.payload
 })
 
-export const mapTopologyDto = (dto: TopologyDto): TopologyData => ({
-  site_id: dto.site_id,
-  nodes: dto.nodes.map((node) => ({
+export const mapTopologyDto = (dto: TopologyDto): TopologyData => {
+  const safeNodes = Array.isArray(dto?.nodes) ? dto.nodes : []
+  const safeLines = Array.isArray(dto?.lines) ? dto.lines : []
+  const safeSwitches = Array.isArray(dto?.switches) ? dto.switches : []
+
+  return {
+    site_id: dto?.site_id ?? 'unknown',
+    nodes: safeNodes.map((node) => ({
     node_id: node.node_id,
     node_type: node.node_type,
     resource_id: node.resource_id,
     position: { x: node.position.x, y: node.position.y },
     status: node.status
-  })),
-  lines: dto.lines.map((line) => ({
+    })),
+    lines: safeLines.map((line) => ({
     line_id: line.line_id,
     from_node_id: line.from_node_id,
     to_node_id: line.to_node_id,
     direction: line.direction,
     flow_kw: line.flow_kw,
     status: line.status
-  })),
-  switches: (dto.switches ?? []).map((sw) => ({
+    })),
+    switches: safeSwitches.map((sw) => ({
     switch_id: sw.switch_id,
     line_id: sw.line_id,
     position: sw.position,
     controllable: sw.controllable,
     interlock_blocked: sw.interlock_blocked
-  }))
-})
+    }))
+  }
+}
 
 export const mapForecastSeriesToUi = (
   points: Array<{ timestamp: string; generation_kw?: number; load_kw?: number }>,
