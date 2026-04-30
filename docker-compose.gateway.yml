@@ -1,14 +1,18 @@
 # Gateway EC2 (172.31.37.96) 전용 compose
 # - SSAFY 포트 정책: 외부 노출은 8000-8999, 9000-9999 범위만 허용
-# - prod: 8080 / dev: 9080 (.env 의 GATEWAY_HTTP_PORT 로 오버라이드)
-# - nginx.prod.conf 의 listen 8080 과 매칭
-# - SSL 은 Phase 3 (Cloudflare Origin Cert 방식) 에서 추가 예정
+# - prod HTTP : 8080 (헬스체크 + HTTPS 리다이렉트)
+# - prod HTTPS: 8443 (Cloudflare Origin Cert ↔ Cloudflare 가 8443 으로 origin 접근)
+# - dev       : 9080 (.env 의 GATEWAY_HTTP_PORT 로 오버라이드, HTTPS 없음)
+# - Cloudflare Origin Certificate 는 호스트의 /etc/cloudflare 에 위치
 services:
   gateway:
     build:
       context: ./gateway
     ports:
       - "${GATEWAY_HTTP_PORT:-8080}:8080"
+      - "${GATEWAY_HTTPS_PORT:-8443}:8443"
     restart: always
     volumes:
       - ./gateway/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      # Cloudflare Origin Certificate 마운트 (read-only)
+      - /etc/cloudflare:/etc/cloudflare:ro
