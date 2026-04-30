@@ -1,145 +1,115 @@
 <script setup lang="ts">
-/**
- * OverviewPage.vue - 개요 페이지
- * 
- * [중요] 이 페이지는 조합 전용 페이지입니다.
- * - API를 직접 호출하지 마세요.
- * - 대신 features/stores를 통해 데이터를 사용하세요.
- * - 데이터 흐름: API → Store → Feature → Page
- */
-
-import { onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useOverviewFeature } from '@/features/overview'
+import { useTopologyFeature } from '@/features/topology'
+import { useForecastFeature } from '@/features/forecast'
+import { buildKpiSummary } from '@/features/kpi'
+import TopBarKpiStrip from '@/features/overview/components/TopBarKpiStrip.vue'
+import DashboardShell from '@/features/overview/components/DashboardShell.vue'
+import TopologyStage from '@/features/topology/components/TopologyStage.vue'
+import TopologyLegend from '@/features/topology/components/TopologyLegend.vue'
+import PowerBalanceChart from '@/features/forecast/components/PowerBalanceChart.vue'
+import KpiSummaryWidget from '@/features/kpi/components/KpiSummaryWidget.vue'
+import AiPerformanceWidget from '@/features/overview/components/AiPerformanceWidget.vue'
+import RightPanelShell from '@/features/overview/components/right-panel/RightPanelShell.vue'
+import AlarmTopPanel from '@/features/overview/components/right-panel/AlarmTopPanel.vue'
+import RecentCommandPanel from '@/features/overview/components/right-panel/RecentCommandPanel.vue'
+import CountryLanguagePanel from '@/features/overview/components/right-panel/CountryLanguagePanel.vue'
+import SelectedResourceInfoPanel from '@/features/overview/components/right-panel/SelectedResourceInfoPanel.vue'
+import ControlPanel from '@/features/overview/components/right-panel/ControlPanel.vue'
+import LoadUsagePanel from '@/features/overview/components/right-panel/LoadUsagePanel.vue'
+import { useRightPanelState } from '@/features/overview/composables/useRightPanelState'
+import { useDashboardLayout } from '@/features/overview/composables/useDashboardLayout'
+import type { RightPanelMode } from '@/features/overview/types'
 
-const { 
-  powerSummary, 
-  essList, 
-  activeAlarms, 
-  isLoading, 
-  initialize 
-} = useOverviewFeature()
+const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
+const topologyFeature = useTopologyFeature()
+const forecastFeature = useForecastFeature()
+const kpiItems = computed(() => buildKpiSummary())
+
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
+const rightPanel = useRightPanelState()
+const { mode } = useDashboardLayout(() => viewportWidth.value, () => rightPanel.isOpen.value)
+
+const onResize = () => {
+  viewportWidth.value = window.innerWidth
+}
+
+const handleTopbarMode = (nextMode: RightPanelMode) => {
+  rightPanel.open(nextMode)
+}
+
+const rightPanelTitle = computed(() => {
+  const titleMap: Record<RightPanelMode, string> = {
+    alarm: '알람 (Top 3)',
+    'recent-command': '최근 명령 결과',
+    'country-language': '국가 선택',
+    'selected-resource': '선택된 장비 정보',
+    control: '설비 제어',
+    'load-usage': '소비처별 전력 사용 현황'
+  }
+
+  if (!rightPanel.mode.value) return '패널'
+  return titleMap[rightPanel.mode.value]
+})
 
 onMounted(async () => {
+  window.addEventListener('resize', onResize)
+
   await initialize()
+  await Promise.all([topologyFeature.initialize(), forecastFeature.fetchForecasts()])
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
 })
 </script>
 
 <template>
   <div class="overview-page">
-    <h1 class="page-title">대시보드 개요</h1>
-    
-    <!-- 로딩 상태 -->
-    <div v-if="isLoading" class="loading-state">
-      데이터를 불러오는 중...
-    </div>
-    
-    <!-- 주요 전력 요약 -->
-    <section class="power-summary">
-      <h2>전력 요약</h2>
-      <div v-if="powerSummary" class="summary-grid">
-        <div class="summary-item">
-          <span class="label">Net Power</span>
-          <span class="value">{{ powerSummary.net_power_kw }} kW</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">PV</span>
-          <span class="value">{{ powerSummary.pv_power_kw }} kW</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">ESS</span>
-          <span class="value">{{ powerSummary.ess_power_kw }} kW</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">Grid</span>
-          <span class="value">{{ powerSummary.grid_power_kw }} kW</span>
-        </div>
-        <div class="summary-item">
-          <span class="label">Load</span>
-          <span class="value">{{ powerSummary.load_power_kw }} kW</span>
-        </div>
-      </div>
-    </section>
-    
-    <!-- ESS 목록 -->
-    <section class="ess-list">
-      <h2>ESS 상태</h2>
-      <div v-if="essList.length > 0" class="ess-grid">
-        <div v-for="ess in essList" :key="ess.ess_id" class="ess-card">
-          <h3>{{ ess.name || ess.ess_id }}</h3>
-          <p>SOC: {{ ess.soc }}%</p>
-          <p>Status: {{ ess.status }}</p>
-        </div>
-      </div>
-    </section>
-    
-    <!-- 활성 알람 -->
-    <section v-if="activeAlarms.length > 0" class="active-alarms">
-      <h2>활성 알람</h2>
-      <ul>
-        <li v-for="alarm in activeAlarms" :key="alarm.alarm_id" :class="alarm.level">
-          {{ alarm.message }}
-        </li>
-      </ul>
-    </section>
+    <DashboardShell :mode="mode" :panel-open="rightPanel.isOpen.value">
+      <template #topbar>
+        <TopBarKpiStrip
+          :power-summary="powerSummary"
+          :active-alarm-count="activeAlarms.length"
+          @toggle-mode="handleTopbarMode"
+        />
+      </template>
+
+      <template #topology>
+        <TopologyStage :topology="null">
+          <TopologyLegend />
+        </TopologyStage>
+      </template>
+
+      <template #power-balance>
+        <PowerBalanceChart />
+      </template>
+
+      <template #kpi-summary>
+        <KpiSummaryWidget :items="kpiItems" />
+      </template>
+
+      <template #ai-performance>
+        <AiPerformanceWidget />
+      </template>
+
+      <template #right-panel>
+        <RightPanelShell :title="rightPanelTitle" @close="rightPanel.close">
+          <AlarmTopPanel v-if="rightPanel.mode.value === 'alarm'" />
+          <RecentCommandPanel v-else-if="rightPanel.mode.value === 'recent-command'" />
+          <CountryLanguagePanel v-else-if="rightPanel.mode.value === 'country-language'" />
+          <SelectedResourceInfoPanel v-else-if="rightPanel.mode.value === 'selected-resource'" />
+          <ControlPanel v-else-if="rightPanel.mode.value === 'control'" />
+          <LoadUsagePanel v-else-if="rightPanel.mode.value === 'load-usage'" />
+        </RightPanelShell>
+      </template>
+    </DashboardShell>
   </div>
 </template>
 
 <style scoped>
 .overview-page {
-  @apply p-6;
-}
-
-.page-title {
-  @apply text-2xl font-bold mb-6;
-}
-
-.loading-state {
-  @apply text-gray-500;
-}
-
-.power-summary,
-.ess-list,
-.active-alarms {
-  @apply mb-8;
-}
-
-.summary-grid {
-  @apply grid grid-cols-2 md:grid-cols-5 gap-4;
-}
-
-.summary-item {
-  @apply p-4 bg-white rounded shadow;
-}
-
-.summary-item .label {
-  @apply block text-sm text-gray-500;
-}
-
-.summary-item .value {
-  @apply text-xl font-semibold;
-}
-
-.ess-grid {
-  @apply grid grid-cols-1 md:grid-cols-3 gap-4;
-}
-
-.ess-card {
-  @apply p-4 bg-white rounded shadow;
-}
-
-.active-alarms ul {
-  @apply list-disc pl-5;
-}
-
-.active-alarms .critical {
-  @apply text-red-600 font-bold;
-}
-
-.active-alarms .warning {
-  @apply text-amber-600;
-}
-
-.active-alarms .info {
-  @apply text-blue-600;
+  @apply min-h-screen bg-slate-950 p-4;
 }
 </style>
