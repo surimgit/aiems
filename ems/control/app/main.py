@@ -1,8 +1,5 @@
-from flask import Flask, jsonify
+# Flask 진입점 — `flask run` 으로 실행됨 (FLASK_APP=app.main:app).
+from .api import app
 
-app = Flask(__name__)
-
-
-@app.get("/health")
-def health_check():
-    return jsonify({"status": "ok", "service": "control"})
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5003, use_reloader=False)
