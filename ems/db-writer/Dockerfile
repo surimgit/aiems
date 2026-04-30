@@ -1,5 +1,5 @@
 FROM python:3.10-slim
-ARG PORT=5002
+ARG PORT=5005
 ENV PORT=${PORT}
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
