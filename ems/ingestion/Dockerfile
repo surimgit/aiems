@@ -1,12 +1,13 @@
 FROM python:3.10-slim
-
+ARG PORT=5001
+ENV PORT=${PORT}
 WORKDIR /app
-
-ENV PYTHONUNBUFFERED=1
-
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
-
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "api:app"]
+EXPOSE ${PORT}
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:${PORT}/health || exit 1
+CMD ["sh", "-c", "flask run --host=0.0.0.0 --port=${PORT}"]
