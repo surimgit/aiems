@@ -274,7 +274,7 @@ G:/내 드라이브/s305-ai-data
 
 #### Asset Group
 
-- 목적: 운영 추론 시점의 기상 예보 feature 확보 준비
+- 목적: 운영 추론 시점의 미래 기상 예보 feature 확보
 - source: 기상청 동네예보
 
 #### Paths
@@ -300,11 +300,38 @@ G:/내 드라이브/s305-ai-data
 - `getVilageFcst`: 단기예보조회
 - `nph-dfs_xy_lonlat`: 임의 위·경도 -> 인근 동네예보 격자 번호 변환
 
+#### Main Forecast Fields
+
+- ultra-short forecast:
+  - `SKY`: 하늘상태
+  - `PTY`: 강수형태
+  - `RN1`: 1시간 강수량
+  - `T1H`: 기온
+  - `REH`: 습도
+  - `WSD`: 풍속
+- short-term forecast:
+  - `SKY`: 하늘상태
+  - `POP`: 강수확률
+  - `PCP`: 강수량
+  - `PTY`: 강수형태
+  - `TMP`: 기온
+  - `REH`: 습도
+  - `WSD`: 풍속
+
+`SKY` category:
+
+- `1`: 맑음
+- `3`: 구름많음
+- `4`: 흐림
+
+과거 `2` category는 2019-06-04 이후 `1`로 병합되었다.
+
 #### How It Is Used
 
 - 발전 예측 운영 추론 시 미래 날씨 feature
 - 소비 baseline의 냉난방 보정 feature
 - `nx`, `ny` 격자값 산출 기준
+- GK2A 관측 cloud feature와 구분되는 production forecast feature
 
 ---
 
@@ -312,7 +339,7 @@ G:/내 드라이브/s305-ai-data
 
 #### Asset Group
 
-- 목적: 한국 영역 위성 구름 산출물 확보
+- 목적: 한국 영역 위성 구름 산출물 확보 및 offline cloud feature 실험
 - source: KMA APIHub GK2A LE2
 - products: `CLA`, `CLD`
 - area: `KO`
@@ -358,6 +385,14 @@ G:/내 드라이브/s305-ai-data
 - VPN 출구 IP에서는 TCP 443은 열렸으나 Python `requests`가 `SSLError: UNEXPECTED_EOF_WHILE_READING`로 실패했다.
 - API key/account ban이면 일반적으로 HTTP `401/403` 또는 JSON 오류가 와야 하므로, 현재 증상은 API key보다 IP/VPN/APIHub WAF 제한 가능성이 높다.
 - 재개 전 단건 Python HTTPS 요청이 성공하는지 먼저 확인한다.
+
+#### Modeling Role
+
+- GK2A LE2는 과거 관측 archive다.
+- 학습/검증/ablation에서 cloud feature의 효과를 확인하는 용도로 사용한다.
+- live inference에서 미래 GK2A 관측값을 사용할 수 없으므로, 운영 모델 성능은 KMA forecast-compatible feature로 별도 평가한다.
+- GK2A 기반 성능은 production 성능이 아니라 archive-enhanced offline 성능으로 표기한다.
+- GK2A 관측 cloud를 KMA `SKY`와 비교하거나 forecast-like category로 변환하는 domain-alignment 실험은 별도 모델 버전으로 관리한다.
 
 ---
 
