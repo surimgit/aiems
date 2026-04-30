@@ -107,6 +107,17 @@ Local client for:
 - submitting jobs
 - checking status
 
+`task=predict` payloads do not require `data_zip_url`; training payloads still do.
+
+```text
+scripts/smoke_runpod_predict_local.py
+```
+
+Runs `runpod.handler` locally against the current LightGBM model and validation
+split. It verifies that postprocessing fields such as `is_daylight`,
+`latitude`, `longitude`, `timezone`, and `installed_capacity_kw` affect the final
+`predicted_solar_kw`.
+
 ```text
 scripts/collect_nasa_power_global_sites.py
 ```

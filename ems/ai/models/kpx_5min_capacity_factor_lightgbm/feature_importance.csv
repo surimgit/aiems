@@ -1,0 +1,12 @@
+feature,importance
+past_capacity_factor,1554
+solar_elevation_mid,1083
+day_of_year_sin,822
+past_capacity_factor_lag_1,775
+hour_of_day_sin,746
+past_capacity_factor_lag_24,605
+rolling_mean_cf_24h,553
+day_of_year_cos,513
+rolling_mean_cf_3h,511
+hour_of_day_cos,68
+is_daylight,0

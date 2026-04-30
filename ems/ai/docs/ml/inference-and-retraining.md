@@ -27,6 +27,48 @@ PYTHONPATH=ems/ai python -m train.infer --config ems/ai/configs/solar_kpx_baseli
 - `predicted_solar_P_kw`
 - `predicted_solar_P_kw_clipped`
 
+### Runtime Predict Payload
+
+운영 추론 요청은 모델 입력 feature와 후처리 feature를 같이 보낸다.
+
+모델은 `feature_columns`만 사용한다. 후처리 feature는 모델 재학습 대상이 아니라,
+`raw_predicted_solar_kw`를 운영 가능한 `predicted_solar_kw`로 보정하는 안전 입력이다.
+
+필수 후처리 feature:
+
+- `target_time`
+- `target_hour`
+- `installed_capacity_kw`
+
+선택 후처리 feature:
+
+- `latitude`
+- `longitude`
+- `timezone`
+- `is_daylight`
+- `estimated_irradiance` in W/m2 scale, not the normalized training feature
+- `solar_elevation`
+
+If `solar_elevation` is not supplied, the AI worker can compute it from
+`target_time`, `latitude`, `longitude`, and `timezone` with `astral`.
+
+후처리 규칙:
+
+- `is_daylight <= 0`: `predicted_solar_kw = 0`
+- `solar_elevation <= 0`: `predicted_solar_kw = 0`
+- `estimated_irradiance <= 10`: `predicted_solar_kw = 0`
+- `target_hour < 6` or `target_hour > 19`: `predicted_solar_kw = 0`
+- prediction < 0: `predicted_solar_kw = 0`
+- prediction > `installed_capacity_kw`: `predicted_solar_kw = installed_capacity_kw`
+
+EMS는 `raw_predicted_solar_kw`가 아니라 `predicted_solar_kw`를 사용한다.
+`raw_predicted_solar_kw`와 `postprocess_reason`은 예측 로그와 재학습 검증용으로 저장한다.
+
+Current validation note:
+
+- `target_hour/is_daylight` postprocessing keeps overall validation error close to the raw model.
+- `solar_elevation` support is implemented, but should be enabled as the default only after confirming timestamp and timezone alignment between telemetry, weather forecast, and target horizon.
+
 ### Retraining
 
 - 새로 쌓인 데이터를 포함해 모델을 다시 학습한다.

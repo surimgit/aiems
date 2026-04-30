@@ -43,7 +43,7 @@ def load_key(env_file: str | None) -> str:
 
 def request_json(method: str, url: str, key: str, **kwargs: Any) -> Any:
     headers = kwargs.pop("headers", {})
-    headers["Authorization"] = f"Bearer {key}" if "rest.runpod.io" in url else key
+    headers["Authorization"] = f"Bearer {key}"
     headers.setdefault("Content-Type", "application/json")
     response = requests.request(method, url, headers=headers, timeout=60, **kwargs)
     if response.status_code >= 400:
@@ -149,7 +149,7 @@ def submit(args: argparse.Namespace) -> None:
     with Path(args.config).open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
-    endpoint_id = args.endpoint_id or config.get("endpoint_id")
+    endpoint_id = args.endpoint_id or config.get("endpoint_id") or os.getenv("RUNPOD_ENDPOINT_ID")
     if not endpoint_id:
         raise RuntimeError("endpoint_id is required. Create a RunPod endpoint first.")
 
@@ -160,7 +160,8 @@ def submit(args: argparse.Namespace) -> None:
     if args.result_upload_url:
         payload["input"]["result_upload_url"] = args.result_upload_url
 
-    if not payload["input"].get("data_zip_url"):
+    task = payload["input"].get("task", "train")
+    if task == "train" and not payload["input"].get("data_zip_url"):
         raise RuntimeError("input.data_zip_url is required unless the endpoint mounts data_root.")
 
     if mode == "sync":

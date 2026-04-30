@@ -8,7 +8,7 @@ RUN python -m pip install --no-cache-dir -r /tmp/requirements-train.txt \
 
 COPY ems /app/ems
 
-ENV PYTHONPATH=/app/ems/ai
+ENV PYTHONPATH=/app
 ENV S305_AI_DATA_ROOT=/workspace/s305-ai-data
 ENV S305_AI_OUTPUT_ROOT=/workspace/runs
 

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+from astral import Observer
+from astral.sun import elevation
 
 
 DEFAULT_IRRADIANCE_THRESHOLD = 10.0
@@ -23,17 +27,56 @@ def _value(row: dict[str, Any], names: tuple[str, ...], default: float | None = 
     return default
 
 
+def _text_value(row: dict[str, Any], names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = row.get(name)
+        if value is None:
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except TypeError:
+            pass
+        return str(value)
+    return None
+
+
+def _parse_target_time(value: str, timezone_name: str | None) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        return parsed
+    if timezone_name:
+        return parsed.replace(tzinfo=ZoneInfo(timezone_name))
+    return parsed.replace(tzinfo=ZoneInfo("UTC"))
+
+
+def solar_elevation_from_location(row: dict[str, Any]) -> float | None:
+    target_time = _text_value(row, ("target_time", "timestamp"))
+    latitude = _value(row, ("latitude", "lat"))
+    longitude = _value(row, ("longitude", "lon", "lng"))
+    if target_time is None or latitude is None or longitude is None:
+        return None
+
+    timezone_name = _text_value(row, ("timezone", "tz"))
+    timestamp = _parse_target_time(target_time, timezone_name)
+    return float(elevation(Observer(latitude=latitude, longitude=longitude), timestamp))
+
+
 def is_night_or_low_sun(
     row: dict[str, Any],
     irradiance_threshold: float = DEFAULT_IRRADIANCE_THRESHOLD,
 ) -> bool:
     daylight_flag = _value(row, ("is_daylight", "daylight_flag"))
     if daylight_flag is not None:
-        return daylight_flag <= 0.0
+        if daylight_flag <= 0.0:
+            return True
 
     solar_elevation = _value(row, ("solar_elevation", "solar_elevation_deg"))
+    if solar_elevation is None:
+        solar_elevation = solar_elevation_from_location(row)
     if solar_elevation is not None:
-        return solar_elevation <= 0.0
+        if solar_elevation <= 0.0:
+            return True
 
     # Only use an explicitly engineered irradiance estimate for hard zero-clamp.
     # Raw training columns named "irradiance" may be normalized, missing, or

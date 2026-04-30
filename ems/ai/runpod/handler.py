@@ -12,9 +12,13 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import numpy as np
 import pandas as pd
 
-from train.solar_postprocess import postprocess_solar_predictions
+try:
+    from ems.ai.train.solar_postprocess import postprocess_solar_predictions
+except ImportError:
+    from train.solar_postprocess import postprocess_solar_predictions
 
 try:
     import runpod
@@ -25,6 +29,7 @@ except ImportError:
 WORKSPACE = Path(os.getenv("S305_RUNPOD_WORKSPACE", "/workspace"))
 DEFAULT_DATA_ROOT = WORKSPACE / "s305-ai-data"
 DEFAULT_OUTPUT_ROOT = WORKSPACE / "runs"
+DEFAULT_CAPACITY_FACTOR_MODEL = "/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib"
 
 
 def _download(url: str, destination: Path) -> None:
@@ -182,6 +187,100 @@ def _predict(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _capacity_kw(payload: dict[str, Any], source: dict[str, Any]) -> float:
+    value = source.get("installed_capacity_kw", payload.get("installed_capacity_kw"))
+    if value is None:
+        value = source.get("estimated_capacity_wh", payload.get("estimated_capacity_wh"))
+        if value is not None:
+            value = float(value) / 1000.0
+    if value is None:
+        raise ValueError("installed_capacity_kw is required for capacity-factor prediction")
+    capacity = float(value)
+    if capacity <= 0:
+        raise ValueError(f"installed_capacity_kw must be positive: {capacity}")
+    return capacity
+
+
+def _is_night_for_capacity_factor(source: dict[str, Any]) -> bool:
+    for name in ("is_daylight", "daylight_flag"):
+        value = source.get(name)
+        if value is not None and not pd.isna(value):
+            return float(value) <= 0.0
+    for name in ("solar_elevation_mid", "solar_elevation", "solar_elevation_deg"):
+        value = source.get(name)
+        if value is not None and not pd.isna(value):
+            return float(value) <= 0.0
+    return False
+
+
+def _predict_capacity_factor(payload: dict[str, Any]) -> dict[str, Any]:
+    model_path = Path(
+        payload.get(
+            "model_path",
+            os.getenv("S305_CAPACITY_FACTOR_MODEL_PATH", DEFAULT_CAPACITY_FACTOR_MODEL),
+        )
+    )
+    if not model_path.exists():
+        raise FileNotFoundError(f"Capacity-factor model file not found: {model_path}")
+
+    features = payload.get("features")
+    if not isinstance(features, list) or not features:
+        raise ValueError("input.features must be a non-empty list of feature objects")
+
+    artifact = joblib.load(model_path)
+    model = artifact["model"] if isinstance(artifact, dict) and "model" in artifact else artifact
+    feature_columns = artifact.get("feature_columns") if isinstance(artifact, dict) else payload.get("feature_columns")
+    if not feature_columns:
+        raise ValueError("feature_columns are missing from model artifact and request payload")
+
+    frame = pd.DataFrame(features)
+    missing = [column for column in feature_columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Missing feature columns for capacity-factor prediction: {missing}")
+
+    raw_predictions = model.predict(frame[feature_columns])
+    clipped_predictions = np.clip(raw_predictions, 0.0, float(payload.get("max_capacity_factor", 1.0)))
+
+    predictions: list[dict[str, Any]] = []
+    for index, raw_prediction in enumerate(raw_predictions):
+        source = features[index]
+        predicted_capacity_factor = float(clipped_predictions[index])
+        reasons: list[str] = []
+
+        if _is_night_for_capacity_factor(source):
+            predicted_capacity_factor = 0.0
+            reasons.append("night_zero_clamp")
+        elif raw_prediction < 0.0:
+            reasons.append("negative_clamp")
+        elif predicted_capacity_factor != float(raw_prediction):
+            reasons.append("capacity_factor_clamp")
+
+        installed_capacity_kw = _capacity_kw(payload, source)
+        predictions.append(
+            {
+                "target_time": source.get("target_time"),
+                "region": source.get("region", payload.get("region")),
+                "site_id": source.get("site_id", payload.get("site_id")),
+                "raw_predicted_capacity_factor": float(raw_prediction),
+                "predicted_capacity_factor": predicted_capacity_factor,
+                "installed_capacity_kw": installed_capacity_kw,
+                "predicted_generation_kw": predicted_capacity_factor * installed_capacity_kw,
+                "postprocess_reason": ",".join(reasons) if reasons else "none",
+                "confidence": 0.95 if "night_zero_clamp" in reasons else 0.8,
+                "fallback_flag": False,
+                "model_version": payload.get("model_version", model_path.parent.name),
+            }
+        )
+
+    return {
+        "ok": True,
+        "task": "predict_capacity_factor",
+        "model_path": str(model_path),
+        "rows": len(predictions),
+        "predictions": predictions,
+    }
+
+
 def _train(payload: dict[str, Any]) -> dict[str, Any]:
     repo_root = Path(payload.get("repo_root", "/app"))
     data_root = Path(payload.get("data_root", DEFAULT_DATA_ROOT))
@@ -259,6 +358,8 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
     task = payload.get("task", "train")
     if task == "predict":
         return _predict(payload)
+    if task == "predict_capacity_factor":
+        return _predict_capacity_factor(payload)
     if task == "train":
         return _train(payload)
     raise ValueError(f"Unknown task: {task}")
