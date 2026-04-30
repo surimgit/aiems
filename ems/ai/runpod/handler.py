@@ -277,6 +277,8 @@ def _predict_capacity_factor(payload: dict[str, Any]) -> dict[str, Any]:
         "task": "predict_capacity_factor",
         "model_path": str(model_path),
         "rows": len(predictions),
+        "structured_profile": payload.get("structured_profile"),
+        "context_features": payload.get("context_features"),
         "predictions": predictions,
     }
 

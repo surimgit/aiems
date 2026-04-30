@@ -15,6 +15,16 @@
 
 - 지금 날씨와 최근 발전량으로 다음 1시간 발전량 예측
 
+현재 운영 후보:
+
+- model: `kpx_5min_capacity_factor_lightgbm`
+- artifact: `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
+- endpoint config: `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
+- runner: `ems/ai/scripts/run_operational_solar_forecast.py`
+- prediction unit:
+  - model raw output: capacity factor
+  - operational output: `predicted_solar_kw`
+
 현재 batch inference 엔트리포인트:
 
 ```bash
@@ -68,6 +78,22 @@ Current validation note:
 
 - `target_hour/is_daylight` postprocessing keeps overall validation error close to the raw model.
 - `solar_elevation` support is implemented, but should be enabled as the default only after confirming timestamp and timezone alignment between telemetry, weather forecast, and target horizon.
+
+### Current Capacity Factor Model Metrics
+
+`kpx_5min_capacity_factor_lightgbm` validation:
+
+- train rows: `16,969`
+- validation rows: `2,786`
+- MAE: `0.0181024812`
+- RMSE: `0.0401897991`
+- clipped MAE: `0.0180349593`
+- clipped RMSE: `0.0401893899`
+- postprocessed MAE: `0.0177028470`
+- postprocessed RMSE: `0.0405369167`
+
+This is the current operational candidate because capacity factor is easier to
+reuse across sites with different installed capacities than direct kW output.
 
 ### Retraining
 

@@ -108,9 +108,44 @@ def load_history_defaults(config: dict[str, Any]) -> dict[str, float]:
     return {name: float(defaults[name]) for name in required}
 
 
+def load_structured_profile(config: dict[str, Any]) -> dict[str, Any] | None:
+    profile_config = config.get("profile", {})
+    if not bool(profile_config.get("enabled", False)):
+        return None
+    path = profile_config.get("path")
+    if not path:
+        return None
+    profile_path = Path(path)
+    if not profile_path.exists():
+        raise FileNotFoundError(f"Structured profile file not found: {profile_path}")
+    with profile_path.open("r", encoding="utf-8") as file:
+        profile = json.load(file)
+    if profile.get("schema_version") != "site_profile.v1":
+        raise ValueError(f"Unsupported structured profile schema: {profile.get('schema_version')}")
+    return profile
+
+
+def profile_context_features(profile: dict[str, Any] | None) -> dict[str, Any]:
+    if not profile:
+        return {}
+    features = profile.get("forecast_context_features", {})
+    if not isinstance(features, dict):
+        return {}
+    return {
+        "profile_site_type": profile.get("site_type", "unknown"),
+        "profile_weekday_load_bias": float(features.get("weekday_load_bias", 0.0)),
+        "profile_weekend_load_bias": float(features.get("weekend_load_bias", 0.0)),
+        "profile_night_load_bias": float(features.get("night_load_bias", 0.0)),
+        "profile_summer_load_bias": float(features.get("summer_load_bias", 0.0)),
+        "profile_critical_load_level": features.get("critical_load_level", "medium"),
+    }
+
+
 def build_runpod_payload(config: dict[str, Any]) -> dict[str, Any]:
     site = config["site"]
     history = load_history_defaults(config)
+    structured_profile = load_structured_profile(config)
+    context_features = profile_context_features(structured_profile)
     features = []
     for timestamp in target_times(config):
         solar_elevation = solar_elevation_mid(site, timestamp)
@@ -127,6 +162,7 @@ def build_runpod_payload(config: dict[str, Any]) -> dict[str, Any]:
                 "is_daylight": 1 if solar_elevation > 0 else 0,
                 **history,
                 **cyclical_features(timestamp),
+                **context_features,
             }
         )
 
@@ -138,6 +174,8 @@ def build_runpod_payload(config: dict[str, Any]) -> dict[str, Any]:
         "installed_capacity_kw": float(site["installed_capacity_kw"]),
         "model_path": runpod.get("model_path"),
         "model_version": runpod.get("model_version"),
+        "structured_profile": structured_profile,
+        "context_features": context_features,
         "features": features,
     }
 

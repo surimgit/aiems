@@ -59,6 +59,17 @@ Physical safety layer for solar predictions:
 - negative clamp
 - capacity clamp
 
+Current packaged model folders:
+
+```text
+models/solar_kpx_lightgbm/
+models/kpx_5min_capacity_factor_lightgbm/
+```
+
+`solar_kpx_lightgbm` is the hourly kW baseline. `kpx_5min_capacity_factor_lightgbm`
+is the current operational candidate; it predicts capacity factor and converts
+to kW with site capacity in the inference/ops layer.
+
 ## RunPod Code
 
 ```text
@@ -85,6 +96,12 @@ runpod/Dockerfile
 ```
 
 Builds the RunPod worker image.
+
+```text
+runpod/Dockerfile.inference
+```
+
+Lean inference image for packaged LightGBM inference.
 
 ## Script Code
 
@@ -119,6 +136,73 @@ split. It verifies that postprocessing fields such as `is_daylight`,
 `predicted_solar_kw`.
 
 ```text
+scripts/smoke_runpod_capacity_factor_local.py
+```
+
+Runs `runpod.handler` locally against the packaged
+`kpx_5min_capacity_factor_lightgbm` model.
+
+```text
+scripts/run_operational_solar_forecast.py
+```
+
+Builds an operational forecast request from site/config/history defaults and
+sends it to the RunPod inference endpoint.
+
+```text
+scripts/structure_site_profile_with_llm.py
+```
+
+Converts operator free text into a validated `site_profile.v1` JSON document.
+The operational forecast runner reads the saved profile and attaches context
+features to forecast payloads.
+
+```text
+scripts/build_load_prior.py
+```
+
+Builds an hourly `predicted_load_kw` baseline from KEPCO monthly usage, KPX
+national hourly demand shape, KASI calendar, weather adjustment, and
+`site_profile.v1` context.
+
+```text
+scripts/validate_solar_model.py
+```
+
+Loads a saved model artifact and validation split to verify metrics and
+postprocessing behavior.
+
+```text
+scripts/merge_kpx_capacity_factor_with_asos.py
+scripts/prepare_kpx_5min_capacity_factor_dataset.py
+```
+
+Build the KPX 5-minute capacity factor training dataset and train/validation
+splits.
+
+```text
+scripts/collect_kma_vilage_forecast.py
+```
+
+Collects KMA village forecast/current weather API data for operational weather
+features.
+
+```text
+scripts/collect_gk2a_cloud.py
+scripts/collect_gk2a_le2_archive.py
+scripts/run_gk2a_le2_archive_monthly.py
+```
+
+Collect GK2A cloud/GK2A LE2 archive NetCDF data. The monthly runner is the
+preferred way to resume long 2025 archive downloads.
+
+```text
+scripts/audit_download_sources.py
+```
+
+Audits expected raw/processed files under the data root.
+
+```text
 scripts/collect_nasa_power_global_sites.py
 ```
 
@@ -134,12 +218,26 @@ GPU output:
 
 This is the current baseline candidate model.
 
+Current operational candidate:
+
+```text
+ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib
+```
+
+Validation metrics:
+
+- MAE: `0.0181024812`
+- RMSE: `0.0401897991`
+- postprocessed MAE: `0.0177028470`
+- postprocessed RMSE: `0.0405369167`
+
 ## Required Before Full Operation
 
-- Forecast-AI KMA forecast feature builder
+- KMA forecast feature collection result verification
+- GK2A NetCDF cloud feature extraction
 - explicit `is_daylight` or `estimated_irradiance` for postprocess
-- recent telemetry based load prior builder
-- LLM structured profile parser
+- recent telemetry based load prior calibration
+- load prior builder consumption of `site_profile.v1` context fields
 - forecast_result persistence
 - forecast_actual_log matching batch
 

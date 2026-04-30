@@ -6,6 +6,10 @@ site:
   timezone: Asia/Seoul
   installed_capacity_kw: 14504.301688188082
 
+profile:
+  enabled: true
+  path: ems/ai/configs/ops/site_profile_example.json
+
 runpod:
   endpoint_id: bmmyj6f7xh82wa
   auth_env: RUNPOD_KEY
@@ -15,7 +19,7 @@ runpod:
   model_version: kpx_5min_capacity_factor_lightgbm
 
 openai:
-  enabled: true
+  enabled: false
   auth_env: OPENAI_API_KEY
   model_env: OPENAI_MODEL
   default_model: gpt-5.4-nano
