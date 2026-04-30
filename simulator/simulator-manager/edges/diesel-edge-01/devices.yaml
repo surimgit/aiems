@@ -1,0 +1,5 @@
+devices:
+- device_id: diesel-01
+mqtt_broker_host: host.docker.internal
+mqtt_broker_port: 1883
+plant_id: PLANT-ALPHA
