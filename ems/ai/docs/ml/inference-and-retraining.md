@@ -15,6 +15,16 @@
 
 - 지금 날씨와 최근 발전량으로 다음 1시간 발전량 예측
 
+현재 운영 후보:
+
+- model: `kpx_5min_capacity_factor_lightgbm`
+- artifact: `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
+- endpoint config: `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
+- runner: `ems/ai/scripts/run_operational_solar_forecast.py`
+- prediction unit:
+  - model raw output: capacity factor
+  - operational output: `predicted_solar_kw`
+
 현재 batch inference 엔트리포인트:
 
 ```bash
@@ -26,6 +36,64 @@ PYTHONPATH=ems/ai python -m train.infer --config ems/ai/configs/solar_kpx_baseli
 - `outputs/solar_kpx_baseline_predictions.csv`
 - `predicted_solar_P_kw`
 - `predicted_solar_P_kw_clipped`
+
+### Runtime Predict Payload
+
+운영 추론 요청은 모델 입력 feature와 후처리 feature를 같이 보낸다.
+
+모델은 `feature_columns`만 사용한다. 후처리 feature는 모델 재학습 대상이 아니라,
+`raw_predicted_solar_kw`를 운영 가능한 `predicted_solar_kw`로 보정하는 안전 입력이다.
+
+필수 후처리 feature:
+
+- `target_time`
+- `target_hour`
+- `installed_capacity_kw`
+
+선택 후처리 feature:
+
+- `latitude`
+- `longitude`
+- `timezone`
+- `is_daylight`
+- `estimated_irradiance` in W/m2 scale, not the normalized training feature
+- `solar_elevation`
+
+If `solar_elevation` is not supplied, the AI worker can compute it from
+`target_time`, `latitude`, `longitude`, and `timezone` with `astral`.
+
+후처리 규칙:
+
+- `is_daylight <= 0`: `predicted_solar_kw = 0`
+- `solar_elevation <= 0`: `predicted_solar_kw = 0`
+- `estimated_irradiance <= 10`: `predicted_solar_kw = 0`
+- `target_hour < 6` or `target_hour > 19`: `predicted_solar_kw = 0`
+- prediction < 0: `predicted_solar_kw = 0`
+- prediction > `installed_capacity_kw`: `predicted_solar_kw = installed_capacity_kw`
+
+EMS는 `raw_predicted_solar_kw`가 아니라 `predicted_solar_kw`를 사용한다.
+`raw_predicted_solar_kw`와 `postprocess_reason`은 예측 로그와 재학습 검증용으로 저장한다.
+
+Current validation note:
+
+- `target_hour/is_daylight` postprocessing keeps overall validation error close to the raw model.
+- `solar_elevation` support is implemented, but should be enabled as the default only after confirming timestamp and timezone alignment between telemetry, weather forecast, and target horizon.
+
+### Current Capacity Factor Model Metrics
+
+`kpx_5min_capacity_factor_lightgbm` validation:
+
+- train rows: `16,969`
+- validation rows: `2,786`
+- MAE: `0.0181024812`
+- RMSE: `0.0401897991`
+- clipped MAE: `0.0180349593`
+- clipped RMSE: `0.0401893899`
+- postprocessed MAE: `0.0177028470`
+- postprocessed RMSE: `0.0405369167`
+
+This is the current operational candidate because capacity factor is easier to
+reuse across sites with different installed capacities than direct kW output.
 
 ### Retraining
 
