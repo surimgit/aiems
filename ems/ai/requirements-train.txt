@@ -1,0 +1,19 @@
+# Install PyTorch separately to match the GPU server CUDA runtime.
+# Example:
+#   pip install torch torchvision torchaudio --index-url <matching-wheel-index>
+
+numpy==2.2.5
+pandas==2.2.3
+scikit-learn==1.6.1
+lightgbm==4.6.0
+joblib==1.4.2
+pyyaml==6.0.2
+tqdm==4.67.1
+matplotlib==3.10.1
+jupyterlab==4.4.1
+ipykernel==6.29.5
+psycopg2-binary==2.9.10
+pg8000==1.31.5
+SQLAlchemy==2.0.40
+python-dotenv==1.1.0
+requests==2.32.3

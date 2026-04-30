@@ -1,0 +1,21 @@
+source: west_power_re_generation
+region_slug: jeonnam
+
+request:
+  auth_env: WEST_POWER_SERVICE_KEY
+  env_file: "G:/내 드라이브/s305-ai-data/.env"
+  base_url: http://apis.data.go.kr/B552522/pg/reGeneration/getReGeneration
+  timeout_seconds: 30
+  sleep_seconds: 1.0
+  retries: 10
+  num_of_rows: 100
+
+range:
+  start_month: 2024-01
+  end_month: 2025-12
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/west_power"
+  save_raw_response: true
+  save_daily_csv: true
+  save_hourly_csv: true

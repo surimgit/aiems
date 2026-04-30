@@ -1,0 +1,43 @@
+seed: 42
+device: cuda
+
+data:
+  train_path: "G:/내 드라이브/s305-ai-data/processed/splits/solar_kpx_train.csv"
+  val_path: "G:/내 드라이브/s305-ai-data/processed/splits/solar_kpx_val.csv"
+  target_column: future_solar_P_kw
+  feature_columns:
+    - past_solar_P_kw
+    - past_solar_P_kw_lag_1
+    - past_solar_P_kw_lag_24
+    - rolling_mean_3h
+    - rolling_mean_24h
+    - temperature
+    - humidity
+    - cloud_cover
+    - irradiance
+    - rainfall_mm
+    - wind_speed
+    - hour_of_day_sin
+    - hour_of_day_cos
+    - day_of_year_sin
+    - day_of_year_cos
+  file_format: csv
+
+training:
+  epochs: 20
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 0
+
+model:
+  hidden_dims:
+    - 64
+    - 32
+  dropout: 0.1
+
+output:
+  checkpoint_dir: ems/ai/checkpoints
+  log_dir: ems/ai/logs
+  run_name: solar_kpx_baseline
+  save_best_only: false
