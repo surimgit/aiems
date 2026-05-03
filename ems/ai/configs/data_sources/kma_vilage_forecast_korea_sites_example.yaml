@@ -1,0 +1,99 @@
+source: kma_vilage_forecast
+
+request:
+  auth_env: KMA_AUTH_KEY
+  env_file: ems/ai/.env
+  timeout_seconds: 30
+  sleep_seconds: 0.5
+  retries: 3
+  endpoints:
+    xy_lonlat: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_xy_lonlat
+    ultra_srt_ncst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_odam_grd
+    ultra_srt_fcst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_vsrt_grd
+    vilage_fcst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_shrt_grd
+
+collection:
+  tmfc_ultra: "202604301000"
+  tmef_ultra: "2026043011"
+  tmfc_short: "2026043008"
+  tmef_short: "2026043011"
+  variables:
+    ultra_srt_ncst: [T1H, RN1, UUU, VVV, VEC, WSD, PTY, REH]
+    ultra_srt_fcst: [T1H, RN1, UUU, VVV, VEC, WSD, SKY, PTY, LGT, REH]
+    vilage_fcst: [TMP, POP, PCP, REH, SKY, PTY, WSD, VEC, UUU, VVV]
+
+sites:
+  - site_id: seoul
+    region: 서울시
+    latitude: 37.5665
+    longitude: 126.9780
+  - site_id: busan
+    region: 부산시
+    latitude: 35.1796
+    longitude: 129.0756
+  - site_id: daegu
+    region: 대구시
+    latitude: 35.8714
+    longitude: 128.6014
+  - site_id: incheon
+    region: 인천시
+    latitude: 37.4563
+    longitude: 126.7052
+  - site_id: gwangju
+    region: 광주시
+    latitude: 35.1595
+    longitude: 126.8526
+  - site_id: daejeon
+    region: 대전시
+    latitude: 36.3504
+    longitude: 127.3845
+  - site_id: ulsan
+    region: 울산시
+    latitude: 35.5384
+    longitude: 129.3114
+  - site_id: sejong
+    region: 세종시
+    latitude: 36.4800
+    longitude: 127.2890
+  - site_id: gyeonggi_suwon
+    region: 경기도 수원시
+    latitude: 37.2636
+    longitude: 127.0286
+  - site_id: gangwon_chuncheon
+    region: 강원도 춘천시
+    latitude: 37.8813
+    longitude: 127.7298
+  - site_id: chungbuk_cheongju
+    region: 충청북도 청주시
+    latitude: 36.6424
+    longitude: 127.4890
+  - site_id: chungnam_hongseong
+    region: 충청남도 홍성군
+    latitude: 36.6013
+    longitude: 126.6608
+  - site_id: jeonbuk_jeonju
+    region: 전라북도 전주시
+    latitude: 35.8242
+    longitude: 127.1480
+  - site_id: jeonnam_muan
+    region: 전라남도 무안군
+    latitude: 34.9903
+    longitude: 126.4817
+  - site_id: gyeongbuk_andong
+    region: 경상북도 안동시
+    latitude: 36.5684
+    longitude: 128.7294
+  - site_id: gyeongnam_changwon
+    region: 경상남도 창원시
+    latitude: 35.2285
+    longitude: 128.6811
+  - site_id: jeju
+    region: 제주도 제주시
+    latitude: 33.4996
+    longitude: 126.5312
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/weather/kma_vilage_forecast_korea_sites"
+  save_raw_response: true
+  save_site_values: true
+  save_manifest: true

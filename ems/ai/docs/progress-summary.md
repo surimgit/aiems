@@ -1,5 +1,247 @@
 # AI Progress Summary
 
+## 2026-04-30 Branch State
+
+- branch: `ems-ai/temp`
+- remote: `origin/ems-ai/temp`
+- latest commit: `2d3e77a ai_추가학습`
+- working tree before docs update:
+  - clean
+- major additions in this branch:
+  - GK2A cloud/GK2A LE2 archive collectors
+  - KMA village forecast collector
+  - KPX 5-minute capacity factor dataset and LightGBM model
+  - RunPod inference Dockerfile and prediction smoke tests
+  - operational solar forecast runner
+  - model validation script
+
+## 2026-04-30 GK2A LE2 Archive Status
+
+- source: KMA APIHub GK2A LE2
+- scripts:
+  - `ems/ai/scripts/collect_gk2a_le2_archive.py`
+  - `ems/ai/scripts/run_gk2a_le2_archive_monthly.py`
+- config:
+  - `ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml`
+- target:
+  - `2025-01-01 00:00+09:00 ~ 2025-12-31 23:00+09:00`
+  - products: `CLA`, `CLD`
+  - area: `KO`
+  - expected files: `17,520`
+- current collected files:
+  - `7,623`
+  - progress: `43.51%`
+- last successful write:
+  - `2026-04-30 13:53:43 KST`
+- stopped intentionally:
+  - `2026-04-30 14:52:54 KST`
+  - active GK2A Python processes: `0`
+- observed issue:
+  - original network reached APIHub rate/connection failure after high-volume collection
+  - NordVPN exit IPs changed public IP, but Python HTTPS failed with `SSLError: UNEXPECTED_EOF_WHILE_READING`
+  - TCP 443 success alone is not sufficient; Python HTTPS single-request test must pass before restarting
+- restart note:
+  - `overwrite: false` allows safe resume
+  - start with 1~2 parallel jobs after cooldown, then raise to 4 if stable
+
+## 2026-04-30 KPX 5-Min Capacity Factor Model
+
+- model: `kpx_5min_capacity_factor_lightgbm`
+- artifact:
+  - `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
+- config:
+  - `ems/ai/configs/kpx_5min_capacity_factor_lightgbm.yaml`
+- validation rows:
+  - `2,786`
+- metrics:
+  - MAE: `0.0181024812`
+  - RMSE: `0.0401897991`
+  - clipped MAE: `0.0180349593`
+  - clipped RMSE: `0.0401893899`
+  - postprocessed MAE: `0.0177028470`
+  - postprocessed RMSE: `0.0405369167`
+- operational runner:
+  - `ems/ai/scripts/run_operational_solar_forecast.py`
+- RunPod inference config:
+  - `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
+
+## 2026-04-30 LLM Structured Profile Flow
+
+- script:
+  - `ems/ai/scripts/structure_site_profile_with_llm.py`
+- config:
+  - `ems/ai/configs/ops/llm_site_profile_example.yaml`
+- sample profile:
+  - `ems/ai/configs/ops/site_profile_example.json`
+- schema:
+  - `site_profile.v1`
+- purpose:
+  - convert operator free text into structured profile/context features
+  - save the result and reuse it during forecast cycles
+- forecast integration:
+  - `run_operational_solar_forecast.py` reads the saved profile
+  - profile context fields are attached to RunPod payload/features
+  - report LLM remains optional and disabled by default in the example config
+
+## 2026-04-30 Load Prior Baseline
+
+- script:
+  - `ems/ai/scripts/build_load_prior.py`
+- config:
+  - `ems/ai/configs/ops/load_prior_example.yaml`
+- inputs:
+  - KEPCO city usage Excel `용도업종별`
+  - KPX national hourly demand CSV
+  - KASI special-day calendar
+  - `site_profile.v1`
+- example source:
+  - `서울특별시 종로구`
+  - industry: `순수써비스`
+  - year: `2025`
+  - month: `2025-12`
+- output:
+  - `ems/ai/outputs/load_prior/load_prior_example.csv`
+  - `ems/ai/outputs/load_prior/load_prior_example_manifest.json`
+- generated rows:
+  - `48`
+- predicted_load_kw summary:
+  - min: `107.867334690492`
+  - average: `166.605413523525`
+  - max: `205.521578634804`
+- safety margin:
+  - reserve ratio: `15%`
+  - min reserve: `10 kW`
+  - output: `safe_predicted_load_kw`
+- note:
+  - `scale_factor` is the assumed site share of city/industry monthly usage.
+  - This is a baseline/prior, not a supervised load forecast.
+
+## 2026-04-30 Handoff Snapshot
+
+### Current Branch / Git State
+
+- branch: `ems-ai/temp`
+- remote tracking: `origin/ems-ai/temp`
+- latest committed change before this session:
+  - `2d3e77a ai_추가학습`
+- current working tree:
+  - uncommitted AI changes exist
+  - main changed areas:
+    - `ems/ai/configs/ops`
+    - `ems/ai/scripts`
+    - `ems/ai/runpod/handler.py`
+    - `ems/ai/docs`
+
+### Added / Updated In This Session
+
+- LLM structured profile flow:
+  - `ems/ai/scripts/structure_site_profile_with_llm.py`
+  - `ems/ai/configs/ops/llm_site_profile_example.yaml`
+  - `ems/ai/configs/ops/site_profile_example.json`
+- Operational forecast profile integration:
+  - `ems/ai/scripts/run_operational_solar_forecast.py`
+  - `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
+  - `ems/ai/runpod/handler.py`
+- Load prior baseline:
+  - `ems/ai/scripts/build_load_prior.py`
+  - `ems/ai/configs/ops/load_prior_example.yaml`
+- Docs updated:
+  - `docs/progress-summary.md`
+  - `docs/python-scripts.md`
+  - `docs/data/data-inventory.md`
+  - `docs/data/data-pipeline.md`
+  - `docs/ml/llm-role.md`
+  - `docs/ml/load-profile-and-llm.md`
+  - `docs/ml/inference-and-retraining.md`
+  - `docs/ops/ai-code-map.md`
+
+### Verified Commands
+
+```bash
+python ems/ai/scripts/structure_site_profile_with_llm.py --config ems/ai/configs/ops/llm_site_profile_example.yaml --output ems/ai/outputs/site_profiles/seoul_profile_openai_test.json
+```
+
+- result: success
+- output schema: `site_profile.v1`
+- OpenAI model observed: `gpt-5.4-nano`
+
+```powershell
+$env:PYTHONPATH='ems/ai'
+python ems/ai/scripts/smoke_runpod_capacity_factor_local.py --model-path ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib --val-path ems/ai/data/processed/kpx_5min_capacity_factor/kpx_5min_capacity_factor_val.csv --output-path ems/ai/outputs/runpod_capacity_factor_smoke_profile_check.json --rows 4
+```
+
+- result: success
+- task: `predict_capacity_factor`
+
+```powershell
+$env:PYTHONPATH='ems/ai'
+python -c "import json; from pathlib import Path; import yaml; from ems.ai.scripts.run_operational_solar_forecast import build_runpod_payload; from runpod.handler import handler; cfg=yaml.safe_load(Path('ems/ai/configs/ops/operational_solar_forecast_example.yaml').read_text(encoding='utf-8')); cfg['profile']['path']='ems/ai/outputs/site_profiles/seoul_profile_openai_test.json'; payload=build_runpod_payload(cfg); payload['model_path']='ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib'; result=handler({'input': payload}); Path('ems/ai/outputs/runpod_capacity_factor_with_profile_smoke.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8'); print(json.dumps({'ok': result.get('ok'), 'rows': result.get('rows'), 'has_profile': bool(result.get('structured_profile')), 'context_features': result.get('context_features'), 'first_prediction': result.get('predictions',[{}])[0]}, indent=2, ensure_ascii=False))"
+```
+
+- result: success
+- first prediction:
+  - `target_time`: `2025-12-01T13:00:00+09:00`
+  - `predicted_generation_kw`: `4419.800799002141`
+  - profile context included: yes
+
+```bash
+python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior_example.yaml
+```
+
+- result: success
+- output:
+  - `ems/ai/outputs/load_prior/load_prior_example.csv`
+  - `ems/ai/outputs/load_prior/load_prior_example_manifest.json`
+- rows: `48`
+- `predicted_load_kw`:
+  - min: `107.867334690492`
+  - average: `166.605413523525`
+  - max: `205.521578634804`
+- `safe_predicted_load_kw` with 15% safety reserve:
+  - min: `124.047434894066`
+  - average: `191.596225552053`
+  - max: `236.349815429024`
+
+### Important Design Notes
+
+- LLM is not the numeric prediction model.
+- LLM converts operator/site free text into `site_profile.v1`.
+- Forecast cycles should read the saved profile and use context fields.
+- The current solar LightGBM model may ignore `profile_*` fields because they were not in its training `feature_columns`.
+- The profile context is immediately useful for load prior and operation/risk decisions.
+- `safe_predicted_load_kw` should be used for conservative EMS operation until actual load telemetry is available.
+
+### GK2A / APIHub Current State
+
+- GK2A archive collection is stopped.
+- active GK2A Python processes: `0`
+- collected `.nc`: `7,623 / 17,520`
+- progress: `43.51%`
+- last successful write: `2026-04-30 13:53:43 KST`
+- APIHub issue:
+  - original network and NordVPN attempts reached TCP 443 but Python HTTPS failed or timed out
+  - observed Python error on VPN: `SSLError: UNEXPECTED_EOF_WHILE_READING`
+  - do not restart bulk collection until a single Python HTTPS request succeeds
+
+### Suggested Next Steps
+
+1. Commit current AI changes.
+   - suggested message: `feat: add LLM site profile and load prior baseline`
+2. Build a combined forecast result script:
+   - solar prediction
+   - load prior
+   - safe load
+   - net power
+   - risk fields
+3. After network cooldown, test APIHub single Python HTTPS request from original IP.
+4. Resume GK2A with 1~2 parallel jobs first, then 4 if stable.
+5. After GK2A completes, implement NetCDF cloud feature extraction and retrain capacity factor model with cloud features.
+6. Define backend persistence contract for:
+   - `site_profile`
+   - `forecast_result`
+   - `load_prior`
+   - `forecast_actual_log`
+
 ## 2026-04-27 KASI Special Day Collection
 
 - source: 한국천문연구원 특일 정보 `SpcdeInfoService`
@@ -42,6 +284,15 @@
   - 지역별 station/grid 매핑 테이블
   - 가능하면 지역별 태양광 설비용량 또는 capacity metadata
 
+## 2026-04-30 Mentor Feedback: Weather Feature Alignment
+
+- detailed rule: `ems/ai/docs/ml/weather-feature-alignment.md`
+- GK2A LE2 cloud archive is observed historical data, so it is valid for training, validation, and offline feature experiments.
+- Operational solar prediction must use future-available forecast features such as KMA ultra-short `SKY/PTY/RN1/T1H/REH/WSD` and short-term `SKY/POP/PCP/PTY/TMP/REH/WSD`.
+- Do not claim production quality from a model evaluated only with GK2A observed cloud features if live inference only receives KMA forecast categories.
+- `SKY` is coarse cloud-state data: `1` clear, `3` mostly cloudy, `4` cloudy/overcast. The old `2` category was merged into `1` after 2019-06-04.
+- Hourly remains the current baseline. 15-minute prediction is a future step after forecast ingestion, label resolution, and API stability are verified.
+
 ## Done
 
 - KMA ASOS 수집 스크립트 작성 및 수집 완료
@@ -53,6 +304,11 @@
 - `KMA + KPX 2025` 기반 태양광 학습용 train/val split 생성 완료
 - 태양광 baseline MLP 로컬 CPU smoke test 완료
 - 로컬 CPU checkpoint 기반 validation 배치 추론 CSV 생성 완료
+- KPX 5분 capacity factor LightGBM 학습 및 artifact 저장 완료
+- RunPod inference image/config/smoke test 흐름 추가
+- 운영 태양광 예측 runner 추가
+- KMA 동네예보 수집 스크립트 작성
+- GK2A LE2 archive 수집 스크립트 작성 및 2025년 archive 부분 수집
 - GPU 학습용 config/runbook 및 G Drive training-ready package 생성 완료
 - 소비 예측용 공공 데이터 원천 파일 G Drive 정리 완료
 - West Power API 수집 스크립트 초안 작성
@@ -132,7 +388,11 @@
 - 오프라인 백테스트 흐름 정리
 - KPX 태양광 API `2024-09-07`부터 이어서 수집
 - 소비 데이터 정규화 스크립트 작성
-- KMA 동네예보 API 수집 스크립트 작성
-- 한국천문연구원 특일 정보 수집 스크립트 작성
+- KMA 동네예보 API 운영 수집 결과 검증
+- KMA 초단기/단기예보 `SKY/PTY/POP/PCP/TMP/REH/WSD` 기반 forecast-compatible feature table 작성
+- GK2A LE2 archive 수집 재개 및 완료
+- GK2A NetCDF에서 학습용 cloud feature 추출 스크립트 작성
+- GK2A observed cloud feature와 KMA forecast `SKY` 간 mismatch/정렬 실험 분리
+- 한국천문연구원 특일 정보를 load prior에 join
 - 소비 예측에 필요한 현장 데이터 스키마 정의
 - LLM context 입력 포맷 초안 정의

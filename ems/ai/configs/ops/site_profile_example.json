@@ -1,0 +1,54 @@
+{
+  "schema_version": "site_profile.v1",
+  "site_id": "seoul",
+  "profile_version": "v1",
+  "site_type": "office",
+  "components": [
+    {
+      "type": "office_load",
+      "count": 1,
+      "criticality": "medium",
+      "schedule": {
+        "days": "weekday",
+        "hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+        "season": "all",
+        "usage_level": "high"
+      }
+    },
+    {
+      "type": "essential_facility",
+      "count": 1,
+      "criticality": "high",
+      "schedule": {
+        "days": "daily",
+        "hours": "all_day",
+        "season": "all",
+        "usage_level": "medium"
+      }
+    }
+  ],
+  "seasonal_adjustments": [
+    {
+      "season": "summer",
+      "load_bias": "positive",
+      "reason": "cooling_load"
+    }
+  ],
+  "operational_constraints": [
+    {
+      "type": "priority_load",
+      "description": "야간에는 필수 설비 부하를 우선 유지한다."
+    }
+  ],
+  "forecast_context_features": {
+    "weekday_load_bias": 0.25,
+    "weekend_load_bias": -0.15,
+    "night_load_bias": -0.3,
+    "summer_load_bias": 0.2,
+    "critical_load_level": "medium"
+  },
+  "assumptions": [
+    "정확한 계측 부하가 없으므로 운영 문맥은 load prior 보정에 사용한다."
+  ],
+  "warnings": []
+}

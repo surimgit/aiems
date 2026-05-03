@@ -1,0 +1,14 @@
+.git
+.idea
+**/.venv/
+**/venv/
+**/node_modules/
+**/build/
+**/dist/
+**/__pycache__/
+*.pyc
+
+ems/ai/data/
+ems/ai/outputs/
+ems/ai/logs/
+ems/ai/checkpoints/

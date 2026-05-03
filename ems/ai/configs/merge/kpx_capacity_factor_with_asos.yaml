@@ -1,0 +1,27 @@
+kpx_features_path: ems/ai/data/processed/kpx_5min_capacity_factor/kpx_5min_capacity_factor_features.csv
+output_root: ems/ai/data/processed/kpx_5min_capacity_factor_with_asos
+val_start: "2025-11-01 00:00:00"
+
+asos:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/kma_asos"
+  weather_columns:
+    TA: asos_ta
+    HM: asos_hm
+    RN: asos_rn
+    WS: asos_ws
+    WD: asos_wd
+    CA_TOT: asos_ca_tot
+    CA_MID: asos_ca_mid
+    SS: asos_ss
+    SI: asos_si
+    VS: asos_vs
+  zero_if_negative_columns: [RN, SS, SI]
+  forward_fill_columns: [CA_TOT, CA_MID]
+  forward_fill_limit_hours: 3
+  regions:
+    - region: 서울시
+      region_slug: seoul
+      station_id: 108
+    - region: 대전시
+      region_slug: daejeon
+      station_id: 133
