@@ -2,6 +2,10 @@
 
 This document maps the current `ems/ai` folder to runtime responsibilities.
 
+Related ops note:
+
+- [gk2a-download-ops-note.md](./gk2a-download-ops-note.md): GK2A 다운로드 경로, 용량 특성, 404 처리, 재시작 운영 메모
+
 ## Top-Level Folders
 
 ```text
@@ -195,6 +199,10 @@ scripts/run_gk2a_le2_archive_monthly.py
 
 Collect GK2A cloud/GK2A LE2 archive NetCDF data. The monthly runner is the
 preferred way to resume long 2025 archive downloads.
+
+Current operational caveats and restart behavior are documented in:
+
+- [gk2a-download-ops-note.md](./gk2a-download-ops-note.md)
 
 ```text
 scripts/audit_download_sources.py

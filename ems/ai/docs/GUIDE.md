@@ -6,6 +6,7 @@
 - [Baseline Solar Training Result](./ml/baseline-training-result.md)
 - [Load Profile And LLM Structuring](./ml/load-profile-and-llm.md)
 - [AI Code Map](./ops/ai-code-map.md)
+- [GK2A Download Ops Note](./ops/gk2a-download-ops-note.md)
 
 이 문서는 `ems/ai` 문서를 빠르게 찾기 위한 진입점이다.
 
@@ -59,6 +60,8 @@
 ### `ops/`
 
 - [repo-structure.md](./ops/repo-structure.md): 폴더 구조, `.gitkeep`, 정리 원칙
+- [ai-code-map.md](./ops/ai-code-map.md): 런타임 기준 코드/스크립트 역할 맵
+- [gk2a-download-ops-note.md](./ops/gk2a-download-ops-note.md): GK2A 다운로드 경로, 실패 패턴, 재시작/운영 메모
 - [gpu-env-setup.md](./gpu-env-setup.md): GPU 환경 셋업
 
 ### Root Docs
