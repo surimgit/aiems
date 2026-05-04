@@ -119,7 +119,7 @@ services:
       - timescale_data:/var/lib/postgresql/data
       - ./infra/init_timescale.sh:/docker-entrypoint-initdb.d/init_timescale.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -144,7 +144,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -161,7 +161,7 @@ services:
         --appendonly yes
         --requirepass ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping"]
+      test: [ "CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -175,7 +175,7 @@ services:
     environment:
       MQTT_USER: ${MQTT_USER}
       MQTT_PASSWORD: ${MQTT_PASSWORD}
-    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
+    entrypoint: [ "/bin/sh", "/mosquitto/config/entrypoint.sh" ]
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./infra/mosquitto/acl.template:/mosquitto/config/acl.template:ro

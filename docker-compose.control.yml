@@ -18,9 +18,9 @@ services:
       - "postgres:172.31.44.52"
       - "timescaledb:172.31.44.52"
 
-  ai-service:
+  ai:
     build:
-      context: ./ems/ai-service
+      context: ./ems/ai
       args:
         PORT: 5004
     ports:
