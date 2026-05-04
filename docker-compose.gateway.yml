@@ -1,9 +1,8 @@
 # Gateway EC2 (172.31.37.96) 전용 compose
 # - SSAFY 포트 정책: 외부 노출은 8000-8999, 9000-9999 범위만 허용
-# - prod HTTP : 8080 (헬스체크 + HTTPS 리다이렉트)
-# - prod HTTPS: 8443 (Cloudflare Origin Cert ↔ Cloudflare 가 8443 으로 origin 접근)
-# - dev       : 9080 (.env 의 GATEWAY_HTTP_PORT 로 오버라이드, HTTPS 없음)
-# - Cloudflare Origin Certificate 는 호스트의 /etc/cloudflare 에 위치
+# - prod: GATEWAY_HTTP_PORT=8080, GATEWAY_HTTPS_PORT=8443, NGINX_CONF=nginx.prod.conf
+# - dev : GATEWAY_HTTP_PORT=9080, GATEWAY_HTTPS_PORT=9443, NGINX_CONF=nginx.dev.conf
+# - 환경별 .env 파일로 prod/dev 분리 (다른 서비스와 동일한 패턴)
 services:
   gateway:
     build:
@@ -13,10 +12,6 @@ services:
       - "${GATEWAY_HTTPS_PORT:-8443}:8443"
     restart: always
     volumes:
-      - ./gateway/nginx.prod.conf:/etc/nginx/nginx.conf:ro
-      # Cloudflare Origin Certificate 마운트 (read-only)
-      - /etc/cloudflare:/etc/cloudflare:ro
-      # Vue 빌드 산출물 마운트 (read-only)
-      # - prod: /home/ubuntu/app/frontend-dist (Jenkins 가 master push 시 갱신)
-      # - dev : /home/ubuntu/dev/frontend-dist (Jenkins 가 frontend 브랜치 push 시 갱신)
+      - ./gateway/${NGINX_CONF:-nginx.prod.conf}:/etc/nginx/nginx.conf:ro
+      - ${CLOUDFLARE_CERT_DIR:-/etc/cloudflare}:/etc/cloudflare:ro
       - ./frontend-dist:/var/www/html:ro
