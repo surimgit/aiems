@@ -432,6 +432,7 @@ EOF
                     steps {
                         sshagent(credentials: ['ec2-ssh-key']) {
                             sh '''
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/app/frontend-dist || true'
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/app/frontend-dist'
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/app/frontend-dist/*'
                                 scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/app/frontend-dist/
@@ -446,6 +447,7 @@ EOF
                         configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
                                 sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/dev/frontend-dist || true'
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev/frontend-dist'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
