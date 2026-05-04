@@ -464,8 +464,27 @@ EOF
     }
 
     post {
-        success { echo '=== 파이프라인 성공 ===' }
-        failure { echo '=== 파이프라인 실패 ===' }
+        success {
+            mattermostSend(
+                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
+                color: 'good',
+                message: """### :white_check_mark: 빌드 성공
+**Job:** ${env.JOB_NAME}
+**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
+**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})"""
+            )
+        }
+        failure {
+            mattermostSend(
+                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
+                color: 'danger',
+                message: """### :x: 빌드 실패
+**Job:** ${env.JOB_NAME}
+**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
+**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})
+**Console:** [로그 확인](${env.BUILD_URL}console)"""
+            )
+        }
         always  { sh 'docker system prune -f 2>/dev/null || true' }
     }
 }
