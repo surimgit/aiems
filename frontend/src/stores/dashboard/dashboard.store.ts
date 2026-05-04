@@ -38,6 +38,7 @@ interface DashboardState {
   loading: boolean
   error: string | null
   pollingInterval: number
+  selectedEssId: string | null
 }
 
 interface DashboardGetters {
@@ -47,6 +48,7 @@ interface DashboardGetters {
   gridPower: number
   loadPower: number
   essCount: number
+  selectedEss: ESSStatus | null
 }
 
 interface DashboardActions {
@@ -59,9 +61,10 @@ interface DashboardActions {
   fetchDashboardData(siteId?: string): Promise<void>
   startPolling(interval?: number): void
   stopPolling(): void
+  selectEss(essId: string | null): void
 }
 
-export const useDashboardStore = defineStore<'dashboard', DashboardState, DashboardGetters, DashboardActions>(
+export const useDashboardStore = defineStore(
   'dashboard',
   {
     state: (): DashboardState => ({
@@ -74,7 +77,8 @@ export const useDashboardStore = defineStore<'dashboard', DashboardState, Dashbo
       dashboardData: null,
       loading: false,
       error: null,
-      pollingInterval: 5000
+      pollingInterval: 5000,
+      selectedEssId: null
     }),
     
     getters: {
@@ -100,12 +104,21 @@ export const useDashboardStore = defineStore<'dashboard', DashboardState, Dashbo
       
       essCount(): number {
         return this.essList.length
+      },
+
+      selectedEss(): ESSStatus | null {
+        if (!this.selectedEssId) return null
+        return this.essList.find((ess) => ess.ess_id === this.selectedEssId) ?? null
       }
     },
     
     actions: {
       setSiteId(siteId: string): void {
         this.siteId = siteId
+      },
+
+      selectEss(essId: string | null): void {
+        this.selectedEssId = essId
       },
 
       async fetchPowerSummary(siteId?: string): Promise<void> {

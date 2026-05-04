@@ -50,7 +50,7 @@ interface AiActions {
   requestAiInference(request: InferenceRequest): Promise<InferenceAcceptedResponse>
 }
 
-export const useAiStore = defineStore<'ai', AiState, AiGetters, AiActions>(
+export const useAiStore = defineStore(
   'ai',
   {
     state: (): AiState => ({
