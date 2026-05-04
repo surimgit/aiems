@@ -10,14 +10,17 @@ import { computed } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
 import type { AlarmData } from '@/types/common'
+import type { ComputedRef } from 'vue'
 
 export interface UseAlarmFeature {
-  alarms: AlarmData[]
-  activeAlarms: ReturnType<typeof useAlarmStore>['activeAlarms']
-  criticalAlarms: ReturnType<typeof useAlarmStore>['criticalAlarms']
-  hasActiveAlarm: boolean
-  criticalAlarmCount: number
-  isLoading: boolean
+  alarms: ComputedRef<AlarmData[]>
+  activeAlarms: ComputedRef<AlarmData[]>
+  criticalAlarms: ComputedRef<AlarmData[]>
+  hasActiveAlarm: ComputedRef<boolean>
+  criticalAlarmCount: ComputedRef<number>
+  isLoading: ComputedRef<boolean>
+  fetchAlarms: () => Promise<void>
+  acknowledgeAlarm: (alarmId: string) => Promise<void>
 }
 
 export const useAlarmFeature = (): UseAlarmFeature => {
@@ -40,7 +43,7 @@ export const useAlarmFeature = (): UseAlarmFeature => {
   }
   
   return {
-    alarms: alarms.value,
+    alarms,
     activeAlarms,
     criticalAlarms,
     hasActiveAlarm,

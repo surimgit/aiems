@@ -1,12 +1,29 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useAiStore } from '@/stores/ai/ai.store'
+
+const aiStore = useAiStore()
+const { recommendations, modelStatus } = storeToRefs(aiStore)
+
+const highPriorityCount = computed(() => recommendations.value.filter((item) => item.priority === 'high').length)
+const avgConfidence = computed(() => {
+  if (recommendations.value.length === 0) return null
+  const total = recommendations.value.reduce((sum, rec) => sum + rec.confidence, 0)
+  return total / recommendations.value.length
+})
+</script>
+
 <template>
   <section class="panel-card">
     <h3 class="title">AI 성과</h3>
     <div class="content">
-      <p class="value">2,450,000 원</p>
+      <p class="value">{{ highPriorityCount }}건</p>
       <div class="meta">
-        <span>목표 1,850,000 원</span>
-        <span>달성률 132%</span>
+        <span>고우선 추천</span>
+        <span>{{ avgConfidence === null ? '신뢰도 N/A' : `평균 신뢰도 ${(avgConfidence * 100).toFixed(1)}%` }}</span>
       </div>
+      <p class="text-xs text-slate-400">모델 상태: {{ modelStatus?.status ?? 'UNKNOWN' }}</p>
     </div>
   </section>
 </template>

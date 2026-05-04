@@ -8,6 +8,8 @@ import TopBarKpiStrip from '@/features/overview/components/TopBarKpiStrip.vue'
 import DashboardShell from '@/features/overview/components/DashboardShell.vue'
 import TopologyStage from '@/features/topology/components/TopologyStage.vue'
 import TopologyLegend from '@/features/topology/components/TopologyLegend.vue'
+import TopologyNodeLayer from '@/features/topology/components/TopologyNodeLayer.vue'
+import TopologyLineLayer from '@/features/topology/components/TopologyLineLayer.vue'
 import PowerBalanceChart from '@/features/forecast/components/PowerBalanceChart.vue'
 import KpiSummaryWidget from '@/features/kpi/components/KpiSummaryWidget.vue'
 import AiPerformanceWidget from '@/features/overview/components/AiPerformanceWidget.vue'
@@ -25,7 +27,7 @@ import type { RightPanelMode } from '@/features/overview/types'
 const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
 const topologyFeature = useTopologyFeature()
 const forecastFeature = useForecastFeature()
-const kpiItems = computed(() => buildKpiSummary())
+const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms.value.length))
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
 const rightPanel = useRightPanelState()
@@ -37,6 +39,11 @@ const onResize = () => {
 
 const handleTopbarMode = (nextMode: RightPanelMode) => {
   rightPanel.open(nextMode)
+}
+
+const handleSelectNode = (nodeId: string) => {
+  topologyFeature.selectNode(nodeId)
+  rightPanel.open('selected-resource')
 }
 
 const rightPanelTitle = computed(() => {
@@ -77,7 +84,9 @@ onUnmounted(() => {
       </template>
 
       <template #topology>
-        <TopologyStage :topology="null">
+        <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
+          <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
+          <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
           <TopologyLegend />
         </TopologyStage>
       </template>

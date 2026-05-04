@@ -49,7 +49,7 @@ interface ControlActions {
   fetchCommandHistory(): Promise<ControlResult[]>
 }
 
-export const useControlStore = defineStore<'control', ControlState, ControlGetters, ControlActions>('control', {
+export const useControlStore = defineStore('control', {
   state: (): ControlState => ({
     siteId: DEFAULT_SITE_ID,
     edgeId: DEFAULT_EDGE_ID,

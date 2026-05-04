@@ -9,11 +9,14 @@
 import { computed } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
 import { useAiStore } from '@/stores/ai/ai.store'
+import type { ComputedRef } from 'vue'
+import type { ForecastData } from '@/types/common'
 
 export interface UseForecastFeature {
-  generationForecast: ReturnType<typeof useAiStore>['generationForecast']
-  demandForecast: ReturnType<typeof useAiStore>['demandForecast']
-  isLoading: boolean
+  generationForecast: ComputedRef<ForecastData[]>
+  demandForecast: ComputedRef<ForecastData[]>
+  isLoading: ComputedRef<boolean>
+  fetchForecasts: (siteId?: string) => Promise<void>
 }
 
 export const useForecastFeature = (): UseForecastFeature => {

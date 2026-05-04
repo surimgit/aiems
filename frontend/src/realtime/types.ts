@@ -69,13 +69,4 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnecting' | 'di
  */
 export type DataSourceType = 'polling' | 'websocket'
 
-// Re-export types for convenience
-export type {
-  RealtimePowerData,
-  RealtimeEssStatus,
-  RealtimeAlarm,
-  RealtimeEventType,
-  RealtimeEvent,
-  ConnectionState,
-  DataSourceType
-}
+// Types are already exported above.

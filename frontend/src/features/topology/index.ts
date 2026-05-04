@@ -5,8 +5,9 @@
  * - 설비 배치 및 연관 관계 데이터 제공
  */
 
-import { computed } from 'vue'
+import { computed, type ComputedRef } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
+import type { TopologyData } from '@/types/common'
 
 export interface TopologyNode {
   id: string
@@ -23,9 +24,11 @@ export interface TopologyLink {
 }
 
 export interface UseTopologyFeature {
-  nodes: TopologyNode[]
-  links: TopologyLink[]
+  topology: ComputedRef<TopologyData | null>
+  nodes: ComputedRef<TopologyNode[]>
+  links: ComputedRef<TopologyLink[]>
   initialize: () => Promise<void>
+  selectNode: (nodeId: string) => void
 }
 
 export const useTopologyFeature = (): UseTopologyFeature => {
@@ -35,7 +38,7 @@ export const useTopologyFeature = (): UseTopologyFeature => {
     const topology = dashboardStore.topology
     if (topology && topology.nodes.length > 0) {
       return topology.nodes.map((node) => ({
-        id: node.node_id,
+        id: node.resource_id,
         type:
           node.node_type === 'STORAGE'
             ? 'ess'
@@ -88,10 +91,18 @@ export const useTopologyFeature = (): UseTopologyFeature => {
     ])
   }
 
+  const topology = computed(() => dashboardStore.topology)
+
+  const selectNode = (nodeId: string) => {
+    dashboardStore.selectEss(nodeId)
+  }
+
   return {
-    nodes: nodes.value,
-    links: links.value,
-    initialize
+    topology,
+    nodes,
+    links,
+    initialize,
+    selectNode
   }
 }
 
