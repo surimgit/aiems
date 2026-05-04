@@ -103,16 +103,17 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         FOR EACH ROW EXECUTE FUNCTION log_policy_change();
 
     -- ── topology (단선도 구성) ────────────────────────────────
-    -- 시드 데이터는 simulator-manager 가 동적 등록하므로 INSERT 생략.
-    -- 테이블 정의만 둠.
+    -- EMS 가 토폴로지의 단일 진실 (Single Source of Truth).
+    -- simulator 는 시뮬레이션 도구일 뿐 — 실 운영에선 EMS DB 가 정답.
+    -- 운영자가 UI 로 노드/라인/스위치/좌표를 등록·수정한다.
     CREATE TABLE IF NOT EXISTS topology_nodes (
         id          SERIAL          PRIMARY KEY,
         site_id     VARCHAR(64)     NOT NULL,
         node_id     VARCHAR(64)     NOT NULL,
-        node_type   VARCHAR(32)     NOT NULL,
-        device_id   VARCHAR(64),
+        node_type   VARCHAR(32)     NOT NULL,    -- GENERATION / STORAGE / LOAD / GRID / BUS
+        device_id   VARCHAR(64),                  -- Redis state 의 device_id 와 매칭 (자원 텔레메트리 조회용)
         label       VARCHAR(128),
-        x           FLOAT,
+        x           FLOAT,                        -- 단선도 SVG 좌표 (운영자 편집 가능)
         y           FLOAT,
         UNIQUE (site_id, node_id)
     );
@@ -123,7 +124,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         line_id         VARCHAR(64)     NOT NULL,
         from_node_id    VARCHAR(64)     NOT NULL,
         to_node_id      VARCHAR(64)     NOT NULL,
-        rating_kw       FLOAT,
+        rating_kw       FLOAT,                    -- 정격 용량
         UNIQUE (site_id, line_id)
     );
 
@@ -132,10 +133,38 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         site_id         VARCHAR(64)     NOT NULL,
         switch_id       VARCHAR(64)     NOT NULL,
         line_id         VARCHAR(64)     NOT NULL,
-        switch_type     VARCHAR(32)     NOT NULL DEFAULT 'CB',
+        switch_type     VARCHAR(32)     NOT NULL DEFAULT 'CB',  -- CB / DS / etc
         is_closed       BOOLEAN         NOT NULL DEFAULT true,
+        controllable    BOOLEAN         NOT NULL DEFAULT true,  -- 원격 제어 가능 여부
         UNIQUE (site_id, switch_id)
     );
+
+    -- ── PLANT-ALPHA 토폴로지 시드 (멱등) ──────────────────────────
+    -- ID 규약은 simulator topology 와 동일하게 유지 (호환성).
+    -- 좌표는 SVG 800×600 기준으로 배치.
+    --   solar-01 (좌상)        diesel-01 (우상)
+    --              \\          //
+    --              ess-01 (중앙, 저장)
+    --                  |
+    --              load-01 (하단)
+    INSERT INTO topology_nodes (site_id, node_id, node_type, device_id, label, x, y) VALUES
+        ('PLANT-ALPHA', 'node-solar-edge-01',  'GENERATION', 'solar-01',  '태양광 발전 #1', 200, 100),
+        ('PLANT-ALPHA', 'node-diesel-edge-01', 'GENERATION', 'diesel-01', '디젤 발전기 #1', 600, 100),
+        ('PLANT-ALPHA', 'node-ess-edge-01',    'STORAGE',    'ess-01',    'ESS #1',         400, 300),
+        ('PLANT-ALPHA', 'node-load-edge-01',   'LOAD',       'load-01',   '부하 #1',        400, 500)
+    ON CONFLICT (site_id, node_id) DO NOTHING;
+
+    INSERT INTO topology_lines (site_id, line_id, from_node_id, to_node_id, rating_kw) VALUES
+        ('PLANT-ALPHA', 'line-solar01-ess01',  'node-solar-edge-01',  'node-ess-edge-01',  150),
+        ('PLANT-ALPHA', 'line-diesel01-ess01', 'node-diesel-edge-01', 'node-ess-edge-01',  200),
+        ('PLANT-ALPHA', 'line-ess01-load01',   'node-ess-edge-01',    'node-load-edge-01', 100)
+    ON CONFLICT (site_id, line_id) DO NOTHING;
+
+    INSERT INTO topology_switches (site_id, switch_id, line_id, switch_type, is_closed, controllable) VALUES
+        ('PLANT-ALPHA', 'sw-solar01-ess01',  'line-solar01-ess01',  'CB', TRUE, TRUE),
+        ('PLANT-ALPHA', 'sw-diesel01-ess01', 'line-diesel01-ess01', 'CB', TRUE, TRUE),
+        ('PLANT-ALPHA', 'sw-ess01-load01',   'line-ess01-load01',   'CB', TRUE, TRUE)
+    ON CONFLICT (site_id, switch_id) DO NOTHING;
 
     -- ── 정책 seed (멱등) ──────────────────────────────────────
     INSERT INTO control_policy (key, value, unit, description) VALUES
