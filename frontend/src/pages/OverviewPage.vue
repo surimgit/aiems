@@ -85,9 +85,13 @@ onUnmounted(() => {
 
       <template #topology>
         <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
-          <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
-          <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
-          <TopologyLegend />
+          <template #svg>
+            <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
+            <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
+          </template>
+          <template #overlay>
+            <TopologyLegend />
+          </template>
         </TopologyStage>
       </template>
 
@@ -119,6 +123,6 @@ onUnmounted(() => {
 
 <style scoped>
 .overview-page {
-  @apply min-h-screen bg-slate-950 p-4;
+  @apply h-full min-h-0 overflow-y-auto overflow-x-hidden bg-slate-950;
 }
 </style>

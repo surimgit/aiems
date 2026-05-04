@@ -30,22 +30,22 @@ const avgConfidence = computed(() => {
 
 <style scoped>
 .panel-card {
-  @apply rounded border border-slate-700 bg-slate-900/80 p-4 text-slate-100;
+  @apply rounded border border-slate-700 bg-slate-900/80 p-3 text-slate-100;
 }
 
 .title {
-  @apply mb-3 font-semibold;
+  @apply mb-2 font-semibold text-sm;
 }
 
 .content {
-  @apply flex h-40 flex-col justify-between rounded border border-slate-700 bg-slate-950/60 p-3;
+  @apply flex min-h-[8rem] flex-col justify-between rounded border border-slate-700 bg-slate-950/60 p-2;
 }
 
 .value {
-  @apply text-2xl font-semibold text-cyan-300;
+  @apply text-xl font-semibold text-cyan-300;
 }
 
 .meta {
-  @apply flex items-center justify-between text-sm text-slate-300;
+  @apply flex flex-col items-start gap-1 text-xs text-slate-300;
 }
 </style>

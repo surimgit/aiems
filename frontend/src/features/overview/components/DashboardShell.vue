@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import type { DashboardLayoutMode, DashboardLayoutPreset } from '../layoutPresets'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   mode?: DashboardLayoutMode
   preset?: DashboardLayoutPreset
   panelOpen?: boolean
-}>()
+}>(), {
+  mode: 'laptop',
+  panelOpen: false
+})
 </script>
 
 <template>
-  <section class="dashboard-shell" :class="{ 'panel-open': panelOpen }">
+  <section class="dashboard-shell" :class="[`mode-${props.mode}`, { 'panel-open': props.panelOpen }]">
     <div class="main-area">
       <slot name="topbar" />
 
@@ -18,13 +21,19 @@ defineProps<{
       </div>
 
       <div class="bottom-area">
-        <slot name="power-balance" />
-        <slot name="kpi-summary" />
-        <slot name="ai-performance" />
+        <div class="bottom-item">
+          <slot name="power-balance" />
+        </div>
+        <div class="bottom-item">
+          <slot name="kpi-summary" />
+        </div>
+        <div class="bottom-item">
+          <slot name="ai-performance" />
+        </div>
       </div>
     </div>
 
-    <aside v-if="panelOpen" class="right-panel-area">
+    <aside v-if="props.panelOpen" class="right-panel-area">
       <slot name="right-panel" />
     </aside>
   </section>
@@ -32,26 +41,43 @@ defineProps<{
 
 <style scoped>
 .dashboard-shell {
-  @apply grid grid-cols-1 gap-4;
+  @apply grid h-full min-h-0 grid-cols-1 gap-5;
 }
 
 .main-area {
-  @apply grid grid-cols-1 gap-4;
+  @apply grid min-h-0 grid-cols-1 gap-5;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .topology-area {
-  @apply min-h-[420px];
+  @apply min-h-0 overflow-hidden;
 }
 
 .bottom-area {
-  @apply grid grid-cols-1 gap-4 xl:grid-cols-3;
+  @apply grid h-full min-h-0 grid-cols-3 gap-3;
 }
 
-.dashboard-shell.panel-open {
-  @apply lg:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_420px];
+.bottom-item {
+  @apply h-full min-h-0 min-w-0;
+}
+
+.bottom-item > :deep(*) {
+  @apply h-full min-h-0;
 }
 
 .right-panel-area {
-  @apply min-h-[420px];
+  @apply min-h-0 overflow-auto;
+}
+
+.mode-tablet.panel-open .right-panel-area {
+  @apply fixed inset-y-0 right-0 z-50 w-[88vw] max-w-[420px] border-l border-slate-700 bg-slate-950 p-4 shadow-2xl;
+}
+
+.mode-laptop.panel-open {
+  @apply lg:grid-cols-[minmax(0,1fr)_380px];
+}
+
+.mode-wall.panel-open {
+  @apply 2xl:grid-cols-[minmax(0,1fr)_460px];
 }
 </style>
