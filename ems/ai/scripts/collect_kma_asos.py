@@ -13,7 +13,11 @@ from pathlib import Path
 import pandas as pd
 import requests
 import yaml
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 KMA_ASOS_COLUMNS = [
     "TM",
@@ -101,8 +105,16 @@ def load_config(path: str | Path) -> dict:
 
 def load_env_file(config: dict) -> None:
     env_file = config.get("request", {}).get("env_file")
-    if env_file:
+    if env_file and load_dotenv is not None:
         load_dotenv(env_file)
+    elif env_file:
+        with Path(env_file).open("r", encoding="utf-8") as file:
+            for line in file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                name, value = stripped.split("=", 1)
+                os.environ.setdefault(name.strip(), value.strip().strip('"').strip("'"))
 
 
 def month_range(start_month: str, end_month: str) -> list[MonthWindow]:

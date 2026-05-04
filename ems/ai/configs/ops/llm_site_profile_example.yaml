@@ -1,0 +1,21 @@
+site:
+  site_id: seoul
+  profile_version: v1
+
+openai:
+  auth_env: OPENAI_API_KEY
+  model_env: OPENAI_MODEL
+  env_file: ems/ai/.env
+  default_model: gpt-5.4-nano
+  reasoning_effort: low
+  max_output_tokens: 1600
+
+input:
+  text: |
+    이 사이트는 업무용 건물이다.
+    평일 오전 9시부터 오후 6시까지 사무실 부하가 높고,
+    여름에는 냉방 부하가 증가한다.
+    야간에는 필수 설비만 동작한다.
+
+output:
+  profile_path: ems/ai/outputs/site_profiles/seoul_profile.json

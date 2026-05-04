@@ -1,8 +1,6 @@
-# Update these values before running the collector.
-
 source: kma_asos
-region_slug: jeonnam
-station_id: 165
+region_slug: seoul
+station_id: 108
 
 request:
   auth_env: KMA_AUTH_KEY
@@ -14,7 +12,7 @@ request:
   help: 0
 
 range:
-  start_month: 2024-01
+  start_month: 2024-11
   end_month: 2025-12
 
 storage:

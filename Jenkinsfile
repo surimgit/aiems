@@ -342,7 +342,7 @@ pipeline {
                         configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
                                 sh '''
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev /home/ubuntu/dev/certs /home/ubuntu/dev/frontend-dist'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'

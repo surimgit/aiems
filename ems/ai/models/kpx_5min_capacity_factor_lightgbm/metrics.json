@@ -1,0 +1,20 @@
+{
+  "run_name": "kpx_5min_capacity_factor_lightgbm",
+  "model_path": "ems\\ai\\outputs\\artifacts\\kpx_5min_capacity_factor_lightgbm\\model.joblib",
+  "train_rows_before_dropna": 16969,
+  "train_rows_after_dropna": 16969,
+  "val_rows_before_dropna": 2786,
+  "val_rows_after_dropna": 2786,
+  "metrics": {
+    "mae": 0.018102481204817205,
+    "rmse": 0.040189799087602555,
+    "mape": 344870326374474.4,
+    "masked_mape_target_gte_1": null,
+    "clipped_mae": 0.018034959345183232,
+    "clipped_rmse": 0.040189389864072576,
+    "clipped_masked_mape_target_gte_1": null,
+    "postprocessed_mae": 0.017702846960628002,
+    "postprocessed_rmse": 0.040536916682482264,
+    "postprocessed_masked_mape_target_gte_1": null
+  }
+}

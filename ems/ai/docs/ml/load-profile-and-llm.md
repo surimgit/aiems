@@ -65,6 +65,18 @@ LLM does not:
 - run every 30 minutes
 - directly predict final solar/load values
 
+Current script:
+
+```bash
+python ems/ai/scripts/structure_site_profile_with_llm.py --config ems/ai/configs/ops/llm_site_profile_example.yaml
+```
+
+The generated profile uses schema `site_profile.v1` and can be validated with:
+
+```bash
+python ems/ai/scripts/structure_site_profile_with_llm.py --config ems/ai/configs/ops/llm_site_profile_example.yaml --output ems/ai/configs/ops/site_profile_example.json --validate-only
+```
+
 ## Component-Based Profile
 
 Residential example:
@@ -174,4 +186,9 @@ Forecast-AI scheduler
 ```
 
 LLM is not called during this cycle.
+
+`run_operational_solar_forecast.py` now reads the stored profile and attaches
+`profile_*` context fields to the forecast payload. The current solar model may
+ignore those fields if they are not in its trained feature list, but downstream
+load prior logic and future retraining can consume them.
 
