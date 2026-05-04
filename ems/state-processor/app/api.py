@@ -326,17 +326,21 @@ def _register_routes(app: Flask) -> None:
         reason_code = fields.String(allow_none=True)
         payload = fields.Dict(allow_none=True)
 
+    # 프론트 AlarmData 와 1:1 매칭 (common.ts).
+    # 매핑: alarm_id, severity→level (소문자), event_type→code, time→timestamp,
+    #       device_id→ess_id (옵션 — ESS device 일 때만 의미).
     class AlarmSchema(Schema):
-        alarm_id = fields.String()
-        time = fields.DateTime()
-        site_id = fields.String()
-        device_id = fields.String()
-        resource_type = fields.String()
-        event_type = fields.String()
-        severity = fields.String()
-        message = fields.String()
-        acknowledged = fields.Boolean()
-        acked_at = fields.DateTime(allow_none=True)
+        alarm_id = fields.String(allow_none=True)
+        level = fields.String()  # 'info' / 'warning' / 'critical'
+        code = fields.String()
+        message = fields.String(allow_none=True)
+        ess_id = fields.String(allow_none=True)
+        timestamp = fields.String()
+        acknowledged = fields.Boolean(allow_none=True)
+        # 추가 필드 (프론트 무시 가능, 호환성):
+        site_id = fields.String(allow_none=True)
+        resource_type = fields.String(allow_none=True)
+        acked_at = fields.String(allow_none=True)
         acked_by = fields.String(allow_none=True)
 
     class AlarmAckRequestSchema(Schema):
@@ -396,8 +400,26 @@ def _register_routes(app: Flask) -> None:
     class PlantListResource(MethodView):
         @blp.response(200, PlantSchema(many=True))
         def get(self):
-            """등록된 Plant 목록 조회"""
-            return [{"site_id": s} for s in _KNOWN_SITES]
+            """등록된 Plant 목록 조회 — control_db.topology_nodes 의 distinct site_id.
+            DB 조회 실패 또는 결과 없음이면 환경변수 SITE_ID 로 fallback (단일 plant 시연 호환).
+            """
+            site_ids: list[str] = []
+            try:
+                pool = get_control_db_pool()
+                conn = pool.getconn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT DISTINCT site_id FROM topology_nodes ORDER BY site_id")
+                        site_ids = [r[0] for r in cur.fetchall()]
+                finally:
+                    pool.putconn(conn)
+            except Exception as e:
+                print(f"[state-processor] plants 조회 실패, fallback to env: {e}")
+
+            if not site_ids:
+                site_ids = list(_KNOWN_SITES)
+
+            return [{"site_id": s} for s in site_ids]
 
     # ── Plant 요약 (net_power, pv, ess, load) ────────────────────────────────
 
@@ -676,9 +698,9 @@ def _register_routes(app: Flask) -> None:
     class PlantAlarmListResource(MethodView):
         @blp.response(200, AlarmSchema(many=True))
         def get(self, site_id):
-            """알람 목록 조회 — WARNING 이상 이벤트. acknowledged 필터 지원"""
+            """알람 목록 조회 — WARNING 이상 이벤트. 프론트 AlarmData DTO 형식."""
             acknowledged = request.args.get("acknowledged")  # "true" / "false" / 미입력=전체
-            severity = request.args.get("severity")          # WARNING / CRITICAL / EMERGENCY
+            severity = request.args.get("severity")          # info / warning / critical (프론트) 또는 WARNING / CRITICAL (DB)
             limit = min(int(request.args.get("limit", 100)), 1000)
 
             filters = ["site_id = %s", "severity != 'INFO'"]
@@ -687,6 +709,7 @@ def _register_routes(app: Flask) -> None:
                 filters.append("acknowledged = %s")
                 params.append(acknowledged.lower() == "true")
             if severity:
+                # 프론트 'critical' → DB 'CRITICAL' 매핑.
                 filters.append("severity = %s")
                 params.append(severity.upper())
 
@@ -709,13 +732,31 @@ def _register_routes(app: Flask) -> None:
             finally:
                 pool.putconn(conn)
 
+            # DB severity → 프론트 level 매핑: WARNING/CRITICAL/EMERGENCY → warning/critical/critical 소문자.
+            # 프론트 enum 은 'info' | 'warning' | 'critical' 만 — EMERGENCY 도 critical 로 합쳐 표시.
+            def _to_level(sev: str) -> str:
+                s = (sev or "").upper()
+                if s in ("CRITICAL", "EMERGENCY"):
+                    return "critical"
+                if s == "WARNING":
+                    return "warning"
+                return "info"
+
             return [
                 {
                     "alarm_id": str(r[0]) if r[0] else None,
-                    "time": r[1], "site_id": r[2], "device_id": r[3],
-                    "resource_type": r[4], "event_type": r[5], "severity": r[6],
-                    "message": r[7], "acknowledged": r[8],
-                    "acked_at": r[9], "acked_by": r[10],
+                    "level": _to_level(r[6]),
+                    "code": r[5],
+                    "message": r[7],
+                    # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
+                    "ess_id": r[3] if (r[4] or "").upper() == "ESS" else None,
+                    "timestamp": r[1].isoformat() if r[1] else None,
+                    "acknowledged": r[8],
+                    # 호환 추가 필드 (프론트 type 무시 가능):
+                    "site_id": r[2],
+                    "resource_type": r[4],
+                    "acked_at": r[9].isoformat() if r[9] else None,
+                    "acked_by": r[10],
                 }
                 for r in rows
             ]
