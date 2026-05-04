@@ -6,6 +6,13 @@ import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 const dashboardStore = useDashboardStore()
 const { powerSummary } = storeToRefs(dashboardStore)
 
+const formatKw = (value: unknown): string => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '데이터 없음'
+  }
+  return `${value.toFixed(1)} kW`
+}
+
 const points = computed(() => {
   if (!powerSummary.value) return []
   return [
@@ -24,7 +31,7 @@ const points = computed(() => {
     <div v-if="points.length > 0" class="chart-placeholder">
       <div v-for="point in points" :key="point.label" class="row">
         <span>{{ point.label }}</span>
-        <span>{{ point.value.toFixed(1) }} kW</span>
+        <span>{{ formatKw(point.value) }}</span>
       </div>
     </div>
     <div v-else class="chart-placeholder">전력 요약 데이터가 아직 없습니다.</div>
