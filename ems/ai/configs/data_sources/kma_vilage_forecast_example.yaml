@@ -1,0 +1,40 @@
+source: kma_vilage_forecast
+
+request:
+  auth_env: KMA_AUTH_KEY
+  env_file: ems/ai/.env
+  timeout_seconds: 30
+  sleep_seconds: 0.5
+  retries: 3
+  endpoints:
+    xy_lonlat: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_xy_lonlat
+    ultra_srt_ncst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_odam_grd
+    ultra_srt_fcst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_vsrt_grd
+    vilage_fcst: https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-dfs_shrt_grd
+
+collection:
+  # Use explicit KST times for reproducible smoke tests. Operational jobs can
+  # pass --tmfc/--tmef from the scheduler.
+  tmfc_ultra: "202604301000"
+  tmef_ultra: "2026043011"
+  tmfc_short: "2026043008"
+  tmef_short: "2026043011"
+  variables:
+    ultra_srt_ncst: [T1H, RN1, UUU, VVV, VEC, WSD, PTY, REH]
+    ultra_srt_fcst: [T1H, RN1, UUU, VVV, VEC, WSD, SKY, PTY, LGT, REH]
+    vilage_fcst: [TMP, POP, PCP, REH, SKY, PTY, WSD, VEC, UUU, VVV]
+
+sites:
+  - site_id: seoul
+    region: 서울시
+    latitude: 37.5665
+    longitude: 126.9780
+  - site_id: daejeon
+    region: 대전시
+    latitude: 36.3504
+    longitude: 127.3845
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/weather/kma_vilage_forecast"
+  save_raw_response: true
+  save_manifest: true

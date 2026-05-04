@@ -1,0 +1,20 @@
+{
+  "run_name": "solar_kpx_lightgbm",
+  "model_path": "/home/j-k14s305/s305-work/runs/artifacts/solar_kpx_lightgbm/model.joblib",
+  "train_rows_before_dropna": 7271,
+  "train_rows_after_dropna": 7271,
+  "val_rows_before_dropna": 1440,
+  "val_rows_after_dropna": 1440,
+  "metrics": {
+    "mae": 52539.15397232863,
+    "rmse": 80302.48315849618,
+    "mape": 1.1088270480460452e+21,
+    "masked_mape_target_gte_1": 17327.278265092868,
+    "clipped_mae": 52539.15397232863,
+    "clipped_rmse": 80302.48315849618,
+    "clipped_masked_mape_target_gte_1": 17327.278265092868,
+    "postprocessed_mae": 52539.15397232863,
+    "postprocessed_rmse": 80302.48315849618,
+    "postprocessed_masked_mape_target_gte_1": 17327.278265092868
+  }
+}

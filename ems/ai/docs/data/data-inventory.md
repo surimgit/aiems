@@ -274,7 +274,7 @@ G:/내 드라이브/s305-ai-data
 
 #### Asset Group
 
-- 목적: 운영 추론 시점의 기상 예보 feature 확보 준비
+- 목적: 운영 추론 시점의 미래 기상 예보 feature 확보
 - source: 기상청 동네예보
 
 #### Paths
@@ -290,7 +290,8 @@ G:/내 드라이브/s305-ai-data
 - grid reference:
   - `2026-01` 기준
 - API collection:
-  - 아직 수집 스크립트 미작성
+  - 수집 스크립트 작성 완료
+  - 운영 예측용 config 예시 작성 완료
 
 #### Needed APIs
 
@@ -299,15 +300,103 @@ G:/내 드라이브/s305-ai-data
 - `getVilageFcst`: 단기예보조회
 - `nph-dfs_xy_lonlat`: 임의 위·경도 -> 인근 동네예보 격자 번호 변환
 
+#### Main Forecast Fields
+
+- ultra-short forecast:
+  - `SKY`: 하늘상태
+  - `PTY`: 강수형태
+  - `RN1`: 1시간 강수량
+  - `T1H`: 기온
+  - `REH`: 습도
+  - `WSD`: 풍속
+- short-term forecast:
+  - `SKY`: 하늘상태
+  - `POP`: 강수확률
+  - `PCP`: 강수량
+  - `PTY`: 강수형태
+  - `TMP`: 기온
+  - `REH`: 습도
+  - `WSD`: 풍속
+
+`SKY` category:
+
+- `1`: 맑음
+- `3`: 구름많음
+- `4`: 흐림
+
+과거 `2` category는 2019-06-04 이후 `1`로 병합되었다.
+
 #### How It Is Used
 
 - 발전 예측 운영 추론 시 미래 날씨 feature
 - 소비 baseline의 냉난방 보정 feature
 - `nx`, `ny` 격자값 산출 기준
+- GK2A 관측 cloud feature와 구분되는 production forecast feature
 
 ---
 
-### 2.6 KASI Special Day API
+### 2.6 GK2A LE2 Cloud Archive
+
+#### Asset Group
+
+- 목적: 한국 영역 위성 구름 산출물 확보 및 offline cloud feature 실험
+- source: KMA APIHub GK2A LE2
+- products: `CLA`, `CLD`
+- area: `KO`
+
+#### Paths
+
+- root:
+  - `G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2`
+- NetCDF:
+  - `G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2/<PRODUCT>/KO/YYYY/MM/DD/gk2a_le2_<PRODUCT>_KO_YYYYMMDDHHMM.nc`
+- manifest:
+  - `G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2/manifests/*.json`
+
+#### Current Coverage
+
+- target collection:
+  - `2025-01-01 00:00+09:00 ~ 2025-12-31 23:00+09:00`
+  - hourly, minute offset `0`
+  - expected files: `17,520` (`365 * 24 * 2`)
+- current local count:
+  - `7,623 / 17,520`
+  - progress: `43.51%`
+- last successful file write:
+  - `2026-04-30 13:53:43 KST`
+- current run state:
+  - stopped intentionally at `2026-04-30 14:52:54 KST`
+  - no active GK2A Python process
+- completed monthly manifests observed:
+  - `2025-01`
+  - `2025-02`
+  - `2025-04`
+  - `2025-10`
+
+#### Created By
+
+- 수집: [collect_gk2a_le2_archive.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/collect_gk2a_le2_archive.py)
+- 월별 분할 실행: [run_gk2a_le2_archive_monthly.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/run_gk2a_le2_archive_monthly.py)
+
+#### Operational Notes
+
+- `overwrite: false`라 중단 후 재실행 시 기존 `.nc` 파일은 skip된다.
+- 4병렬 수집은 정상 구간에서 속도를 크게 올렸지만, APIHub가 TLS handshake를 끊는 상태가 발생했다.
+- VPN 출구 IP에서는 TCP 443은 열렸으나 Python `requests`가 `SSLError: UNEXPECTED_EOF_WHILE_READING`로 실패했다.
+- API key/account ban이면 일반적으로 HTTP `401/403` 또는 JSON 오류가 와야 하므로, 현재 증상은 API key보다 IP/VPN/APIHub WAF 제한 가능성이 높다.
+- 재개 전 단건 Python HTTPS 요청이 성공하는지 먼저 확인한다.
+
+#### Modeling Role
+
+- GK2A LE2는 과거 관측 archive다.
+- 학습/검증/ablation에서 cloud feature의 효과를 확인하는 용도로 사용한다.
+- live inference에서 미래 GK2A 관측값을 사용할 수 없으므로, 운영 모델 성능은 KMA forecast-compatible feature로 별도 평가한다.
+- GK2A 기반 성능은 production 성능이 아니라 archive-enhanced offline 성능으로 표기한다.
+- GK2A 관측 cloud를 KMA `SKY`와 비교하거나 forecast-like category로 변환하는 domain-alignment 실험은 별도 모델 버전으로 관리한다.
+
+---
+
+### 2.7 KASI Special Day API
 
 #### Asset Group
 
@@ -342,8 +431,13 @@ G:/내 드라이브/s305-ai-data
 #### Current Coverage
 
 - API 승인 완료
-- 수집 스크립트 미작성
-- raw/processed 산출물 아직 없음
+- 수집 스크립트 작성 완료
+- collected years:
+  - `2021 ~ 2026`
+- processed rows:
+  - `381`
+- processed output:
+  - `G:/내 드라이브/s305-ai-data/processed/calendar/korea_special_days.csv`
 
 #### How It Is Used
 
@@ -351,6 +445,103 @@ G:/내 드라이브/s305-ai-data
 - 국경일/기념일 feature
 - 24절기 기반 계절 feature
 - 소비 baseline의 시간대 profile 보정
+
+---
+
+### 2.8 Load Prior Output
+
+#### Asset Group
+
+- 목적: 실제 현장 load label이 없을 때 사용할 시간대별 소비 baseline
+- source:
+  - KEPCO 시군구별 전력사용량
+  - KPX 전국 시간별 수요량
+  - KASI calendar
+  - `site_profile.v1`
+
+#### Paths
+
+- config:
+  - `ems/ai/configs/ops/load_prior_example.yaml`
+- output CSV:
+  - `ems/ai/outputs/load_prior/load_prior_example.csv`
+- manifest:
+  - `ems/ai/outputs/load_prior/load_prior_example_manifest.json`
+
+#### Current Example
+
+- region/city:
+  - `서울특별시 종로구`
+- dimension:
+  - `industry`
+- industry:
+  - `순수써비스`
+- target range:
+  - `2025-12-01 00:00+09:00 ~ 2025-12-02 23:00+09:00`
+- rows:
+  - `48`
+- predicted_load_kw:
+  - min: `107.867334690492`
+  - average: `166.605413523525`
+  - max: `205.521578634804`
+- safety margin:
+  - default reserve ratio: `15%`
+  - min reserve: `10 kW`
+  - output column: `safe_predicted_load_kw`
+
+#### Created By
+
+- [build_load_prior.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/build_load_prior.py)
+
+#### How It Is Used
+
+- EMS load forecast 초기 baseline
+- ESS/운영 판단의 소비측 prior
+- 실제 site telemetry가 쌓이면 supervised load model의 fallback 또는 비교 기준
+
+---
+
+### 2.9 KPX 5-Min Capacity Factor Dataset
+
+#### Asset Group
+
+- 목적: 지역 태양광 발전량을 설비용량 대비 capacity factor로 바꿔 운영 예측에 쓰기
+- source: KPX regional solar + ASOS/time features
+
+#### Paths
+
+- train split:
+  - `ems/ai/data/processed/kpx_5min_capacity_factor/kpx_5min_capacity_factor_train.csv`
+- validation split:
+  - `ems/ai/data/processed/kpx_5min_capacity_factor/kpx_5min_capacity_factor_val.csv`
+- model artifact:
+  - `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
+- metrics:
+  - `ems/ai/models/kpx_5min_capacity_factor_lightgbm/metrics.json`
+- feature importance:
+  - `ems/ai/models/kpx_5min_capacity_factor_lightgbm/feature_importance.csv`
+
+#### Current Model Metrics
+
+- train rows: `16,969`
+- validation rows: `2,786`
+- MAE: `0.0181024812`
+- RMSE: `0.0401897991`
+- clipped MAE: `0.0180349593`
+- clipped RMSE: `0.0401893899`
+- postprocessed MAE: `0.0177028470`
+- postprocessed RMSE: `0.0405369167`
+
+#### Created By
+
+- 병합: [merge_kpx_capacity_factor_with_asos.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/merge_kpx_capacity_factor_with_asos.py)
+- split 생성: [prepare_kpx_5min_capacity_factor_dataset.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/prepare_kpx_5min_capacity_factor_dataset.py)
+- 검증: [validate_solar_model.py](C:/Users/SSAFY/PycharmProjects/S14P31S305/ems/ai/scripts/validate_solar_model.py)
+
+#### How It Is Used
+
+- RunPod inference용 최신 운영 후보 모델
+- `run_operational_solar_forecast.py`에서 site capacity를 곱해 kW 예측으로 변환
 
 ## 3. Processed Assets
 
