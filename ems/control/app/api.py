@@ -13,6 +13,7 @@ from marshmallow import Schema, fields, validate
 
 from .config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
+    TS_DB_HOST, TS_DB_PORT, TS_DB_NAME, TS_DB_USER, TS_DB_PASSWORD,
     MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASSWORD,
     SITE_ID, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD,
 )
@@ -166,8 +167,10 @@ def _register_routes(app: Flask) -> None:
     # ── DB helper ─────────────────────────────────────────────────────────────
 
     _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+    _ts_pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
     def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+        # PostgreSQL.control_db — control_policy 등.
         nonlocal _pool
         if _pool is None:
             _pool = psycopg2.pool.ThreadedConnectionPool(
@@ -176,6 +179,17 @@ def _register_routes(app: Flask) -> None:
                 dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
             )
         return _pool
+
+    def get_ts_pool() -> psycopg2.pool.ThreadedConnectionPool:
+        # TimescaleDB — control_history 시계열.
+        nonlocal _ts_pool
+        if _ts_pool is None:
+            _ts_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1, maxconn=5,
+                host=TS_DB_HOST, port=TS_DB_PORT,
+                dbname=TS_DB_NAME, user=TS_DB_USER, password=TS_DB_PASSWORD,
+            )
+        return _ts_pool
 
     # ── Schemas ───────────────────────────────────────────────────────────────
 
@@ -206,17 +220,22 @@ def _register_routes(app: Flask) -> None:
         action = fields.String()
         created_at = fields.DateTime()
 
+    # 프론트 ControlResult DTO 와 매칭 (common.ts).
+    # 매핑: ack_status→status, device_id→target_resource_id, time→created_at,
+    #       command_type+payload → action 역추론.
     class CommandHistorySchema(Schema):
         command_id = fields.String()
+        status = fields.String()                  # CommandStatus (ACCEPTED / REJECTED / TIMEOUT 등)
         site_id = fields.String()
-        device_id = fields.String()
-        resource_type = fields.String()
-        command_type = fields.String()
-        payload = fields.Dict()
-        reason = fields.String()
-        issued_by = fields.String()
-        ack_status = fields.String()
-        time = fields.DateTime()
+        target_resource_id = fields.String()      # device_id 의 별칭
+        action = fields.String()                  # CommandAction
+        created_at = fields.String()
+        # 추가 정보 (프론트 무시 가능, 디버깅 / 호환):
+        resource_type = fields.String(allow_none=True)
+        command_type = fields.String(allow_none=True)
+        payload = fields.Dict(allow_none=True)
+        reason = fields.String(allow_none=True)
+        issued_by = fields.String(allow_none=True)
 
     class PolicySchema(Schema):
         key = fields.String()
@@ -257,6 +276,52 @@ def _register_routes(app: Flask) -> None:
 
     def _translate_action(action: str) -> dict:
         return _ACTION_MAP.get(action, {"command_type": action.lower(), "payload": {}})
+
+    # control_history row → 프론트 ControlResult DTO.
+    # row schema: (command_id, site_id, device_id, resource_type,
+    #              command_type, payload, reason, issued_by, ack_status, time)
+    def _row_to_control_result(r) -> dict:
+        payload_dict = r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}")
+        return {
+            "command_id": str(r[0]),
+            "status": (r[8] or "").upper(),
+            "site_id": r[1],
+            "target_resource_id": r[2],
+            "action": _action_from_db(r[4], payload_dict),
+            "created_at": r[9].isoformat() if r[9] else None,
+            "resource_type": r[3],
+            "command_type": r[4],
+            "payload": payload_dict,
+            "reason": r[6],
+            "issued_by": r[7],
+        }
+
+    # _ACTION_MAP 의 역방향 — DB 의 (command_type, payload) → 프론트 action enum.
+    # 모드 의존이라 (command_type, mode) 키로 미세 매칭.
+    def _action_from_db(command_type: str, payload: dict | None) -> str:
+        ct = (command_type or "").lower()
+        mode = ((payload or {}).get("mode") or "").lower() if isinstance(payload, dict) else ""
+        if ct == "ess_mode":
+            if mode == "charge":
+                return "START_CHARGE"
+            if mode == "discharge":
+                return "START_DISCHARGE"
+            if mode == "standby":
+                return "STANDBY"
+        elif ct == "start":
+            return "START_GENERATOR"
+        elif ct == "stop":
+            return "STOP_GENERATOR"
+        elif ct == "open":
+            return "OPEN_SWITCH"
+        elif ct == "close":
+            return "CLOSE_SWITCH"
+        elif ct == "load_shed":
+            ratio = (payload or {}).get("reduction_ratio") if isinstance(payload, dict) else None
+            return "RESTORE_LOAD" if ratio == 0 else "SHED_LOAD"
+        elif ct == "update_device_spec":
+            return "SET_POWER_LIMIT"
+        return ct.upper()
 
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
@@ -355,7 +420,8 @@ def _register_routes(app: Flask) -> None:
         def get(self):
             device_id = request.args.get("device_id")
             limit = min(int(request.args.get("limit", 100)), 1000)
-            pool = get_pool()
+            # control_history 는 TimescaleDB 시계열 — TS pool 사용.
+            pool = get_ts_pool()
             conn = pool.getconn()
             try:
                 with conn.cursor() as cur:
@@ -384,27 +450,14 @@ def _register_routes(app: Flask) -> None:
             finally:
                 pool.putconn(conn)
 
-            return [
-                {
-                    "command_id": str(r[0]),
-                    "site_id": r[1],
-                    "device_id": r[2],
-                    "resource_type": r[3],
-                    "command_type": r[4],
-                    "payload": r[5] if isinstance(r[5], dict) else json.loads(r[5]),
-                    "reason": r[6],
-                    "issued_by": r[7],
-                    "ack_status": r[8],
-                    "time": r[9],
-                }
-                for r in rows
-            ]
+            return [_row_to_control_result(r) for r in rows]
 
     @blp.route("/commands/<command_id>")
     class CommandDetailResource(MethodView):
         @blp.response(200, CommandHistorySchema)
         def get(self, command_id):
-            pool = get_pool()
+            # control_history 는 TimescaleDB 시계열 — TS pool 사용.
+            pool = get_ts_pool()
             conn = pool.getconn()
             try:
                 with conn.cursor() as cur:
@@ -424,18 +477,7 @@ def _register_routes(app: Flask) -> None:
             if not r:
                 abort(404)
 
-            return {
-                "command_id": str(r[0]),
-                "site_id": r[1],
-                "device_id": r[2],
-                "resource_type": r[3],
-                "command_type": r[4],
-                "payload": r[5] if isinstance(r[5], dict) else json.loads(r[5]),
-                "reason": r[6],
-                "issued_by": r[7],
-                "ack_status": r[8],
-                "time": r[9],
-            }
+            return _row_to_control_result(r)
 
     # ── Policy Routes ─────────────────────────────────────────────────────────
 
