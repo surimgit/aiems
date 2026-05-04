@@ -95,9 +95,9 @@ pipeline {
                     //
                     //   frontend 전용 정책:
                     //     ✅ master push (frontend/ 변경)             → prod gateway 의 정적파일 갱신
-                    //     ✅ frontend push (직접 또는 fe/xxx → frontend MR 머지) → dev gateway 의 정적파일 갱신
-                    //     ❌ frontend → master MR                     → CI 만 (머지 후 master push 가 prod 배포)
-                    //     ❌ feature(fe/xxx) → frontend MR (생성 시)  → CI 만
+                    //     ✅ front push (직접 또는 fe/xxx → front MR 머지)     → dev gateway 의 정적파일 갱신
+                    //     ❌ front → master MR                        → CI 만 (머지 후 master push 가 prod 배포)
+                    //     ❌ feature(fe/xxx) → front MR (생성 시)     → CI 만
                     // ──────────────────────────────────────
                     def shouldDeploy = false
                     if (isMR && targetBranch == 'master') {
@@ -110,7 +110,7 @@ pipeline {
                     def shouldDeployDev = !isMR && currentBranch == 'ems'
                     env.SHOULD_DEPLOY_DEV = shouldDeployDev ? 'true' : 'false'
 
-                    def shouldDeployFrontendDev = !isMR && currentBranch == 'frontend'
+                    def shouldDeployFrontendDev = !isMR && currentBranch == 'front'
                     env.SHOULD_DEPLOY_FRONTEND_DEV = shouldDeployFrontendDev ? 'true' : 'false'
 
                     echo """
@@ -180,7 +180,7 @@ pipeline {
                     when { expression { env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' } }
                     steps { sh 'docker compose -f docker-compose.control.yml build' }
                 }
-                // Vue 프론트엔드 빌드 — prod 배포 또는 frontend 브랜치 push 시
+                // Vue 프론트엔드 빌드 — prod 배포 또는 front 브랜치 push 시
                 // node:20-alpine 컨테이너로 빌드해서 결과물 frontend/dist/ 를 산출
                 stage('Build - Frontend') {
                     when {
@@ -424,7 +424,7 @@ EOF
                 // ──────────────────────────────────────
                 //  Frontend (정적파일) — Volume Mount 방식
                 //   - prod: master push + frontend/ 변경 → /home/ubuntu/app/frontend-dist 갱신 → gateway nginx 가 서빙
-                //   - dev : frontend 브랜치 push → /home/ubuntu/dev/frontend-dist 갱신 → dev gateway nginx 가 서빙
+                //   - dev : front 브랜치 push → /home/ubuntu/dev/frontend-dist 갱신 → dev gateway nginx 가 서빙
                 //   - 빌드 산출물 (frontend/dist/) 은 Build - Frontend stage 에서 생성됨
                 // ──────────────────────────────────────
                 stage('Deploy - Frontend') {
