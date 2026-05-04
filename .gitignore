@@ -11,3 +11,5 @@ redis_data/
 pg_data/
 mqtt_data/
 .claude/
+frontend/dist/
+retrospective.md
