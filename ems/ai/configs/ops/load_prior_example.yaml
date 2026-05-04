@@ -1,0 +1,45 @@
+site:
+  site_id: seoul
+  region: 서울특별시
+  city: 종로구
+  timezone: Asia/Seoul
+
+profile:
+  path: ems/ai/configs/ops/site_profile_example.json
+
+load_baseline:
+  data_root: "G:/내 드라이브/s305-ai-data"
+  year: 2025
+  dimension: industry
+  industry_type: 순수써비스
+  contract_type: 일반용
+  customer_count: 1
+  scale_factor: 0.001
+  min_load_kw: 0.0
+
+safety_margin:
+  enabled: true
+  reserve_ratio: 0.15
+  min_reserve_kw: 10.0
+  max_safe_load_kw:
+
+targets:
+  start_time: "2025-12-01T00:00:00+09:00"
+  periods: 48
+  frequency_hours: 1
+
+weather_adjustment:
+  enabled: true
+  temperature_c: 2.0
+  cooling_threshold_c: 26.0
+  heating_threshold_c: 5.0
+  max_weight: 1.25
+
+calendar:
+  enabled: true
+  special_days_path: "G:/내 드라이브/s305-ai-data/processed/calendar/korea_special_days.csv"
+  holiday_weight: 0.85
+
+output:
+  csv_path: ems/ai/outputs/load_prior/load_prior_example.csv
+  manifest_path: ems/ai/outputs/load_prior/load_prior_example_manifest.json

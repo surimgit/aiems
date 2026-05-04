@@ -1,0 +1,21 @@
+source: kma_asos
+region_slug: daejeon
+station_id: 133
+
+request:
+  auth_env: KMA_AUTH_KEY
+  env_file: ems/ai/.env
+  base_url: https://apihub.kma.go.kr/api/typ01/url/kma_sfctm3.php
+  timeout_seconds: 30
+  sleep_seconds: 0.5
+  retries: 3
+  help: 0
+
+range:
+  start_month: 2024-11
+  end_month: 2025-12
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/kma_asos"
+  save_raw_response: true
+  save_parsed_csv: true

@@ -32,6 +32,28 @@ Serverless gives the backend a normal HTTP job API.
 For inference, the worker returns postprocessed solar predictions. EMS must use
 `predicted_solar_kw`, not `raw_predicted_solar_kw`.
 
+Predict payloads must include explicit postprocessing fields in each feature row:
+
+- `target_time`
+- `target_hour`
+- `installed_capacity_kw`
+
+Optional postprocessing fields:
+
+- `latitude`
+- `longitude`
+- `timezone`
+- `is_daylight`
+- `estimated_irradiance` in W/m2 scale, not the normalized training feature
+- `solar_elevation`
+
+These fields are not model training columns. They are safety inputs for
+postprocessing only.
+
+When `target_time`, `latitude`, `longitude`, and `timezone` are present, the
+worker computes `solar_elevation` with `astral`. Keep `target_time` aligned to
+the forecast target horizon, not the source telemetry timestamp.
+
 Postprocessing rules:
 
 - night or very low irradiance: `predicted_solar_kw = 0`
@@ -45,6 +67,7 @@ Postprocessing rules:
 - `ems/ai/runpod/handler.py`
 - `ems/ai/scripts/runpod_client.py`
 - `ems/ai/configs/runpod/training_job_example.yaml`
+- `ems/ai/configs/runpod/predict_job_example.yaml`
 
 ## Cost Guard
 
@@ -78,6 +101,12 @@ Submit after an endpoint exists:
 
 ```powershell
 python ems\ai\scripts\runpod_client.py --env-file "G:\내 드라이브\s305-ai-data\.env" submit --endpoint-id "<endpoint_id>" --data-zip-url "<https_data_zip_url>"
+```
+
+Submit a sync predict smoke test after an endpoint exists:
+
+```powershell
+python ems\ai\scripts\runpod_client.py --env-file "G:\내 드라이브\s305-ai-data\.env" submit --config ems\ai\configs\runpod\predict_job_example.yaml --endpoint-id "<endpoint_id>" --mode sync
 ```
 
 Check a job:

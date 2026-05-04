@@ -6,7 +6,7 @@ station_id: 165
 
 request:
   auth_env: KMA_AUTH_KEY
-  env_file: "G:/내 드라이브/s305-ai-data/.env"
+  env_file: ems/ai/.env
   base_url: https://apihub.kma.go.kr/api/typ01/url/kma_sfctm3.php
   timeout_seconds: 30
   sleep_seconds: 0.5

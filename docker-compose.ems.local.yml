@@ -1,0 +1,109 @@
+name: ems
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=ems
+      - POSTGRES_PASSWORD=ems1234
+      - POSTGRES_DB=emsdb
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./ems/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./ems/db/aggregation.sql:/docker-entrypoint-initdb.d/02-aggregation.sql
+      - ./ems/db/migrate_001_verified_column.sql:/docker-entrypoint-initdb.d/03-migrate_001.sql
+      - ./ems/db/migrate_002_alarm_columns.sql:/docker-entrypoint-initdb.d/04-migrate_002.sql
+      - ./ems/db/migrate_003_topology.sql:/docker-entrypoint-initdb.d/05-migrate_003.sql
+      - ./ems/db/migrate_004_policy_seed.sql:/docker-entrypoint-initdb.d/06-migrate_004.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ems -d emsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  ingestion:
+    build: ./ems/ingestion
+    container_name: ingestion
+    ports:
+      - "5000:5000"
+    environment:
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SITE_ID=PLANT-ALPHA
+    depends_on:
+      - mosquitto
+      - redis
+    restart: unless-stopped
+
+  state-processor:
+    build: ./ems/state-processor
+    container_name: state-processor
+    ports:
+      - "5002:5002"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SITE_ID=PLANT-ALPHA
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=emsdb
+      - DB_USER=ems
+      - DB_PASSWORD=ems1234
+    depends_on:
+      redis:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  control:
+    build: ./ems/control
+    container_name: control
+    ports:
+      - "5001:5001"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - SITE_ID=PLANT-ALPHA
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=emsdb
+      - DB_USER=ems
+      - DB_PASSWORD=ems1234
+    depends_on:
+      redis:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
+
+volumes:
+  timescaledb_data:

@@ -1,0 +1,21 @@
+source: gk2a_le2_cloud_archive
+
+request:
+  auth_env: KMA_AUTH_KEY
+  env_file: ems/ai/.env
+  timeout_seconds: 120
+  sleep_seconds: 0.2
+  retries: 3
+  base_url: https://apihub.kma.go.kr/api/typ05/api/GK2A/LE2
+
+collection:
+  start_time: "2025-01-01T00:30:00+09:00"
+  end_time: "2025-12-31T23:30:00+09:00"
+  frequency_minutes: 60
+  area: KO
+  products: [CLA, CLD]
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2"
+  overwrite: false
+  save_manifest: true

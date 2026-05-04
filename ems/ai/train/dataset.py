@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
-import torch
-from torch.utils.data import Dataset
+
+if TYPE_CHECKING:
+    import torch
+    from torch.utils.data import Dataset
+else:
+    Dataset = object
 
 
 def load_dataframe(path: str | Path, file_format: str) -> pd.DataFrame:
@@ -18,6 +23,11 @@ def load_dataframe(path: str | Path, file_format: str) -> pd.DataFrame:
 
 class TabularDataset(Dataset):
     def __init__(self, frame: pd.DataFrame, feature_columns: list[str], target_column: str) -> None:
+        try:
+            import torch
+        except ImportError as error:
+            raise RuntimeError("PyTorch is required for TabularDataset. LightGBM paths do not require it.") from error
+
         missing = [column for column in feature_columns + [target_column] if column not in frame.columns]
         if missing:
             raise ValueError(f"Missing columns in dataset: {missing}")

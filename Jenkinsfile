@@ -95,9 +95,9 @@ pipeline {
                     //
                     //   frontend 전용 정책:
                     //     ✅ master push (frontend/ 변경)             → prod gateway 의 정적파일 갱신
-                    //     ✅ frontend push (직접 또는 fe/xxx → frontend MR 머지) → dev gateway 의 정적파일 갱신
-                    //     ❌ frontend → master MR                     → CI 만 (머지 후 master push 가 prod 배포)
-                    //     ❌ feature(fe/xxx) → frontend MR (생성 시)  → CI 만
+                    //     ✅ front push (직접 또는 fe/xxx → front MR 머지)     → dev gateway 의 정적파일 갱신
+                    //     ❌ front → master MR                        → CI 만 (머지 후 master push 가 prod 배포)
+                    //     ❌ feature(fe/xxx) → front MR (생성 시)     → CI 만
                     // ──────────────────────────────────────
                     def shouldDeploy = false
                     if (isMR && targetBranch == 'master') {
@@ -110,7 +110,7 @@ pipeline {
                     def shouldDeployDev = !isMR && currentBranch == 'ems'
                     env.SHOULD_DEPLOY_DEV = shouldDeployDev ? 'true' : 'false'
 
-                    def shouldDeployFrontendDev = !isMR && currentBranch == 'frontend'
+                    def shouldDeployFrontendDev = !isMR && currentBranch == 'front'
                     env.SHOULD_DEPLOY_FRONTEND_DEV = shouldDeployFrontendDev ? 'true' : 'false'
 
                     echo """
@@ -180,7 +180,7 @@ pipeline {
                     when { expression { env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' } }
                     steps { sh 'docker compose -f docker-compose.control.yml build' }
                 }
-                // Vue 프론트엔드 빌드 — prod 배포 또는 frontend 브랜치 push 시
+                // Vue 프론트엔드 빌드 — prod 배포 또는 front 브랜치 push 시
                 // node:20-alpine 컨테이너로 빌드해서 결과물 frontend/dist/ 를 산출
                 stage('Build - Frontend') {
                     when {
@@ -191,11 +191,19 @@ pipeline {
                     }
                     steps {
                         sh '''
-                            docker run --rm \
-                              -v "${WORKSPACE}/frontend:/app" \
-                              -w /app \
-                              node:20-alpine \
-                              sh -c "npm ci && npm run build"
+                            cat <<EOF > frontend.Dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+EOF
+                            docker build -t frontend-builder -f frontend.Dockerfile .
+                            docker create --name temp-fe frontend-builder
+                            rm -rf frontend/dist
+                            docker cp temp-fe:/app/dist ./frontend/dist
+                            docker rm temp-fe
                             ls -la frontend/dist | head -20
                         '''
                     }
@@ -263,7 +271,7 @@ pipeline {
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/app'
                                 scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml ubuntu@${GATEWAY_IP}:/home/ubuntu/app/
                                 scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/app/
-                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.gateway.yml up -d --build'
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.gateway.yml up -d --build --remove-orphans'
                             '''
                         }
                     }
@@ -278,7 +286,7 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/app/ems/
                                     scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/app/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.ingestion.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.ingestion.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -293,7 +301,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.state.yml .env ubuntu@${STATE_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/state-processor ems/db-writer ubuntu@${STATE_IP}:/home/ubuntu/app/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.state.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.state.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -308,7 +316,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -323,7 +331,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'mkdir -p /home/ubuntu/app/infra'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/app/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.db.yml up -d'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.db.yml up -d --remove-orphans'
                                 '''
                             }
                         }
@@ -342,10 +350,10 @@ pipeline {
                         configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
                                 sh '''
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev /home/ubuntu/dev/certs /home/ubuntu/dev/frontend-dist'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -361,7 +369,7 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/dev/ems/
                                     scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/dev/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.ingestion.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.ingestion.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -376,7 +384,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.state.yml .env ubuntu@${STATE_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/state-processor ems/db-writer ubuntu@${STATE_IP}:/home/ubuntu/dev/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.state.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.state.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -391,7 +399,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -406,7 +414,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'mkdir -p /home/ubuntu/dev/infra'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/dev/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d --remove-orphans'
                                 '''
                             }
                         }
@@ -416,7 +424,7 @@ pipeline {
                 // ──────────────────────────────────────
                 //  Frontend (정적파일) — Volume Mount 방식
                 //   - prod: master push + frontend/ 변경 → /home/ubuntu/app/frontend-dist 갱신 → gateway nginx 가 서빙
-                //   - dev : frontend 브랜치 push → /home/ubuntu/dev/frontend-dist 갱신 → dev gateway nginx 가 서빙
+                //   - dev : front 브랜치 push → /home/ubuntu/dev/frontend-dist 갱신 → dev gateway nginx 가 서빙
                 //   - 빌드 산출물 (frontend/dist/) 은 Build - Frontend stage 에서 생성됨
                 // ──────────────────────────────────────
                 stage('Deploy - Frontend') {
@@ -424,6 +432,7 @@ pipeline {
                     steps {
                         sshagent(credentials: ['ec2-ssh-key']) {
                             sh '''
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/app/frontend-dist || true'
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/app/frontend-dist'
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/app/frontend-dist/*'
                                 scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/app/frontend-dist/
@@ -438,12 +447,13 @@ pipeline {
                         configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
                             sshagent(credentials: ['ec2-ssh-key']) {
                                 sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/dev/frontend-dist || true'
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev/frontend-dist'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/dev/frontend-dist/*'
                                     scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/frontend-dist/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -454,8 +464,27 @@ pipeline {
     }
 
     post {
-        success { echo '=== 파이프라인 성공 ===' }
-        failure { echo '=== 파이프라인 실패 ===' }
+        success {
+            mattermostSend(
+                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
+                color: 'good',
+                message: """### :white_check_mark: 빌드 성공
+**Job:** ${env.JOB_NAME}
+**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
+**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})"""
+            )
+        }
+        failure {
+            mattermostSend(
+                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
+                color: 'danger',
+                message: """### :x: 빌드 실패
+**Job:** ${env.JOB_NAME}
+**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
+**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})
+**Console:** [로그 확인](${env.BUILD_URL}console)"""
+            )
+        }
         always  { sh 'docker system prune -f 2>/dev/null || true' }
     }
 }

@@ -1,0 +1,34 @@
+source: gk2a_cloud_area
+
+request:
+  auth_env: KMA_AUTH_KEY
+  env_file: ems/ai/.env
+  timeout_seconds: 30
+  sleep_seconds: 0.5
+  retries: 3
+  base_urls:
+    cloud_analysis_area: https://apihub.kma.go.kr/api/typ02/openApi/CloudSatlitInfoService/getGk2aclaArea
+    cloud_detection_area: https://apihub.kma.go.kr/api/typ02/openApi/CloudSatlitInfoService/getGk2acldArea
+
+collection:
+  # API accepts recent observation times. If omitted in CLI, this value is used.
+  date_time: "202604300000"
+  data_type: JSON
+  num_of_rows: 10
+  result_types:
+    cloud_analysis_area: ca
+    cloud_detection_area: cld
+
+sites:
+  - site_id: seoul
+    region: 서울시
+    dong_code: "1100000000"
+  - site_id: daejeon
+    region: 대전시
+    dong_code: "3000000000"
+
+storage:
+  raw_root: "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_cloud_area"
+  save_raw_response: true
+  save_parsed_csv: true
+  save_manifest: true

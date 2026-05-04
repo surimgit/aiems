@@ -1,0 +1,16 @@
+feature,importance
+past_solar_P_kw,1151
+hour_of_day_sin,536
+hour_of_day_cos,336
+past_solar_P_kw_lag_1,319
+day_of_year_cos,232
+irradiance,154
+temperature,151
+day_of_year_sin,131
+cloud_cover,122
+rolling_mean_3h,120
+rolling_mean_24h,97
+past_solar_P_kw_lag_24,51
+humidity,44
+wind_speed,25
+rainfall_mm,11
