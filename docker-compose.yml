@@ -12,8 +12,8 @@ services:
         condition: service_healthy
       control:
         condition: service_healthy
-      ai-service:
-        condition: service_healthy
+      # ai-service:
+      #   condition: service_healthy
 
   stream-init:
     build:
@@ -73,21 +73,21 @@ services:
       stream-init:
         condition: service_completed_successfully
 
-  ai-service:
-    build:
-      context: ./ems/ai-service
-      args:
-        PORT: 5004
-    ports:
-      - "5004:5004"
-    env_file: .env
-    environment:
-      FLASK_APP: app.main:app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      stream-init:
-        condition: service_completed_successfully
+  # ai-service:
+  #   build:
+  #     context: ./ems/ai-service
+  #     args:
+  #       PORT: 5004
+  #   ports:
+  #     - "5004:5004"
+  #   env_file: .env
+  #   environment:
+  #     FLASK_APP: app.main:app
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     stream-init:
+  #       condition: service_completed_successfully
 
   db-writer:
     build:

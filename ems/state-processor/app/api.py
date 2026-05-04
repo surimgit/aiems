@@ -9,10 +9,143 @@ from marshmallow import Schema, fields
 
 from .config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
+    CONTROL_DB_HOST, CONTROL_DB_PORT, CONTROL_DB_NAME,
+    CONTROL_DB_USER, CONTROL_DB_PASSWORD,
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
 )
 
 _KNOWN_SITES = [SITE_ID]
+
+# ── DTO 변환 헬퍼 (module-level) ──────────────────────────────────────────────
+# 시뮬레이터의 DIESEL → 프론트 enum DIESEL_GENERATOR 로 변환.
+_RESOURCE_TYPE_MAP = {
+    "DIESEL": "DIESEL_GENERATOR",
+}
+
+
+def _state_to_resource(state: dict) -> dict:
+    """Redis state → 프론트 ResourceDto."""
+    rt_raw = (state.get("resource_type") or "").upper()
+    rt = _RESOURCE_TYPE_MAP.get(rt_raw, rt_raw)
+    reported = state.get("reported_state") or {}
+    comms = state.get("comms_health")
+
+    # 단일 status 산출: emergency > stale > NORMAL.
+    if state.get("emergency"):
+        status = "EMERGENCY"
+    elif comms == "stale":
+        status = "OFFLINE"
+    else:
+        status = "NORMAL"
+
+    out: dict = {
+        "resource_id": state.get("device_id"),
+        "resource_type": rt,
+        "name": state.get("device_id"),
+        "status": status,
+        "comms_health": comms,
+    }
+
+    if rt == "SWITCH":
+        out["position"] = reported.get("switch_state") or "UNKNOWN"
+        out["controllable"] = reported.get("controllable")
+        out["interlock_blocked"] = reported.get("interlock_blocked")
+        return out
+
+    telemetry = {
+        "p_kw": reported.get("P"),
+        "q_kvar": reported.get("Q"),
+        "v_volt": reported.get("V"),
+        "i_amp": reported.get("I"),
+        "f_hz": reported.get("f"),
+        "pf": reported.get("PF"),
+        "kwh": reported.get("kwh_total") or reported.get("kwh"),
+        "soc": reported.get("SOC"),
+        "operating_mode": reported.get("operating_mode"),
+    }
+    out["telemetry"] = {k: v for k, v in telemetry.items() if v is not None}
+    return out
+
+
+def _state_to_ess_status(state: dict) -> dict:
+    """ESS state → 프론트 EssStatusDto. ESS 가 아니면 None."""
+    rt = (state.get("resource_type") or "").upper()
+    if rt != "ESS":
+        return None
+    reported = state.get("reported_state") or {}
+    p = reported.get("P") or 0.0
+    mode = (reported.get("operating_mode") or "").lower()
+
+    # P 부호 + operating_mode 로 status 판정 (DTO enum: idle/charging/discharging/fault)
+    if state.get("emergency"):
+        status = "fault"
+    elif mode == "charge" or p < 0:
+        status = "charging"
+    elif mode == "discharge" or p > 0:
+        status = "discharging"
+    else:
+        status = "idle"
+
+    return {
+        "ess_id": state.get("device_id"),
+        "name": state.get("device_id"),
+        "capacity_kwh": reported.get("capacity_kwh") or 0.0,
+        "max_power_kw": reported.get("power_limit_kw") or 0.0,
+        "soc": reported.get("SOC") or 0.0,
+        "soh": reported.get("SOH"),
+        "status": status,
+        "power_kw": p,
+        "updated_at": state.get("calculated_at") or state.get("timestamp"),
+    }
+
+
+def _compute_summary(site_id: str, states: list[dict]) -> dict:
+    """Redis state 리스트 → 프론트 PlantSummaryDto.
+
+    grid_power_kw 는 시뮬레이터에 GRID 자원이 없으므로 0 으로 채운다.
+    diesel_power_kw / ess_soc_avg 는 프론트 DTO 외 추가 정보 (호환).
+    """
+    pv_power = 0.0
+    ess_power = 0.0
+    load_power = 0.0
+    diesel_power = 0.0
+    ess_soc_list = []
+    latest_ts = None
+
+    for s in states:
+        rs = s.get("reported_state") or {}
+        p = rs.get("P") or 0.0
+        rt = (s.get("resource_type") or "").upper()
+        ts = s.get("calculated_at") or s.get("timestamp")
+        if ts and (latest_ts is None or ts > latest_ts):
+            latest_ts = ts
+
+        if rt == "SOLAR":
+            pv_power += p
+        elif rt == "ESS":
+            ess_power += p
+            soc = rs.get("SOC")
+            if soc is not None:
+                ess_soc_list.append(soc)
+        elif rt == "LOAD":
+            load_power += abs(p)
+        elif rt == "DIESEL":
+            diesel_power += p
+
+    net_power = pv_power + ess_power + diesel_power - load_power
+    ess_soc_avg = round(sum(ess_soc_list) / len(ess_soc_list), 2) if ess_soc_list else None
+
+    return {
+        "site_id": site_id,
+        "timestamp": latest_ts,
+        "net_power_kw": round(net_power, 2),
+        "pv_power_kw": round(pv_power, 2),
+        "ess_power_kw": round(ess_power, 2),
+        "grid_power_kw": 0.0,
+        "load_power_kw": round(load_power, 2),
+        "diesel_power_kw": round(diesel_power, 2),
+        "ess_soc_avg": ess_soc_avg,
+    }
 
 
 def create_app() -> Flask:
@@ -54,9 +187,11 @@ def _register_routes(app: Flask) -> None:
     # ── DB / Redis helpers ────────────────────────────────────────────────────
 
     _db_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+    _control_db_pool: psycopg2.pool.ThreadedConnectionPool | None = None
     _redis_client: redis.Redis | None = None
 
     def get_db_pool() -> psycopg2.pool.ThreadedConnectionPool:
+        # TimescaleDB pool — 시계열 (sensor_data / event_log / control_history).
         nonlocal _db_pool
         if _db_pool is None:
             _db_pool = psycopg2.pool.ThreadedConnectionPool(
@@ -65,6 +200,18 @@ def _register_routes(app: Flask) -> None:
                 dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
             )
         return _db_pool
+
+    def get_control_db_pool() -> psycopg2.pool.ThreadedConnectionPool:
+        # PostgreSQL.control_db pool — 운영 데이터 (topology_*).
+        # state-processor 는 read-only 로만 접근 (단일 진실은 EMS 토폴로지 API).
+        nonlocal _control_db_pool
+        if _control_db_pool is None:
+            _control_db_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1, maxconn=5,
+                host=CONTROL_DB_HOST, port=CONTROL_DB_PORT,
+                dbname=CONTROL_DB_NAME, user=CONTROL_DB_USER, password=CONTROL_DB_PASSWORD,
+            )
+        return _control_db_pool
 
     def get_redis() -> redis.Redis:
         nonlocal _redis_client
@@ -89,13 +236,66 @@ def _register_routes(app: Flask) -> None:
 
     class PlantSummarySchema(Schema):
         site_id = fields.String()
-        timestamp = fields.String()
+        timestamp = fields.String(allow_none=True)
         net_power_kw = fields.Float()
         pv_power_kw = fields.Float()
         ess_power_kw = fields.Float()
+        grid_power_kw = fields.Float()  # 시뮬레이터에 GRID 없음 → 0 고정. 프론트 DTO 필수.
         load_power_kw = fields.Float()
-        diesel_power_kw = fields.Float()
+        diesel_power_kw = fields.Float()  # 프론트 DTO 외 추가 필드 — 호환성 OK.
         ess_soc_avg = fields.Float(allow_none=True)
+
+    class EssStatusSchema(Schema):
+        ess_id = fields.String()
+        name = fields.String(allow_none=True)
+        capacity_kwh = fields.Float()
+        max_power_kw = fields.Float()
+        soc = fields.Float()
+        soh = fields.Float(allow_none=True)
+        status = fields.String()  # 'idle' / 'charging' / 'discharging' / 'fault'
+        power_kw = fields.Float(allow_none=True)
+        updated_at = fields.String(allow_none=True)
+
+    class PlantStateSchema(Schema):
+        site_id = fields.String()
+        timestamp = fields.String(allow_none=True)
+        # 아래 3개는 프론트에서 옵션. 본 응답에서는 항상 채워서 내보낸다.
+        ess_list = fields.List(fields.Nested(EssStatusSchema))
+        resources = fields.List(fields.Dict())  # ResourceSchema 와 동일 구조
+        summary = fields.Nested(PlantSummarySchema)
+
+    # ── Topology DTOs (프론트 api-contracts.ts 기준) ────────────────────────
+    class PositionSchema(Schema):
+        x = fields.Float()
+        y = fields.Float()
+
+    class TopologyNodeSchema(Schema):
+        node_id = fields.String()
+        node_type = fields.String()           # GENERATION / STORAGE / LOAD / GRID / BUS
+        resource_id = fields.String(allow_none=True)
+        position = fields.Nested(PositionSchema)
+        status = fields.String()              # NORMAL / WARNING / EMERGENCY
+
+    class TopologyLineSchema(Schema):
+        line_id = fields.String()
+        from_node_id = fields.String()
+        to_node_id = fields.String()
+        direction = fields.String()           # FORWARD / REVERSE / BIDIRECTIONAL
+        flow_kw = fields.Float()
+        status = fields.String()              # NORMAL / OPEN / BLOCKED / FAULT / UNKNOWN
+
+    class TopologySwitchSchema(Schema):
+        switch_id = fields.String()
+        line_id = fields.String()
+        position = fields.String()            # OPEN / CLOSED
+        controllable = fields.Boolean()
+        interlock_blocked = fields.Boolean()
+
+    class TopologySchema(Schema):
+        site_id = fields.String()
+        nodes = fields.List(fields.Nested(TopologyNodeSchema))
+        lines = fields.List(fields.Nested(TopologyLineSchema))
+        switches = fields.List(fields.Nested(TopologySwitchSchema))
 
     class DeviceStateSchema(Schema):
         device_id = fields.String()
@@ -111,15 +311,20 @@ def _register_routes(app: Flask) -> None:
         desired_state = fields.Dict(allow_none=True)
         last_command_id = fields.String(allow_none=True)
 
+    # 프론트 EventDto 와 1:1 매칭 (api-contracts.ts).
+    # DB 컬럼명 → DTO 필드명: time→timestamp, event_type→event_code, device_id→resource_id,
+    # alarm_id → event_id (DB에선 알람용 UUID 였지만 DTO 의 식별자로 재사용).
     class EventLogSchema(Schema):
-        time = fields.DateTime()
-        site_id = fields.String()
-        device_id = fields.String()
-        resource_type = fields.String()
-        event_type = fields.String()
-        severity = fields.String()
-        message = fields.String()
-        payload = fields.Dict()
+        event_id = fields.String()
+        event_code = fields.String()
+        severity = fields.String()  # INFO / WARNING / ALARM / EMERGENCY
+        message = fields.String(allow_none=True)
+        timestamp = fields.String()
+        site_id = fields.String(allow_none=True)
+        resource_id = fields.String(allow_none=True)
+        trace_id = fields.String(allow_none=True)
+        reason_code = fields.String(allow_none=True)
+        payload = fields.Dict(allow_none=True)
 
     class AlarmSchema(Schema):
         alarm_id = fields.String()
@@ -152,6 +357,35 @@ def _register_routes(app: Flask) -> None:
         soc = fields.Float(allow_none=True)
         sample_count = fields.Integer()
 
+    # 프론트 ResourceDto 와 1:1 매칭. 필드명 / 타입은 frontend/src/types/api-contracts.ts 정답.
+    class ResourceTelemetrySchema(Schema):
+        p_kw = fields.Float(allow_none=True)
+        q_kvar = fields.Float(allow_none=True)
+        v_volt = fields.Float(allow_none=True)
+        i_amp = fields.Float(allow_none=True)
+        f_hz = fields.Float(allow_none=True)
+        pf = fields.Float(allow_none=True)
+        kwh = fields.Float(allow_none=True)
+        soc = fields.Float(allow_none=True)
+        operating_mode = fields.String(allow_none=True)
+
+    class ResourceSchema(Schema):
+        resource_id = fields.String()
+        resource_type = fields.String()
+        name = fields.String(allow_none=True)
+        status = fields.String(allow_none=True)
+        comms_health = fields.String(allow_none=True)
+        position = fields.String(allow_none=True)
+        controllable = fields.Boolean(allow_none=True)
+        interlock_blocked = fields.Boolean(allow_none=True)
+        from_node = fields.String(allow_none=True)
+        to_node = fields.String(allow_none=True)
+        flow_kw = fields.Float(allow_none=True)
+        import_kw = fields.Float(allow_none=True)
+        export_kw = fields.Float(allow_none=True)
+        limit_kw = fields.Float(allow_none=True)
+        telemetry = fields.Nested(ResourceTelemetrySchema, allow_none=True)
+
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
     blp = Blueprint("state", "state", url_prefix="/api")
@@ -172,56 +406,33 @@ def _register_routes(app: Flask) -> None:
         @blp.response(200, PlantSummarySchema)
         def get(self, site_id):
             """Plant 전력 흐름 요약 — 대시보드 상단 숫자"""
-            states = _get_site_states(site_id)
-
-            pv_power = 0.0
-            ess_power = 0.0
-            load_power = 0.0
-            diesel_power = 0.0
-            ess_soc_list = []
-            latest_ts = None
-
-            for s in states:
-                rs = s.get("reported_state") or {}
-                p = rs.get("P") or 0.0
-                rt = (s.get("resource_type") or "").upper()
-                ts = s.get("calculated_at") or s.get("timestamp")
-                if ts and (latest_ts is None or ts > latest_ts):
-                    latest_ts = ts
-
-                if rt == "SOLAR":
-                    pv_power += p
-                elif rt == "ESS":
-                    ess_power += p
-                    soc = rs.get("SOC")
-                    if soc is not None:
-                        ess_soc_list.append(soc)
-                elif rt == "LOAD":
-                    load_power += abs(p)
-                elif rt == "DIESEL":
-                    diesel_power += p
-
-            net_power = pv_power + ess_power + diesel_power - load_power
-            ess_soc_avg = round(sum(ess_soc_list) / len(ess_soc_list), 2) if ess_soc_list else None
-
-            return {
-                "site_id": site_id,
-                "timestamp": latest_ts,
-                "net_power_kw": round(net_power, 2),
-                "pv_power_kw": round(pv_power, 2),
-                "ess_power_kw": round(ess_power, 2),
-                "load_power_kw": round(load_power, 2),
-                "diesel_power_kw": round(diesel_power, 2),
-                "ess_soc_avg": ess_soc_avg,
-            }
+            return _compute_summary(site_id, _get_site_states(site_id))
 
     # ── 실시간 디바이스 상태 ────────────────────────────────────────────────
 
     @blp.route("/plants/<string:site_id>/state")
     class PlantStateResource(MethodView):
+        @blp.response(200, PlantStateSchema)
+        def get(self, site_id):
+            """Plant 통합 상태 — summary + resources + ess_list 한 번에 (대시보드 메인 응답)."""
+            states = _get_site_states(site_id)
+            summary = _compute_summary(site_id, states)
+            resources = [_state_to_resource(s) for s in states]
+            ess_list = [e for e in (_state_to_ess_status(s) for s in states) if e is not None]
+            return {
+                "site_id": site_id,
+                "timestamp": summary["timestamp"],
+                "ess_list": ess_list,
+                "resources": resources,
+                "summary": summary,
+            }
+
+    # device-level 원시 상태가 필요한 경우의 보조 엔드포인트 (디버깅 / 내부용).
+    @blp.route("/plants/<string:site_id>/devices")
+    class PlantDeviceListResource(MethodView):
         @blp.response(200, DeviceStateSchema(many=True))
         def get(self, site_id):
-            """Plant 내 전체 디바이스 최신 상태 (Redis)"""
+            """Plant 내 전체 디바이스 원시 상태 (Redis 그대로)"""
             resource_type = request.args.get("resource_type")
             states = _get_site_states(site_id)
             if resource_type:
@@ -244,13 +455,168 @@ def _register_routes(app: Flask) -> None:
                 for s in states
             ]
 
+    @blp.route("/plants/<string:site_id>/resources")
+    class PlantResourceListResource(MethodView):
+        @blp.response(200, ResourceSchema(many=True))
+        def get(self, site_id):
+            """Plant 자원 목록 (대시보드 카드용) — Redis state → ResourceDto"""
+            return [_state_to_resource(s) for s in _get_site_states(site_id)]
+
+    # ── 토폴로지 (단선도) ─────────────────────────────────────────────────────
+    # 단일 진실: control_db.topology_{nodes,lines,switches}.
+    # 동적 정보(라인 flow, 노드 emergency 등) 는 Redis state 로 보강.
+
+    @blp.route("/plants/<string:site_id>/topology")
+    class PlantTopologyResource(MethodView):
+        @blp.response(200, TopologySchema)
+        def get(self, site_id):
+            """Plant 토폴로지 — DB 정적 정보 + Redis state 로 status/flow 산출."""
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT node_id, node_type, device_id, label, x, y
+                          FROM topology_nodes WHERE site_id = %s
+                        """,
+                        (site_id,),
+                    )
+                    node_rows = cur.fetchall()
+
+                    cur.execute(
+                        """
+                        SELECT line_id, from_node_id, to_node_id, rating_kw
+                          FROM topology_lines WHERE site_id = %s
+                        """,
+                        (site_id,),
+                    )
+                    line_rows = cur.fetchall()
+
+                    cur.execute(
+                        """
+                        SELECT switch_id, line_id, is_closed, controllable
+                          FROM topology_switches WHERE site_id = %s
+                        """,
+                        (site_id,),
+                    )
+                    switch_rows = cur.fetchall()
+            finally:
+                pool.putconn(conn)
+
+            # Redis state 인덱스 (device_id → state) — 노드 status 산출용.
+            states = _get_site_states(site_id)
+            state_by_device = {s.get("device_id"): s for s in states if s.get("device_id")}
+            state_by_switch = {
+                s.get("device_id"): s for s in states
+                if (s.get("resource_type") or "").upper() == "SWITCH"
+            }
+
+            # ── nodes 변환 ──
+            def _node_status(device_id: str | None) -> str:
+                if not device_id:
+                    return "NORMAL"
+                s = state_by_device.get(device_id) or {}
+                if s.get("emergency"):
+                    return "EMERGENCY"
+                if (s.get("comms_health") or "") == "stale":
+                    return "WARNING"
+                return "NORMAL"
+
+            nodes = [
+                {
+                    "node_id": r[0],
+                    "node_type": r[1],
+                    "resource_id": r[2],
+                    "position": {"x": r[4] if r[4] is not None else 0.0,
+                                 "y": r[5] if r[5] is not None else 0.0},
+                    "status": _node_status(r[2]),
+                }
+                for r in node_rows
+            ]
+
+            # ── switches 인덱스 (line_id → switch row) ──
+            sw_by_line: dict[str, tuple] = {r[1]: r for r in switch_rows}
+
+            # ── lines 변환 (flow_kw 는 Redis state 에서 from_node device 의 P 사용) ──
+            node_device_map = {r[0]: r[2] for r in node_rows}
+
+            def _line_flow_kw(from_node_id: str) -> float:
+                dev_id = node_device_map.get(from_node_id)
+                if not dev_id:
+                    return 0.0
+                s = state_by_device.get(dev_id) or {}
+                p = (s.get("reported_state") or {}).get("P")
+                return float(p) if p is not None else 0.0
+
+            def _line_status(line_id: str) -> str:
+                # 스위치가 OPEN 이면 라인도 OPEN.
+                # 우선순위: Redis state (실시간) > DB is_closed (정적).
+                # blocked / fault 는 별도 시그널이 없어 미구현.
+                sw = sw_by_line.get(line_id)
+                if not sw:
+                    return "UNKNOWN"
+                switch_id = sw[0]
+                sw_state = state_by_switch.get(switch_id) or {}
+                live_pos = (sw_state.get("reported_state") or {}).get("switch_state")
+                if live_pos == "OPEN":
+                    return "OPEN"
+                if live_pos == "CLOSED":
+                    return "NORMAL"
+                # Redis 에 정보 없으면 DB fallback (sw[2] = is_closed)
+                return "NORMAL" if sw[2] else "OPEN"
+
+            def _direction(flow_kw: float) -> str:
+                if flow_kw > 0.01:
+                    return "FORWARD"
+                if flow_kw < -0.01:
+                    return "REVERSE"
+                return "BIDIRECTIONAL"
+
+            lines = []
+            for r in line_rows:
+                line_id, from_node_id, to_node_id, _rating = r
+                flow = _line_flow_kw(from_node_id)
+                lines.append({
+                    "line_id": line_id,
+                    "from_node_id": from_node_id,
+                    "to_node_id": to_node_id,
+                    "direction": _direction(flow),
+                    "flow_kw": round(flow, 2),
+                    "status": _line_status(line_id),
+                })
+
+            # ── switches 변환 ──
+            # interlock_blocked 는 switch state Redis 에서 가져옴.
+            switches = []
+            for r in switch_rows:
+                switch_id, line_id, is_closed, controllable = r
+                sw_state = state_by_switch.get(switch_id) or {}
+                reported = sw_state.get("reported_state") or {}
+                # DB is_closed 보다 Redis 의 실시간 switch_state 가 우선.
+                position = reported.get("switch_state") or ("CLOSED" if is_closed else "OPEN")
+                switches.append({
+                    "switch_id": switch_id,
+                    "line_id": line_id,
+                    "position": position,
+                    "controllable": bool(controllable),
+                    "interlock_blocked": bool(reported.get("interlock_blocked", False)),
+                })
+
+            return {
+                "site_id": site_id,
+                "nodes": nodes,
+                "lines": lines,
+                "switches": switches,
+            }
+
     # ── 이벤트 로그 ────────────────────────────────────────────────────────────
 
     @blp.route("/plants/<string:site_id>/events")
     class PlantEventResource(MethodView):
         @blp.response(200, EventLogSchema(many=True))
         def get(self, site_id):
-            """Plant 이벤트 로그 조회"""
+            """Plant 이벤트 로그 조회 — 프론트 EventDto 형식."""
             device_id = request.args.get("device_id")
             severity = request.args.get("severity")
             limit = min(int(request.args.get("limit", 100)), 1000)
@@ -261,8 +627,11 @@ def _register_routes(app: Flask) -> None:
                 filters.append("device_id = %s")
                 params.append(device_id)
             if severity:
+                # 프론트는 'ALARM' 으로 보내지만 DB 는 'CRITICAL' 로 저장 — 역매핑
+                sev_upper = severity.upper()
+                db_sev = "CRITICAL" if sev_upper == "ALARM" else sev_upper
                 filters.append("severity = %s")
-                params.append(severity.upper())
+                params.append(db_sev)
 
             params.append(limit)
             pool = get_db_pool()
@@ -271,7 +640,7 @@ def _register_routes(app: Flask) -> None:
                 with conn.cursor() as cur:
                     cur.execute(
                         f"""
-                        SELECT time, site_id, device_id, resource_type,
+                        SELECT alarm_id, time, site_id, device_id,
                                event_type, severity, message, payload
                         FROM event_log
                         WHERE {" AND ".join(filters)}
@@ -283,10 +652,19 @@ def _register_routes(app: Flask) -> None:
             finally:
                 pool.putconn(conn)
 
+            # DB severity ↔ 프론트 enum 매핑. 'CRITICAL' 만 ALARM 으로, 나머지는 그대로.
+            def _map_sev(s: str) -> str:
+                return "ALARM" if (s or "").upper() == "CRITICAL" else (s or "").upper()
+
             return [
                 {
-                    "time": r[0], "site_id": r[1], "device_id": r[2], "resource_type": r[3],
-                    "event_type": r[4], "severity": r[5], "message": r[6],
+                    "event_id": str(r[0]) if r[0] else None,
+                    "timestamp": r[1].isoformat() if r[1] else None,
+                    "site_id": r[2],
+                    "resource_id": r[3],
+                    "event_code": r[4],
+                    "severity": _map_sev(r[5]),
+                    "message": r[6],
                     "payload": r[7] if isinstance(r[7], dict) else json.loads(r[7] or "{}"),
                 }
                 for r in rows
