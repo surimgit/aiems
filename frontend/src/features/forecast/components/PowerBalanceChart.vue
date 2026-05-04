@@ -40,18 +40,18 @@ const points = computed(() => {
 
 <style scoped>
 .panel-card {
-  @apply rounded border border-slate-700 bg-slate-900/80 p-4 text-slate-100;
+  @apply rounded border border-slate-700 bg-slate-900/80 p-3 text-slate-100;
 }
 
 .title {
-  @apply font-semibold mb-3;
+  @apply mb-2 font-semibold text-sm;
 }
 
 .chart-placeholder {
-  @apply h-40 rounded border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-400;
+  @apply min-h-[8rem] rounded border border-slate-700 bg-slate-950/60 p-2 text-xs text-slate-400;
 }
 
 .row {
-  @apply flex items-center justify-between border-b border-slate-800 py-1 last:border-b-0;
+  @apply flex items-center justify-between border-b border-slate-800 py-0.5 last:border-b-0;
 }
 </style>

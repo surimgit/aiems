@@ -15,15 +15,18 @@ const emit = defineEmits<{
   <section class="topology-stage">
     <div class="map-background" />
     <svg class="overlay" viewBox="0 0 1200 700" role="img" aria-label="Topology overlay">
-      <slot />
+      <slot name="svg" />
     </svg>
+    <div class="overlay-ui">
+      <slot name="overlay" />
+    </div>
     <button class="sr-only" @click="emit('select-node', 'sample-node')">Select node</button>
   </section>
 </template>
 
 <style scoped>
 .topology-stage {
-  @apply relative rounded border border-slate-700 overflow-hidden min-h-[420px];
+  @apply relative h-full min-h-0 rounded border border-slate-700 overflow-hidden;
 }
 
 .map-background {
@@ -33,5 +36,13 @@ const emit = defineEmits<{
 
 .overlay {
   @apply relative z-10 w-full h-full;
+}
+
+.overlay-ui {
+  @apply pointer-events-none absolute left-3 top-3 z-20;
+}
+
+.overlay-ui :deep(*) {
+  @apply pointer-events-auto;
 }
 </style>
