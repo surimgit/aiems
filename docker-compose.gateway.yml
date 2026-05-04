@@ -16,3 +16,7 @@ services:
       - ./gateway/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       # Cloudflare Origin Certificate 마운트 (read-only)
       - /etc/cloudflare:/etc/cloudflare:ro
+      # Vue 빌드 산출물 마운트 (read-only)
+      # - prod: /home/ubuntu/app/frontend-dist (Jenkins 가 master push 시 갱신)
+      # - dev : /home/ubuntu/dev/frontend-dist (Jenkins 가 frontend 브랜치 push 시 갱신)
+      - ./frontend-dist:/var/www/html:ro

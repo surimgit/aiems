@@ -75,7 +75,8 @@ pipeline {
                     env.CHANGED_STATE     = changes.contains('ems/state-processor/')  ? 'true' : 'false'
                     env.CHANGED_DBWRITER  = changes.contains('ems/db-writer/')        ? 'true' : 'false'
                     env.CHANGED_CONTROL   = changes.contains('ems/control/')          ? 'true' : 'false'
-                    env.CHANGED_AI        = changes.contains('ems/ai-service/')       ? 'true' : 'false'
+                    env.CHANGED_AI        = changes.contains('ems/ai/')              ? 'true' : 'false'
+                    env.CHANGED_FRONTEND  = changes.contains('frontend/')             ? 'true' : 'false'
                     env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
 
@@ -91,6 +92,12 @@ pipeline {
                     //     ✅ ems push (직접 또는 feature→ems MR 머지) → dev 배포
                     //     ❌ master push, master 타겟 MR              → prod 만 (dev X)
                     //     ❌ feature → ems MR (생성 시)               → CI 만
+                    //
+                    //   frontend 전용 정책:
+                    //     ✅ master push (frontend/ 변경)             → prod gateway 의 정적파일 갱신
+                    //     ✅ frontend push (직접 또는 fe/xxx → frontend MR 머지) → dev gateway 의 정적파일 갱신
+                    //     ❌ frontend → master MR                     → CI 만 (머지 후 master push 가 prod 배포)
+                    //     ❌ feature(fe/xxx) → frontend MR (생성 시)  → CI 만
                     // ──────────────────────────────────────
                     def shouldDeploy = false
                     if (isMR && targetBranch == 'master') {
@@ -103,6 +110,9 @@ pipeline {
                     def shouldDeployDev = !isMR && currentBranch == 'ems'
                     env.SHOULD_DEPLOY_DEV = shouldDeployDev ? 'true' : 'false'
 
+                    def shouldDeployFrontendDev = !isMR && currentBranch == 'frontend'
+                    env.SHOULD_DEPLOY_FRONTEND_DEV = shouldDeployFrontendDev ? 'true' : 'false'
+
                     echo """
                     === 변경 감지 결과 ===
                     이벤트 타입:     ${isMR ? 'MR (target=' + targetBranch + ')' : 'Push (branch=' + currentBranch + ')'}
@@ -110,9 +120,11 @@ pipeline {
                     Ingestion:       ${env.CHANGED_INGESTION}
                     State+DBWriter:  ${env.CHANGED_STATE} / ${env.CHANGED_DBWRITER}
                     Control+AI:      ${env.CHANGED_CONTROL} / ${env.CHANGED_AI}
+                    Frontend:        ${env.CHANGED_FRONTEND}
                     Infra:           ${env.CHANGED_INFRA}
                     Deploy (prod):   ${env.SHOULD_DEPLOY}
                     Deploy (dev):    ${env.SHOULD_DEPLOY_DEV}
+                    Deploy (FE-dev): ${env.SHOULD_DEPLOY_FRONTEND_DEV}
                     """
                 }
             }
@@ -141,7 +153,7 @@ pipeline {
         //             sh '''
         //                 sonar-scanner \
         //                     -Dsonar.projectKey=s14p31s305 \
-        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai-service/app,ems/db-writer/app
+        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai/app,ems/db-writer/app
         //             '''
         //         }
         //     }
@@ -167,6 +179,26 @@ pipeline {
                 stage('Build - Control+AI') {
                     when { expression { env.CHANGED_CONTROL == 'true' || env.CHANGED_AI == 'true' } }
                     steps { sh 'docker compose -f docker-compose.control.yml build' }
+                }
+                // Vue 프론트엔드 빌드 — prod 배포 또는 frontend 브랜치 push 시
+                // node:20-alpine 컨테이너로 빌드해서 결과물 frontend/dist/ 를 산출
+                stage('Build - Frontend') {
+                    when {
+                        expression {
+                            (env.SHOULD_DEPLOY == 'true' && env.CHANGED_FRONTEND == 'true') ||
+                            env.SHOULD_DEPLOY_FRONTEND_DEV == 'true'
+                        }
+                    }
+                    steps {
+                        sh '''
+                            docker run --rm \
+                              -v "${WORKSPACE}/frontend:/app" \
+                              -w /app \
+                              node:20-alpine \
+                              sh -c "npm ci && npm run build"
+                            ls -la frontend/dist | head -20
+                        '''
+                    }
                 }
             }
         }
@@ -207,7 +239,7 @@ pipeline {
                     when { expression { env.CHANGED_AI == 'true' } }
                     steps {
                         sh '''
-                            docker compose -f docker-compose.control.yml run --rm --no-deps ai-service \
+                            docker compose -f docker-compose.control.yml run --rm --no-deps ai \
                                 sh -c "pip install pytest && pytest tests/ -v --tb=short || true"
                         '''
                     }
@@ -275,7 +307,7 @@ pipeline {
                                 sh '''
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/app/
-                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai-service ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build'
                                 '''
                             }
@@ -358,7 +390,7 @@ pipeline {
                                 sh '''
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/dev/
-                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai-service ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build'
                                 '''
                             }
@@ -375,6 +407,43 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/dev/infra/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d'
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                // ──────────────────────────────────────
+                //  Frontend (정적파일) — Volume Mount 방식
+                //   - prod: master push + frontend/ 변경 → /home/ubuntu/app/frontend-dist 갱신 → gateway nginx 가 서빙
+                //   - dev : frontend 브랜치 push → /home/ubuntu/dev/frontend-dist 갱신 → dev gateway nginx 가 서빙
+                //   - 빌드 산출물 (frontend/dist/) 은 Build - Frontend stage 에서 생성됨
+                // ──────────────────────────────────────
+                stage('Deploy - Frontend') {
+                    when { expression { env.SHOULD_DEPLOY == 'true' && env.CHANGED_FRONTEND == 'true' } }
+                    steps {
+                        sshagent(credentials: ['ec2-ssh-key']) {
+                            sh '''
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/app/frontend-dist'
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/app/frontend-dist/*'
+                                scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/app/frontend-dist/
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.gateway.yml restart gateway'
+                            '''
+                        }
+                    }
+                }
+                stage('Deploy - Frontend (dev)') {
+                    when { expression { env.SHOULD_DEPLOY_FRONTEND_DEV == 'true' } }
+                    steps {
+                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
+                            sshagent(credentials: ['ec2-ssh-key']) {
+                                sh '''
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev/frontend-dist'
+                                    scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
+                                    scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/dev/frontend-dist/*'
+                                    scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/frontend-dist/
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
                                 '''
                             }
                         }
