@@ -191,11 +191,19 @@ pipeline {
                     }
                     steps {
                         sh '''
-                            docker run --rm \
-                              -v "${WORKSPACE}/frontend:/app" \
-                              -w /app \
-                              node:20-alpine \
-                              sh -c "npm ci && npm run build"
+                            cat <<EOF > frontend.Dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+EOF
+                            docker build -t frontend-builder -f frontend.Dockerfile .
+                            docker create --name temp-fe frontend-builder
+                            rm -rf frontend/dist
+                            docker cp temp-fe:/app/dist ./frontend/dist
+                            docker rm temp-fe
                             ls -la frontend/dist | head -20
                         '''
                     }
