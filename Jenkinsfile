@@ -75,7 +75,7 @@ pipeline {
                     env.CHANGED_STATE     = changes.contains('ems/state-processor/')  ? 'true' : 'false'
                     env.CHANGED_DBWRITER  = changes.contains('ems/db-writer/')        ? 'true' : 'false'
                     env.CHANGED_CONTROL   = changes.contains('ems/control/')          ? 'true' : 'false'
-                    env.CHANGED_AI        = changes.contains('ems/ai-service/')       ? 'true' : 'false'
+                    env.CHANGED_AI        = changes.contains('ems/ai/')              ? 'true' : 'false'
                     env.CHANGED_FRONTEND  = changes.contains('frontend/')             ? 'true' : 'false'
                     env.CHANGED_SIMULATOR = changes.contains('simulator/')            ? 'true' : 'false'
                     env.CHANGED_INFRA     = changes.contains('docker-compose') || changes.contains('infra/') ? 'true' : 'false'
@@ -153,7 +153,7 @@ pipeline {
         //             sh '''
         //                 sonar-scanner \
         //                     -Dsonar.projectKey=s14p31s305 \
-        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai-service/app,ems/db-writer/app
+        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai/app,ems/db-writer/app
         //             '''
         //         }
         //     }
@@ -239,7 +239,7 @@ pipeline {
                     when { expression { env.CHANGED_AI == 'true' } }
                     steps {
                         sh '''
-                            docker compose -f docker-compose.control.yml run --rm --no-deps ai-service \
+                            docker compose -f docker-compose.control.yml run --rm --no-deps ai \
                                 sh -c "pip install pytest && pytest tests/ -v --tb=short || true"
                         '''
                     }
@@ -307,7 +307,7 @@ pipeline {
                                 sh '''
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/app/
-                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai-service ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build'
                                 '''
                             }
@@ -390,7 +390,7 @@ pipeline {
                                 sh '''
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/dev/
-                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai-service ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
+                                    scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build'
                                 '''
                             }
