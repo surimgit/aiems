@@ -263,7 +263,7 @@ pipeline {
                                 ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/app'
                                 scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml ubuntu@${GATEWAY_IP}:/home/ubuntu/app/
                                 scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/app/
-                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.gateway.yml up -d --build'
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.gateway.yml up -d --build --remove-orphans'
                             '''
                         }
                     }
@@ -278,7 +278,7 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/app/ems/
                                     scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/app/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.ingestion.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.ingestion.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -293,7 +293,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.state.yml .env ubuntu@${STATE_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/state-processor ems/db-writer ubuntu@${STATE_IP}:/home/ubuntu/app/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.state.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.state.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -308,7 +308,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/app/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/app/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.control.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -323,7 +323,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'mkdir -p /home/ubuntu/app/infra'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/app/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/app/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.db.yml up -d'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/app && docker compose -f docker-compose.db.yml up -d --remove-orphans'
                                 '''
                             }
                         }
@@ -345,7 +345,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev /home/ubuntu/dev/certs /home/ubuntu/dev/frontend-dist'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -361,7 +361,7 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.ingestion.yml .env ubuntu@${INGESTION_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/ingestion ubuntu@${INGESTION_IP}:/home/ubuntu/dev/ems/
                                     scp -o StrictHostKeyChecking=accept-new -rp infra/mosquitto infra/init_streams.py infra/Dockerfile.stream-init ubuntu@${INGESTION_IP}:/home/ubuntu/dev/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.ingestion.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${INGESTION_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.ingestion.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -376,7 +376,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.state.yml .env ubuntu@${STATE_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/state-processor ems/db-writer ubuntu@${STATE_IP}:/home/ubuntu/dev/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.state.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${STATE_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.state.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -391,7 +391,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'mkdir -p /home/ubuntu/dev/ems'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.control.yml .env ubuntu@${CONTROL_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new -rp ems/control ems/ai ubuntu@${CONTROL_IP}:/home/ubuntu/dev/ems/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${CONTROL_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.control.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
@@ -406,7 +406,7 @@ pipeline {
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'mkdir -p /home/ubuntu/dev/infra'
                                     scp -o StrictHostKeyChecking=accept-new docker-compose.db.yml .env ubuntu@${DB_IP}:/home/ubuntu/dev/
                                     scp -o StrictHostKeyChecking=accept-new infra/init_postgres.sh infra/init_timescale.sh ubuntu@${DB_IP}:/home/ubuntu/dev/infra/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${DB_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.db.yml up -d --remove-orphans'
                                 '''
                             }
                         }
@@ -443,7 +443,7 @@ pipeline {
                                     scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
                                     ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/dev/frontend-dist/*'
                                     scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/frontend-dist/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build'
+                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build --remove-orphans'
                                 '''
                             }
                         }
