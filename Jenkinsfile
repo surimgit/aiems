@@ -498,7 +498,7 @@ EOF
                 def mmUserMap = [
                     // 'minjong010105@gmail.com': 'minjong.kim',
                 ]
-                def mmUsername = mmUserMap[commitEmail] ?: commitEmail.tokenize('@')[0]
+                def mmUsername = mmUserMap.get(commitEmail) ?: commitEmail.tokenize('@').first()
 
                 env.MM_ENV_TAG  = envTag
                 env.MM_SERVICES = services ? services.join(', ') : '(없음)'
