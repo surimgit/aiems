@@ -8,7 +8,7 @@ import type { CommandAction } from '@/types/common'
 const dashboardStore = useDashboardStore()
 const controlStore = useControlStore()
 
-const { selectedEss } = storeToRefs(dashboardStore)
+const { selectedEss, selectedResource } = storeToRefs(dashboardStore)
 const { loading, error } = storeToRefs(controlStore)
 
 const resultMessage = ref('')
@@ -36,7 +36,10 @@ const submit = async (action: CommandAction) => {
 <template>
   <div class="panel-content space-y-3">
     <p class="text-xs text-slate-400">
-      대상: <span class="text-slate-100">{{ selectedEss?.name || selectedEss?.ess_id || '선택 없음' }}</span>
+      대상: <span class="text-slate-100">{{ selectedResource?.name || selectedResource?.resource_id || '선택 없음' }}</span>
+    </p>
+    <p v-if="selectedResource && selectedResource.resource_type !== 'ESS'" class="text-xs text-amber-300">
+      현재는 ESS 제어 명령만 지원됩니다. ESS 노드를 선택하면 제어가 활성화됩니다.
     </p>
     <div class="grid grid-cols-2 gap-2">
       <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('START_CHARGE')">충전 시작</button>

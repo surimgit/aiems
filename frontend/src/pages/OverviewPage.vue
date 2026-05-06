@@ -17,7 +17,7 @@ import RightPanelShell from '@/features/overview/components/right-panel/RightPan
 import AlarmTopPanel from '@/features/overview/components/right-panel/AlarmTopPanel.vue'
 import RecentCommandPanel from '@/features/overview/components/right-panel/RecentCommandPanel.vue'
 import CountryLanguagePanel from '@/features/overview/components/right-panel/CountryLanguagePanel.vue'
-import SelectedResourceInfoPanel from '@/features/overview/components/right-panel/SelectedResourceInfoPanel.vue'
+import SelectedResourceIntegratedPanel from '@/features/overview/components/right-panel/SelectedResourceIntegratedPanel.vue'
 import ControlPanel from '@/features/overview/components/right-panel/ControlPanel.vue'
 import LoadUsagePanel from '@/features/overview/components/right-panel/LoadUsagePanel.vue'
 import { useRightPanelState } from '@/features/overview/composables/useRightPanelState'
@@ -126,7 +126,7 @@ onUnmounted(() => {
           <AlarmTopPanel v-if="rightPanel.mode.value === 'alarm'" />
           <RecentCommandPanel v-else-if="rightPanel.mode.value === 'recent-command'" />
           <CountryLanguagePanel v-else-if="rightPanel.mode.value === 'country-language'" />
-          <SelectedResourceInfoPanel v-else-if="rightPanel.mode.value === 'selected-resource'" />
+          <SelectedResourceIntegratedPanel v-else-if="rightPanel.mode.value === 'selected-resource'" />
           <ControlPanel v-else-if="rightPanel.mode.value === 'control'" />
           <LoadUsagePanel v-else-if="rightPanel.mode.value === 'load-usage'" />
         </RightPanelShell>

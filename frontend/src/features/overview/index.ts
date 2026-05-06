@@ -57,6 +57,7 @@ export const useOverviewFeature = (): UseOverviewFeature => {
     await Promise.all([
       dashboardStore.fetchPowerSummary(DEFAULT_SITE_ID),
       dashboardStore.fetchEssList(DEFAULT_SITE_ID),
+      dashboardStore.fetchResources(DEFAULT_SITE_ID),
       alarmStore.fetchAlarms(DEFAULT_SITE_ID)
     ])
   }
