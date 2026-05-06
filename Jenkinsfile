@@ -521,7 +521,7 @@ EOF
 | Branch | ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'} |
 | Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
 | Services | ${env.MM_SERVICES} |
-| Commit | `${env.MM_HASH}` ${env.MM_MSG} — _${env.MM_AUTHOR}_ |"""
+| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |"""
             )
         }
         failure {
@@ -536,7 +536,7 @@ EOF
 | Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
 | Failed at | **${env.FAILED_STAGE ?: 'Unknown'}** |
 | Services | ${env.MM_SERVICES} |
-| Commit | `${env.MM_HASH}` ${env.MM_MSG} — _${env.MM_AUTHOR}_ |
+| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |
 | Console | [로그 확인](${env.BUILD_URL}console) |"""
             )
         }
