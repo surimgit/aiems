@@ -37,8 +37,18 @@ const onResize = () => {
   viewportWidth.value = window.innerWidth
 }
 
+const onKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && rightPanel.isOpen.value) {
+    rightPanel.close()
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur()
+    }
+  }
+}
+
 const handleTopbarMode = (nextMode: RightPanelMode) => {
-  rightPanel.open(nextMode)
+  rightPanel.toggle(nextMode)
 }
 
 const handleSelectNode = (nodeId: string) => {
@@ -62,6 +72,7 @@ const rightPanelTitle = computed(() => {
 
 onMounted(async () => {
   window.addEventListener('resize', onResize)
+  window.addEventListener('keydown', onKeydown)
 
   await initialize()
   await Promise.all([topologyFeature.initialize(), forecastFeature.fetchForecasts()])
@@ -69,6 +80,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -79,6 +91,8 @@ onUnmounted(() => {
         <TopBarKpiStrip
           :power-summary="powerSummary"
           :active-alarm-count="activeAlarms.length"
+          :current-mode="rightPanel.mode.value"
+          :panel-open="rightPanel.isOpen.value"
           @toggle-mode="handleTopbarMode"
         />
       </template>
