@@ -125,6 +125,31 @@
 
 ---
 
+### P1-4. 설비명 다국어 표시 계약 정리 (`resource name`)
+
+#### 현재 상태
+- 프론트는 운영 편의를 위해 설비명 별칭(alias)을 locale별로 관리하고 쿠키에 저장해 사용 중
+  - 키: `ai-ems.resource-aliases`
+  - 우선순위: `alias(locale) -> API name -> resource_id`
+- 백엔드 응답 `ResourceInfo`는 기본적으로 단일 `name` 필드 중심
+
+#### 문제
+- 현재 구조만으로는 사용자 로컬 환경(브라우저/쿠키)에 의존하므로,
+  - 기기 변경 시 별칭 재설정 필요
+  - 웹/모바일/리포트 간 설비명 일관성 보장 어려움
+
+#### 요청사항
+- 백엔드 다국어 계약을 아래 중 하나로 확정:
+  - A안: `name_key` 제공 (프론트 i18n 메시지 키 렌더)
+  - B안: `name_ko`, `name_en` 제공 (프론트 locale로 선택 렌더)
+- 적용 범위:
+  - `/resources`, `/topology`, 명령 이력/상태 응답의 `target_resource_id` 또는 대응 이름 필드
+- 전환 전 임시 운영 방침:
+  - 프론트 alias 방식 유지(현행)
+  - 백엔드 계약 확정 시 프론트 alias는 override 용도로만 축소
+
+---
+
 ## 4) 정합 체크리스트 (백엔드 작업 완료 기준)
 
 - [ ] 알람 ACK API 경로/메서드 단일화 및 Swagger 반영
@@ -133,6 +158,7 @@
 - [ ] Control 목록 조회 쿼리 파라미터 단일화
 - [ ] `site_id`/`plant_id` 용어 통일 기준 확정
 - [ ] `dashboard-api.md`, `control-api.md`, `ai-api.md` 최신화
+- [ ] 설비명 다국어 계약(`name_key` 또는 `name_ko/name_en`) 확정
 
 ---
 

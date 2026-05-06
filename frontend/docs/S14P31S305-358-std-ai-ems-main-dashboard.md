@@ -113,6 +113,19 @@
   - tablet 8개(2x4)
   - laptop 12개(3x4)
   - wall 20개(4x5)
+- 국가 카드 명칭: locale 기반 표기 (`ko: 대한민국`, `en: Korea`) + 코드 병기(`KR`)
+- 최근 명령의 설비명은 하드코딩 번역을 사용하지 않고, 설비 alias 우선 표시 규칙을 따른다.
+- 선택 장비 패널 이름 편집은 즉시 영구 저장하지 않고, `적용` 후 하단 `변경사항 저장`으로 커밋한다.
+
+### 7.5 설비명 alias 저장 UX 규칙
+- 편집 위치: `SelectedResourceInfoPanel` 제목 영역
+- 편집 단계:
+  1) `이름 편집` 클릭
+  2) locale별 alias 입력 후 `적용` (draft 반영)
+  3) `SelectedResourceIntegratedPanel` 하단 `변경사항 저장` 클릭 시 영구 저장
+- 저장 매체: 쿠키(`ai-ems.resource-aliases`, 10년 max-age)
+- 표시 규칙: `alias(locale) -> 원본 name -> resource_id`
+- 한 locale에서 동일 설비 alias는 1개만 유지(최신값 덮어쓰기)
 
 ## 8. 하단 3패널 설계
 - 구성: `AI 예측` | `KPI 요약` | `AI 성과`
@@ -172,6 +185,7 @@ API Client -> Pinia Store -> Feature Composable -> OverviewPage -> UI Component
 ## 14. 변경 이력
 - v1.0: 초기 STD 작성
 - v1.1: Jira 176 반영 (하단 3열 고정, 잘림 완화, 밀도 축소 우선 정책)
+- v1.2: 우측 패널 i18n 확장 및 설비명 alias draft/일괄저장 UX 반영
 
 ## 13. 구현 우선순위
 1. Layout skeleton (`Header`, `Shell`, `Bottom 3-grid`)
