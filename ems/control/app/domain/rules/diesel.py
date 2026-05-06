@@ -35,6 +35,10 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     for diesel in diesel_devices:
         device_id = diesel["device_id"]
         operating_mode = (diesel.get("operating_mode") or "").lower()
+        if operating_mode in ("fault", "error"):
+            print(f"[diesel] {device_id} 제어 보류: FAULT 상태")
+            continue
+
         running = operating_mode == "running" or (operating_mode == "" and (diesel["P"] or 0) > 0)
         fuel = diesel["fuel_percent"]
         redis_key = f"{_REDIS_PREFIX}{device_id}"

@@ -344,7 +344,7 @@ def _register_routes(app: Flask) -> None:
         acked_by = fields.String(allow_none=True)
 
     class AlarmAckRequestSchema(Schema):
-        acked_by = fields.String(required=True)
+        acked_by = fields.String(load_default="operator")
 
     class SensorDataSchema(Schema):
         time = fields.DateTime()
@@ -393,6 +393,67 @@ def _register_routes(app: Flask) -> None:
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
     blp = Blueprint("state", "state", url_prefix="/api")
+
+    def _alarm_level(severity: str) -> str:
+        s = (severity or "").upper()
+        if s in ("CRITICAL", "EMERGENCY"):
+            return "critical"
+        if s == "WARNING":
+            return "warning"
+        return "info"
+
+    def _alarm_row_to_dto(row: tuple) -> dict:
+        return {
+            "alarm_id": str(row[0]) if row[0] else None,
+            "level": _alarm_level(row[6]),
+            "code": row[5],
+            "message": row[7],
+            # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
+            "ess_id": row[3] if (row[4] or "").upper() == "ESS" else None,
+            "timestamp": row[1].isoformat() if row[1] else None,
+            "acknowledged": row[8],
+            # 호환 추가 필드 (프론트 type 무시 가능):
+            "site_id": row[2],
+            "resource_type": row[4],
+            "acked_at": row[9].isoformat() if row[9] else None,
+            "acked_by": row[10],
+        }
+
+    def _ack_alarm(site_id: str, alarm_id: str, acked_by: str) -> dict:
+        """알람 확인 처리 공통 로직. PATCH와 POST /ack가 같은 DTO를 반환한다."""
+        pool = get_db_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE event_log
+                        SET acknowledged = true, acked_at = NOW(), acked_by = %s
+                        WHERE alarm_id = %s::uuid AND site_id = %s
+                        RETURNING alarm_id, time, site_id, device_id, resource_type,
+                                  event_type, severity, message, acknowledged, acked_at, acked_by
+                        """,
+                        (acked_by, alarm_id, site_id),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    # TimescaleDB 압축 chunk UPDATE 실패 케이스 캐치
+                    msg = str(e).lower()
+                    if "compress" in msg or "chunk" in msg or "cannot update" in msg:
+                        from flask import abort
+                        abort(410, message="압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
+                    raise
+        finally:
+            pool.putconn(conn)
+
+        if not row:
+            from flask import abort
+            abort(404)
+
+        return _alarm_row_to_dto(row)
 
     # ── Plant 목록 ─────────────────────────────────────────────────────────────
 
@@ -732,34 +793,7 @@ def _register_routes(app: Flask) -> None:
             finally:
                 pool.putconn(conn)
 
-            # DB severity → 프론트 level 매핑: WARNING/CRITICAL/EMERGENCY → warning/critical/critical 소문자.
-            # 프론트 enum 은 'info' | 'warning' | 'critical' 만 — EMERGENCY 도 critical 로 합쳐 표시.
-            def _to_level(sev: str) -> str:
-                s = (sev or "").upper()
-                if s in ("CRITICAL", "EMERGENCY"):
-                    return "critical"
-                if s == "WARNING":
-                    return "warning"
-                return "info"
-
-            return [
-                {
-                    "alarm_id": str(r[0]) if r[0] else None,
-                    "level": _to_level(r[6]),
-                    "code": r[5],
-                    "message": r[7],
-                    # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
-                    "ess_id": r[3] if (r[4] or "").upper() == "ESS" else None,
-                    "timestamp": r[1].isoformat() if r[1] else None,
-                    "acknowledged": r[8],
-                    # 호환 추가 필드 (프론트 type 무시 가능):
-                    "site_id": r[2],
-                    "resource_type": r[4],
-                    "acked_at": r[9].isoformat() if r[9] else None,
-                    "acked_by": r[10],
-                }
-                for r in rows
-            ]
+            return [_alarm_row_to_dto(r) for r in rows]
 
     @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>")
     class PlantAlarmDetailResource(MethodView):
@@ -772,45 +806,15 @@ def _register_routes(app: Flask) -> None:
                           압축 chunk 는 UPDATE 가 거부되므로 30일 지난 알람은 ack 불가.
                           압축 거부 에러 발생 시 410 Gone 으로 응답.
             """
-            pool = get_db_pool()
-            conn = pool.getconn()
-            try:
-                with conn.cursor() as cur:
-                    try:
-                        cur.execute(
-                            """
-                            UPDATE event_log
-                            SET acknowledged = true, acked_at = NOW(), acked_by = %s
-                            WHERE alarm_id = %s::uuid AND site_id = %s
-                            RETURNING alarm_id, time, site_id, device_id, resource_type,
-                                      event_type, severity, message, acknowledged, acked_at, acked_by
-                            """,
-                            (body["acked_by"], alarm_id, site_id),
-                        )
-                        r = cur.fetchone()
-                        conn.commit()
-                    except Exception as e:
-                        conn.rollback()
-                        # TimescaleDB 압축 chunk UPDATE 실패 케이스 캐치
-                        msg = str(e).lower()
-                        if "compress" in msg or "chunk" in msg or "cannot update" in msg:
-                            from flask import abort
-                            abort(410, message="압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
-                        raise
-            finally:
-                pool.putconn(conn)
+            return _ack_alarm(site_id, alarm_id, body.get("acked_by") or "operator")
 
-            if not r:
-                from flask import abort
-                abort(404)
-
-            return {
-                "alarm_id": str(r[0]) if r[0] else None,
-                "time": r[1], "site_id": r[2], "device_id": r[3],
-                "resource_type": r[4], "event_type": r[5], "severity": r[6],
-                "message": r[7], "acknowledged": r[8],
-                "acked_at": r[9], "acked_by": r[10],
-            }
+    @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>/ack")
+    class PlantAlarmAckResource(MethodView):
+        @blp.arguments(AlarmAckRequestSchema)
+        @blp.response(200, AlarmSchema)
+        def post(self, body, site_id, alarm_id):
+            """알람 확인 처리. 프론트/문서 표준 경로."""
+            return _ack_alarm(site_id, alarm_id, body.get("acked_by") or "operator")
 
     # ── 센서 시계열 (차트용) ──────────────────────────────────────────────────
 

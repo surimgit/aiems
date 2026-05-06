@@ -14,6 +14,8 @@ from ..config import (
     TIMESCALE_HOST, TIMESCALE_PORT, TIMESCALE_DB, TIMESCALE_USER, TIMESCALE_PASSWORD,
 )
 
+_ACK_STATUS_VALUES = {"PENDING", "ACCEPTED", "REJECTED", "TIMEOUT"}
+
 
 def _parse_ts(ts: str | None) -> datetime:
     """ISO8601 문자열을 timezone-aware datetime 으로 변환. 실패 시 현재 UTC."""
@@ -23,6 +25,11 @@ def _parse_ts(ts: str | None) -> datetime:
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except Exception:
         return datetime.now(timezone.utc)
+
+
+def _normalize_ack_status(status: str | None, default: str = "PENDING") -> str:
+    value = (status or default).upper()
+    return value if value in _ACK_STATUS_VALUES else default
 
 
 class TimescaleWriter:
@@ -101,7 +108,7 @@ class TimescaleWriter:
               "payload": {...},
               "reason": "...",
               "issued_by": "rule|operator|ai",
-              "ack_status": "pending|accepted|rejected|timeout",
+              "ack_status": "PENDING|ACCEPTED|REJECTED|TIMEOUT",
               "ack_time": "ISO8601 or null",
               "verified": null|true|false,
               "timestamp": "ISO8601",
@@ -124,7 +131,7 @@ class TimescaleWriter:
                 json.dumps(envelope.get("payload", {}), ensure_ascii=False),
                 envelope.get("reason"),
                 envelope.get("issued_by", "rule"),
-                envelope.get("ack_status", "pending"),
+                _normalize_ack_status(envelope.get("ack_status")),
                 _parse_ts(envelope["ack_time"]) if envelope.get("ack_time") else None,
                 envelope.get("verified"),
             )
@@ -133,14 +140,42 @@ class TimescaleWriter:
         """폐루프 검증 결과로 control_history UPDATE.
         압축된 chunk(30d 이상) 는 UPDATE 실패 가능 — A안 정책.
         """
+        normalized_status = _normalize_ack_status(ack_status, default="ACCEPTED")
         async with self._pool.acquire() as conn:
             if verified is None:
                 await conn.execute(
                     "UPDATE control_history SET ack_status=$1, ack_time=NOW() WHERE command_id=$2",
-                    ack_status, command_id,
+                    normalized_status, command_id,
                 )
             else:
                 await conn.execute(
                     "UPDATE control_history SET ack_status=$1, ack_time=NOW(), verified=$2 WHERE command_id=$3",
-                    ack_status, verified, command_id,
+                    normalized_status, verified, command_id,
                 )
+
+    async def normalize_command_ack_statuses(self) -> None:
+        """기존 소문자/혼합 ack_status 값을 대문자로 정규화한다."""
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE control_history
+                SET ack_status = UPPER(ack_status)
+                WHERE ack_status IS NOT NULL
+                  AND ack_status <> UPPER(ack_status)
+                """
+            )
+        print(f"[db-writer][control_history] ack_status normalize: {result}")
+
+    async def timeout_stale_pending_commands(self, older_than_seconds: int = 300) -> None:
+        """오래된 PENDING 명령을 TIMEOUT으로 정리한다."""
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE control_history
+                SET ack_status = 'TIMEOUT', ack_time = NOW()
+                WHERE UPPER(ack_status) = 'PENDING'
+                  AND time < NOW() - ($1::int * INTERVAL '1 second')
+                """,
+                older_than_seconds,
+            )
+        print(f"[db-writer][control_history] stale pending timeout: {result}")

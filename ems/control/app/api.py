@@ -91,20 +91,25 @@ def _start_worker() -> None:
         state = states.get(device_id, {})
         reported = state.get("reported_state") or {}
         current_mode = reported.get("operating_mode", "standby")
+        current_mode_lower = (current_mode or "").lower()
+
+        if current_mode_lower in ("fault", "error") and cmd["command_type"] != "reset":
+            print(f"[control] skip {device_id}: device is in FAULT state")
+            return False
 
         if cmd["command_type"] == "ess_mode":
             requested_mode = cmd["payload"].get("mode", "standby")
             return current_mode != requested_mode
 
         if cmd["command_type"] == "start":
-            return current_mode.lower() not in ("running", "starting")
+            return current_mode_lower not in ("running", "starting")
 
         if cmd["command_type"] == "stop":
-            return current_mode.lower() not in ("off", "stopped", "stopping", "idle")
+            return current_mode_lower not in ("off", "stopped", "stopping", "idle")
 
         if cmd["command_type"] == "load_control":
             # 운전 중일 때만 부하조정 의미 있음
-            return current_mode.lower() == "running"
+            return current_mode_lower == "running"
 
         return True
 
@@ -354,7 +359,7 @@ def _register_routes(app: Flask) -> None:
                     "payload": translated["payload"],
                     "reason": payload.get("reason", ""),
                     "issued_by": payload["requested_by"],
-                    "ack_status": "pending",
+                    "ack_status": "PENDING",
                     "timestamp": now.isoformat(),
                 }
                 _r.xadd("mg:db:write", {"data": json.dumps(_envelope, ensure_ascii=False)})
