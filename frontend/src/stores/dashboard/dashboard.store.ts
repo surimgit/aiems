@@ -49,6 +49,7 @@ interface DashboardGetters {
   loadPower: number
   essCount: number
   selectedEss: ESSStatus | null
+  selectedResource: ResourceInfo | null
 }
 
 interface DashboardActions {
@@ -109,6 +110,26 @@ export const useDashboardStore = defineStore(
       selectedEss(): ESSStatus | null {
         if (!this.selectedEssId) return null
         return this.essList.find((ess) => ess.ess_id === this.selectedEssId) ?? null
+      },
+
+      selectedResource(): ResourceInfo | null {
+        if (!this.selectedEssId) return null
+        const fromResources = this.resources.find((resource) => resource.resource_id === this.selectedEssId)
+        if (fromResources) return fromResources
+
+        const ess = this.essList.find((item) => item.ess_id === this.selectedEssId)
+        if (!ess) return null
+
+        return {
+          resource_id: ess.ess_id,
+          resource_type: 'ESS',
+          name: ess.name,
+          status: ess.status,
+          telemetry: {
+            soc: ess.soc,
+            p_kw: ess.power_kw
+          }
+        }
       }
     },
     
