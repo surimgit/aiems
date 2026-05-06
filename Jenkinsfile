@@ -469,11 +469,16 @@ EOF
     post {
         always {
             script {
-                // ── 환경 태그 ──
-                def envTag = '[CI ONLY]'
-                if (env.SHOULD_DEPLOY == 'true')                envTag = '[PROD]'
-                else if (env.SHOULD_DEPLOY_DEV == 'true')        envTag = '[DEV]'
-                else if (env.SHOULD_DEPLOY_FRONTEND_DEV == 'true') envTag = '[FE-DEV]'
+                // ── 빌드 종류 결정 (타이틀/프로젝트명 매핑) ──
+                def title   = '[CI] 빌드'
+                def project = 'ems-ci'
+                if (env.SHOULD_DEPLOY_FRONTEND_DEV == 'true') {
+                    title = '[Dev] 프론트엔드 배포'; project = 'ems-fe-dev'
+                } else if (env.SHOULD_DEPLOY_DEV == 'true') {
+                    title = '[Dev] 백엔드 배포';     project = 'ems-be-dev'
+                } else if (env.SHOULD_DEPLOY == 'true') {
+                    title = '[Prod] 통합 배포';      project = 'ems-prod'
+                }
 
                 // ── 변경 서비스 목록 ──
                 def services = []
@@ -494,51 +499,65 @@ EOF
 
                 // ── Mattermost 멘션 (이메일 → MM username 매핑) ──
                 // 매핑이 없으면 이메일 local part 를 fallback 으로 사용.
-                // 실제 SSAFY MM username 알게 되면 mmUserMap 에 추가하면 됨.
-                // 매핑 추가 예: mmUserMap['minjong010105@gmail.com'] = 'minjong.kim'
                 def mmUserMap = [:]
                 // mmUserMap['kmj010105@naver.com'] = 'mm-username'
                 def mmUsername = mmUserMap.get(commitEmail) ?: commitEmail.tokenize('@').first()
 
-                env.MM_ENV_TAG  = envTag
+                env.MM_TITLE    = title
+                env.MM_PROJECT  = project
                 env.MM_SERVICES = services ? services.join(', ') : '(없음)'
                 env.MM_AUTHOR   = commitAuthor
                 env.MM_MSG      = commitMsg
                 env.MM_HASH     = commitHash
                 env.MM_MENTION  = "@${mmUsername}"
                 env.MM_DURATION = currentBuild.durationString.replace(' and counting', '')
+                env.MM_BRANCH   = env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'
             }
             sh 'docker system prune -f 2>/dev/null || true'
         }
         success {
-            mattermostSend(
-                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
-                color: 'good',
-                message: """### :white_check_mark: ${env.MM_ENV_TAG} 빌드 성공
-| 항목 | 값 |
-|---|---|
-| Job | ${env.JOB_NAME} |
-| Branch | ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'} |
-| Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
-| Services | ${env.MM_SERVICES} |
-| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |"""
-            )
+            script {
+                def payload = groovy.json.JsonOutput.toJson([
+                    username: 'Jenkins',
+                    attachments: [[
+                        color: '#00C853',
+                        pretext: "**[Build #${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_BRANCH})**",
+                        text: "## :v::partying_face::v: ${env.MM_TITLE} 성공! :v::partying_face::v:\n\n> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)",
+                        fields: [
+                            [title: 'Author',   value: env.MM_AUTHOR,           short: true],
+                            [title: 'Commit',   value: "`${env.MM_HASH}`",      short: true],
+                            [title: 'Changed',  value: env.MM_SERVICES,         short: true],
+                            [title: 'Branch',   value: "`${env.MM_BRANCH}`",    short: true],
+                            [title: 'Project',  value: env.MM_PROJECT,          short: true],
+                            [title: 'Duration', value: env.MM_DURATION,         short: true]
+                        ]
+                    ]]
+                ])
+                writeFile file: 'mm_payload.json', text: payload
+                sh 'curl -sS -X POST -H "Content-Type: application/json" -d @mm_payload.json https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw'
+            }
         }
         failure {
-            mattermostSend(
-                endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
-                color: 'danger',
-                message: """### :x: ${env.MM_ENV_TAG} 빌드 실패 ${env.MM_MENTION}
-| 항목 | 값 |
-|---|---|
-| Job | ${env.JOB_NAME} |
-| Branch | ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'} |
-| Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
-| Failed at | **${env.FAILED_STAGE ?: 'Unknown'}** |
-| Services | ${env.MM_SERVICES} |
-| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |
-| Console | [로그 확인](${env.BUILD_URL}console) |"""
-            )
+            script {
+                def payload = groovy.json.JsonOutput.toJson([
+                    username: 'Jenkins',
+                    attachments: [[
+                        color: '#D32F2F',
+                        pretext: "**[Build #${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_BRANCH})**",
+                        text: "## :skull: ${env.MM_TITLE} 안되잖아 다시해 :skull: ${env.MM_MENTION}\n\n> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)\n:inbox_tray: [전체 에러 로그 다운로드](${env.BUILD_URL}consoleText)",
+                        fields: [
+                            [title: 'Author',    value: "**${env.MM_AUTHOR}**",         short: true],
+                            [title: 'Commit',    value: "`${env.MM_HASH}`",             short: true],
+                            [title: 'Changed',   value: env.MM_SERVICES,                short: true],
+                            [title: 'Branch',    value: "`${env.MM_BRANCH}`",           short: true],
+                            [title: 'Failed at', value: "**${env.FAILED_STAGE ?: 'Unknown'}**", short: true],
+                            [title: 'Duration',  value: env.MM_DURATION,                short: true]
+                        ]
+                    ]]
+                ])
+                writeFile file: 'mm_payload.json', text: payload
+                sh 'curl -sS -X POST -H "Content-Type: application/json" -d @mm_payload.json https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw'
+            }
         }
     }
 }
