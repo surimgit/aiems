@@ -104,6 +104,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  ai-service:
+    build:
+      context: .
+      dockerfile: ems/ai/service/Dockerfile
+    container_name: ai-service
+    ports:
+      - "5004:5004"
+    environment:
+      - S305_SOLAR_MODEL_PATH=/app/ems/ai/models/solar_kpx_lightgbm/model.joblib
+      - S305_CAPACITY_FACTOR_MODEL_PATH=/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib
+    restart: unless-stopped
+
 
 volumes:
   timescaledb_data:

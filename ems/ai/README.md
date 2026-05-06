@@ -33,6 +33,7 @@ control: EMS Rule Engine
 
 ```text
 ems/ai/
+  service/       Flask AI MSA runtime service
   checkpoints/   학습된 모델 체크포인트
   configs/       데이터/학습 설정 파일
   data/          로컬 작업용 data 폴더
@@ -43,6 +44,25 @@ ems/ai/
   scripts/       수집/전처리/병합/데이터셋 생성 스크립트
   train/         학습 코드
 ```
+
+`service/` is the runtime boundary used by the main MSA. It exposes HTTP
+prediction APIs and loads model artifacts from `models/`.
+
+`scripts/`, `train/`, `configs/`, `notebooks/`, `data/`, and `outputs/` remain
+the offline workspace for collection, preprocessing, training, and validation.
+
+Runtime API entrypoint:
+
+- `ems/ai/service/app/main.py`
+- local URL: `http://localhost:5004`
+- Swagger UI: `http://localhost:5004/docs`
+
+Offline workspace entrypoints:
+
+- data collection: `ems/ai/scripts/`
+- training: `ems/ai/train/`
+- training configs: `ems/ai/configs/`
+- operational model artifacts: `ems/ai/models/`
 
 현재 실제 원천데이터와 처리 결과는 주로 Google Drive 아래에 쌓인다.
 
