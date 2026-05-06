@@ -495,9 +495,9 @@ EOF
                 // ── Mattermost 멘션 (이메일 → MM username 매핑) ──
                 // 매핑이 없으면 이메일 local part 를 fallback 으로 사용.
                 // 실제 SSAFY MM username 알게 되면 mmUserMap 에 추가하면 됨.
-                def mmUserMap = [
-                    // 'minjong010105@gmail.com': 'minjong.kim',
-                ]
+                // 매핑 추가 예: mmUserMap['minjong010105@gmail.com'] = 'minjong.kim'
+                def mmUserMap = [:]
+                // mmUserMap['kmj010105@naver.com'] = 'mm-username'
                 def mmUsername = mmUserMap.get(commitEmail) ?: commitEmail.tokenize('@').first()
 
                 env.MM_ENV_TAG  = envTag
