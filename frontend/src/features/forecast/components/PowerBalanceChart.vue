@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAiStore } from '@/stores/ai/ai.store'
+import { useI18n } from 'vue-i18n'
 
 interface ChartSeriesPoint {
   timestamp: string
@@ -21,6 +22,7 @@ const MIN_BOUND_GAP = 1
 
 const aiStore = useAiStore()
 const { generationForecast, demandForecast } = storeToRefs(aiStore)
+const { t } = useI18n()
 
 const normalizedSeries = computed<ChartSeriesPoint[]>(() => {
   if (generationForecast.value.length === 0 || demandForecast.value.length === 0) return []
@@ -110,7 +112,7 @@ const yAxisTicks = computed<YAxisTick[]>(() => {
 })
 
 const peakTimeRange = computed(() => {
-  if (!hasForecastData.value) return '정보 없음'
+  if (!hasForecastData.value) return t('common.noData')
 
   let maxPoint = normalizedSeries.value[0]
   for (const point of normalizedSeries.value) {
@@ -120,7 +122,7 @@ const peakTimeRange = computed(() => {
   }
 
   const date = new Date(maxPoint.timestamp)
-  if (Number.isNaN(date.getTime())) return '정보 없음'
+  if (Number.isNaN(date.getTime())) return t('common.noData')
   const startHour = date.getHours().toString().padStart(2, '0')
   const endHour = ((date.getHours() + 4) % 24).toString().padStart(2, '0')
   return `${startHour}~${endHour}시`
@@ -130,22 +132,22 @@ const peakTimeRange = computed(() => {
 <template>
   <section class="panel-card">
     <div class="header-row">
-      <h3 class="title">AI 예측 <span class="sub-title">(24시간)</span></h3>
-      <span class="peak-label">피크 예상 {{ peakTimeRange }}</span>
+      <h3 class="title">{{ t('powerBalance.title') }} <span class="sub-title">({{ t('powerBalance.subTitle24h') }})</span></h3>
+      <span class="peak-label">{{ t('powerBalance.peakExpected') }} {{ peakTimeRange }}</span>
     </div>
 
     <div class="legend-row">
       <div class="legend-item">
         <span class="legend-line generation" />
-        <span>발전 예측</span>
+        <span>{{ t('powerBalance.legend.generation') }}</span>
       </div>
       <div class="legend-item">
         <span class="legend-line demand" />
-        <span>소비 예측</span>
+        <span>{{ t('powerBalance.legend.demand') }}</span>
       </div>
       <div class="legend-item">
         <span class="legend-line net" />
-        <span>순 전력 예측</span>
+        <span>{{ t('powerBalance.legend.net') }}</span>
       </div>
     </div>
 
@@ -158,7 +160,7 @@ const peakTimeRange = computed(() => {
       </div>
 
       <div class="plot-wrap">
-        <svg viewBox="0 0 100 60" preserveAspectRatio="none" class="plot-svg" aria-label="AI 예측 시계열 차트">
+        <svg viewBox="0 0 100 60" preserveAspectRatio="none" class="plot-svg" :aria-label="t('powerBalance.ariaLabel')">
           <g class="grid-lines">
             <line v-for="tick in yAxisTicks" :key="`line-${tick.label}`" x1="0" :y1="tick.y" x2="100" :y2="tick.y" />
           </g>
@@ -178,9 +180,9 @@ const peakTimeRange = computed(() => {
       </div>
     </div>
 
-    <div v-else class="empty-state">AI 예측 데이터가 아직 없습니다.</div>
+    <div v-else class="empty-state">{{ t('powerBalance.emptyState') }}</div>
 
-    <p class="note">* 이상 발생 시 붉은색으로 구간 표시됩니다.</p>
+    <p class="note">{{ t('powerBalance.note') }}</p>
   </section>
 </template>
 

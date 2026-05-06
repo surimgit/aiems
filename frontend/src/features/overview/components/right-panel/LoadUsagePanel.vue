@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
+import { useI18n } from 'vue-i18n'
 
 const props = withDefaults(defineProps<{
   topOnly?: boolean
@@ -11,6 +12,7 @@ const props = withDefaults(defineProps<{
 
 const dashboardStore = useDashboardStore()
 const { resources, selectedResource } = storeToRefs(dashboardStore)
+const { t } = useI18n()
 
 const expanded = ref(false)
 
@@ -25,9 +27,9 @@ const loadItems = computed(() => {
 
   if (loads.length === 0) {
     return [
-      { id: 'load-1', name: '부하 센터 3-1', usagePercent: 120 },
-      { id: 'load-2', name: '부하 센터 3-2', usagePercent: 85 },
-      { id: 'load-3', name: '부하 센터 3-3', usagePercent: 60 }
+      { id: 'load-1', name: t('selectedResource.loadUsage.fallback.loadCenter', { index: '3-1' }), usagePercent: 120 },
+      { id: 'load-2', name: t('selectedResource.loadUsage.fallback.loadCenter', { index: '3-2' }), usagePercent: 85 },
+      { id: 'load-3', name: t('selectedResource.loadUsage.fallback.loadCenter', { index: '3-3' }), usagePercent: 60 }
     ]
   }
 
@@ -56,14 +58,14 @@ const usageClass = (usagePercent: number) => {
 <template>
   <div class="panel-content" v-if="isLoadSelected">
     <div class="header-row">
-      <p class="title">소비처별 전력 사용 현황</p>
+      <p class="title">{{ t('selectedResource.loadUsage.title') }}</p>
       <button
         v-if="topOnly"
         type="button"
         class="toggle-btn"
         @click="expanded = !expanded"
       >
-        {{ expanded ? '간단히 보기' : '전체 보기' }}
+        {{ expanded ? t('selectedResource.loadUsage.collapse') : t('selectedResource.loadUsage.expand') }}
       </button>
     </div>
 

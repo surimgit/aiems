@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { PowerSummary } from '@/types/common'
 import type { RightPanelMode } from '../types'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   powerSummary: PowerSummary | null
@@ -21,8 +24,8 @@ const toggleMode = (mode: RightPanelMode) => {
 <template>
   <section class="topbar-kpi-strip">
     <div class="left-area">
-      <h1 class="title">AI EMS Dashboard</h1>
-      <p class="subtitle">Energy Management System</p>
+      <h1 class="title">{{ t('topbar.title') }}</h1>
+      <p class="subtitle">{{ t('topbar.subtitle') }}</p>
     </div>
 
     <div class="right-area">
@@ -33,7 +36,7 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-alarm"
         @click="toggleMode('alarm')"
       >
-        알림 <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
+        {{ t('topbar.alarm') }} <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
       </button>
       <button
         type="button"
@@ -42,7 +45,7 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-recent"
         @click="toggleMode('recent-command')"
       >
-        최근 명령
+        {{ t('topbar.recent') }}
       </button>
       <button
         type="button"
@@ -51,7 +54,7 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-country"
         @click="toggleMode('country-language')"
       >
-        국가/언어
+        {{ t('topbar.countryLanguage') }}
       </button>
       <button
         type="button"
@@ -60,7 +63,7 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-settings"
         @click="toggleMode('control')"
       >
-        설정
+        {{ t('topbar.settings') }}
       </button>
     </div>
   </section>

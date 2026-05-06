@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   selectedResourceId?: string | null
 }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
   <div v-if="selectedResourceId" class="selection-overlay">
-    선택 항목: {{ selectedResourceId }}
+    {{ t('topology.selectionOverlay.selectedItem') }}: {{ selectedResourceId }}
   </div>
 </template>
 

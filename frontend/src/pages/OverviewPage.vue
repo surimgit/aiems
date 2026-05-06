@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useOverviewFeature } from '@/features/overview'
 import { useTopologyFeature } from '@/features/topology'
 import { useForecastFeature } from '@/features/forecast'
@@ -25,6 +26,7 @@ import { useDashboardLayout } from '@/features/overview/composables/useDashboard
 import type { RightPanelMode } from '@/features/overview/types'
 
 const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
+const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
 const forecastFeature = useForecastFeature()
 const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms.value.length))
@@ -58,15 +60,15 @@ const handleSelectNode = (nodeId: string) => {
 
 const rightPanelTitle = computed(() => {
   const titleMap: Record<RightPanelMode, string> = {
-    alarm: '알람 (Top 3)',
-    'recent-command': '최근 명령 결과',
-    'country-language': '국가 선택',
-    'selected-resource': '선택된 장비 정보',
-    control: '설비 제어',
-    'load-usage': '소비처별 전력 사용 현황'
+    alarm: t('rightPanel.alarmTop3'),
+    'recent-command': t('rightPanel.recentCommand'),
+    'country-language': t('rightPanel.countryLanguage'),
+    'selected-resource': t('rightPanel.selectedResource'),
+    control: t('rightPanel.control'),
+    'load-usage': t('rightPanel.loadUsage')
   }
 
-  if (!rightPanel.mode.value) return '패널'
+  if (!rightPanel.mode.value) return t('rightPanel.defaultTitle')
   return titleMap[rightPanel.mode.value]
 })
 
