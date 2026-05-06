@@ -4,6 +4,7 @@
 
 - [EMS AI Current Design](./AI_CURRENT_FINAL_DESIGN.md)
 - [Baseline Solar Training Result](./ml/baseline-training-result.md)
+- [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
 - [Load Profile And LLM Structuring](./ml/load-profile-and-llm.md)
 - [AI Code Map](./ops/ai-code-map.md)
 - [GK2A Download Ops Note](./ops/gk2a-download-ops-note.md)
@@ -18,10 +19,11 @@
 4. [Load Forecast Data Plan](./data/load-forecast-data-plan.md)
 5. [Model Strategy](./ml/model-strategy.md)
 6. [Inference And Retraining](./ml/inference-and-retraining.md)
-7. [GPU Training Runbook](./ml/gpu-training-runbook.md)
-8. [LLM Role](./ml/llm-role.md)
-9. [Repo Structure](./ops/repo-structure.md)
-10. [Python Scripts](./python-scripts.md)
+7. [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
+8. [GPU Training Runbook](./ml/gpu-training-runbook.md)
+9. [LLM Role](./ml/llm-role.md)
+10. [Repo Structure](./ops/repo-structure.md)
+11. [Python Scripts](./python-scripts.md)
 
 ## Shared Project Docs
 
@@ -54,6 +56,7 @@
 
 - [model-strategy.md](./ml/model-strategy.md): 지금 어떤 모델을 학습시키는지와 이유
 - [inference-and-retraining.md](./ml/inference-and-retraining.md): 추론, 로그 적재, 재학습 구조
+- [satellite-image-training-handoff-2026-05-06.md](./ml/satellite-image-training-handoff-2026-05-06.md): GK2A 위성 이미지 직접 학습, anomaly filter 비교 결과, 다음 작업 메모
 - [gpu-training-runbook.md](./ml/gpu-training-runbook.md): GPU 서버 학습 준비, 환경 변수, 실행 명령
 - [llm-role.md](./ml/llm-role.md): LLM이 추론 시점에서 어떤 역할을 하는지 설명
 

@@ -2,6 +2,26 @@
 
 현재 바로 학습 가능한 baseline은 `solar_kpx_2025` train/val split을 사용한다.
 
+## Current Satellite Image Note - 2026-05-06
+
+GK2A 위성 이미지 직접 학습은 별도 handoff 문서를 우선 확인한다.
+
+- [satellite-image-training-handoff-2026-05-06.md](./satellite-image-training-handoff-2026-05-06.md)
+
+현재 GPU 서버 기준 best 후보:
+
+```text
+/home/j-k14s305/s305-work/runs/satellite_anomaly_compare_v4/strong_filter/best_model.pt
+```
+
+현재 최신 업로드 번들:
+
+```text
+C:\Users\SSAFY\Project_Minsu\S305\server_upload\satellite_image_anomaly_compare_regions_2025_20260506_171847.zip
+```
+
+다음 작업은 `strong_filter` 모델을 원본 `no_filter` validation에도 평가하고, horizon별 모델 분리를 확인하는 것이다.
+
 ## Data Package
 
 로컬 기준 원본 데이터 루트:
