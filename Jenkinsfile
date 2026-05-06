@@ -209,6 +209,7 @@ EOF
                     }
                 }
             }
+            post { failure { script { env.FAILED_STAGE = env.FAILED_STAGE ?: 'Build' } } }
         }
 
         // ──────────────────────────────────────
@@ -253,6 +254,7 @@ EOF
                     }
                 }
             }
+            post { failure { script { env.FAILED_STAGE = env.FAILED_STAGE ?: 'Test' } } }
         }
 
         // ──────────────────────────────────────
@@ -460,31 +462,83 @@ EOF
                     }
                 }
             }
+            post { failure { script { env.FAILED_STAGE = env.FAILED_STAGE ?: 'Deploy' } } }
         }
     }
 
     post {
+        always {
+            script {
+                // ── 환경 태그 ──
+                def envTag = '[CI ONLY]'
+                if (env.SHOULD_DEPLOY == 'true')                envTag = '[PROD]'
+                else if (env.SHOULD_DEPLOY_DEV == 'true')        envTag = '[DEV]'
+                else if (env.SHOULD_DEPLOY_FRONTEND_DEV == 'true') envTag = '[FE-DEV]'
+
+                // ── 변경 서비스 목록 ──
+                def services = []
+                if (env.CHANGED_GATEWAY   == 'true') services << 'Gateway'
+                if (env.CHANGED_INGESTION == 'true') services << 'Ingestion'
+                if (env.CHANGED_STATE     == 'true') services << 'State'
+                if (env.CHANGED_DBWRITER  == 'true') services << 'DBWriter'
+                if (env.CHANGED_CONTROL   == 'true') services << 'Control'
+                if (env.CHANGED_AI        == 'true') services << 'AI'
+                if (env.CHANGED_FRONTEND  == 'true') services << 'Frontend'
+                if (env.CHANGED_INFRA     == 'true') services << 'Infra'
+
+                // ── 커밋 정보 ──
+                def commitAuthor = sh(script: "git log -1 --pretty=format:'%an'", returnStdout: true).trim()
+                def commitEmail  = sh(script: "git log -1 --pretty=format:'%ae'", returnStdout: true).trim()
+                def commitMsg    = sh(script: "git log -1 --pretty=format:'%s'", returnStdout: true).trim()
+                def commitHash   = sh(script: "git log -1 --pretty=format:'%h'", returnStdout: true).trim()
+
+                // ── Mattermost 멘션 (이메일 → MM username 매핑) ──
+                // 매핑이 없으면 이메일 local part 를 fallback 으로 사용.
+                // 실제 SSAFY MM username 알게 되면 mmUserMap 에 추가하면 됨.
+                // 매핑 추가 예: mmUserMap['minjong010105@gmail.com'] = 'minjong.kim'
+                def mmUserMap = [:]
+                // mmUserMap['kmj010105@naver.com'] = 'mm-username'
+                def mmUsername = mmUserMap.get(commitEmail) ?: commitEmail.tokenize('@').first()
+
+                env.MM_ENV_TAG  = envTag
+                env.MM_SERVICES = services ? services.join(', ') : '(없음)'
+                env.MM_AUTHOR   = commitAuthor
+                env.MM_MSG      = commitMsg
+                env.MM_HASH     = commitHash
+                env.MM_MENTION  = "@${mmUsername}"
+                env.MM_DURATION = currentBuild.durationString.replace(' and counting', '')
+            }
+            sh 'docker system prune -f 2>/dev/null || true'
+        }
         success {
             mattermostSend(
                 endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
                 color: 'good',
-                message: """### :white_check_mark: 빌드 성공
-**Job:** ${env.JOB_NAME}
-**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
-**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})"""
+                message: """### :white_check_mark: ${env.MM_ENV_TAG} 빌드 성공
+| 항목 | 값 |
+|---|---|
+| Job | ${env.JOB_NAME} |
+| Branch | ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'} |
+| Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
+| Services | ${env.MM_SERVICES} |
+| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |"""
             )
         }
         failure {
             mattermostSend(
                 endpoint: 'https://meeting.ssafy.com/hooks/wc1rm5t5cjyi3nzrhto7yoh9jw',
                 color: 'danger',
-                message: """### :x: 빌드 실패
-**Job:** ${env.JOB_NAME}
-**Branch:** ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'}
-**Build:** [#${env.BUILD_NUMBER}](${env.BUILD_URL})
-**Console:** [로그 확인](${env.BUILD_URL}console)"""
+                message: """### :x: ${env.MM_ENV_TAG} 빌드 실패 ${env.MM_MENTION}
+| 항목 | 값 |
+|---|---|
+| Job | ${env.JOB_NAME} |
+| Branch | ${env.gitlabSourceBranch ?: env.BRANCH_NAME ?: 'master'} |
+| Build | [#${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_DURATION}) |
+| Failed at | **${env.FAILED_STAGE ?: 'Unknown'}** |
+| Services | ${env.MM_SERVICES} |
+| Commit | `${env.MM_HASH}` — `${env.MM_MSG}` — _${env.MM_AUTHOR}_ |
+| Console | [로그 확인](${env.BUILD_URL}console) |"""
             )
         }
-        always  { sh 'docker system prune -f 2>/dev/null || true' }
     }
 }
