@@ -108,6 +108,8 @@ onUnmounted(() => {
         <TopBarKpiStrip
           :power-summary="powerSummary"
           :active-alarm-count="activeAlarms.length"
+          :current-mode="rightPanel.mode.value"
+          :panel-open="rightPanel.isOpen.value"
           @toggle-mode="handleModeToggle"
         />
       </template>

@@ -3,23 +3,41 @@ import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 
 const dashboardStore = useDashboardStore()
-const { selectedEss } = storeToRefs(dashboardStore)
+const { selectedResource, selectedEss } = storeToRefs(dashboardStore)
+
+const statusLabelMap: Record<string, string> = {
+  NORMAL: '정상',
+  WARNING: '경고',
+  EMERGENCY: '심각',
+  OFFLINE: '오프라인',
+  idle: '대기',
+  charging: '충전 중',
+  discharging: '방전 중',
+  fault: '이상'
+}
+
+const toStatusLabel = (value: string | undefined) => {
+  if (!value) return '정보 없음'
+  return statusLabelMap[value] ?? value
+}
 </script>
 
 <template>
   <div class="panel-content">
-    <template v-if="selectedEss">
-      <p class="title">{{ selectedEss.name || selectedEss.ess_id }}</p>
+    <template v-if="selectedResource">
+      <p class="title">{{ selectedResource.name || selectedResource.resource_id }}</p>
       <dl class="grid grid-cols-2 gap-2 text-xs text-slate-300">
-        <dt>ESS ID</dt><dd>{{ selectedEss.ess_id }}</dd>
-        <dt>SOC</dt><dd>{{ selectedEss.soc }}%</dd>
-        <dt>SOH</dt><dd>{{ selectedEss.soh ?? '-' }}%</dd>
-        <dt>상태</dt><dd>{{ selectedEss.status }}</dd>
-        <dt>용량</dt><dd>{{ selectedEss.capacity_kwh }} kWh</dd>
-        <dt>최대출력</dt><dd>{{ selectedEss.max_power_kw }} kW</dd>
+        <dt>장비 ID</dt><dd>{{ selectedResource.resource_id }}</dd>
+        <dt>장비 유형</dt><dd>{{ selectedResource.resource_type }}</dd>
+        <dt>상태</dt><dd>{{ toStatusLabel(selectedResource.status) }}</dd>
+        <dt>통신 상태</dt><dd>{{ selectedResource.comms_health ?? '정보 없음' }}</dd>
+        <dt>현재 전력</dt><dd>{{ selectedResource.telemetry?.p_kw ?? '-' }} kW</dd>
+        <dt>전압</dt><dd>{{ selectedResource.telemetry?.v_volt ?? '-' }} V</dd>
+        <dt v-if="selectedEss">SOC</dt><dd v-if="selectedEss">{{ selectedEss.soc }}%</dd>
+        <dt v-if="selectedEss">용량</dt><dd v-if="selectedEss">{{ selectedEss.capacity_kwh }} kWh</dd>
       </dl>
     </template>
-    <p v-else class="text-sm text-slate-400">토폴로지에서 ESS 노드를 선택하세요.</p>
+    <p v-else class="text-sm text-slate-400">토폴로지에서 장비 노드를 선택하세요.</p>
   </div>
 </template>
 

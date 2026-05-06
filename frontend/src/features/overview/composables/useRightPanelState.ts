@@ -31,12 +31,17 @@ export const useRightPanelState = () => {
     state.value = 'closed'
   }
 
+  const toggle = (nextMode: RightPanelMode) => {
+    open(nextMode)
+  }
+
   return {
     state,
     mode,
     isOpen,
     open,
-    close
+    close,
+    toggle
   }
 }
 
