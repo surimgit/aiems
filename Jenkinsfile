@@ -522,8 +522,7 @@ EOF
                     attachments: [[
                         color: '#00C853',
                         pretext: "**[Build #${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_BRANCH})**",
-                        title: ":v::partying_face::v: ${env.MM_TITLE} 성공! :v::partying_face::v:",
-                        text: "> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)",
+                        text: "## :v::partying_face::v: ${env.MM_TITLE} 성공! :v::partying_face::v:\n\n> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)",
                         fields: [
                             [title: 'Author',   value: env.MM_AUTHOR,           short: true],
                             [title: 'Commit',   value: "`${env.MM_HASH}`",      short: true],
@@ -545,8 +544,7 @@ EOF
                     attachments: [[
                         color: '#D32F2F',
                         pretext: "**[Build #${env.BUILD_NUMBER}](${env.BUILD_URL}) (${env.MM_BRANCH})**",
-                        title: ":skull: ${env.MM_TITLE} 안되잖아 다시해 :skull: ${env.MM_MENTION}",
-                        text: "> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)\n:inbox_tray: [전체 에러 로그 다운로드](${env.BUILD_URL}consoleText)",
+                        text: "## :skull: ${env.MM_TITLE} 안되잖아 다시해 :skull: ${env.MM_MENTION}\n\n> _${env.MM_MSG}_\n\n:point_right: [Console Output 확인하기](${env.BUILD_URL}console)\n:inbox_tray: [전체 에러 로그 다운로드](${env.BUILD_URL}consoleText)",
                         fields: [
                             [title: 'Author',    value: "**${env.MM_AUTHOR}**",         short: true],
                             [title: 'Commit',    value: "`${env.MM_HASH}`",             short: true],
