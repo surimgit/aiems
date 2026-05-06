@@ -146,18 +146,30 @@ pipeline {
 
         // ──────────────────────────────────────
         //  4. SonarQube 정적 분석
+        //     - sonar-project.properties 파일에서 설정 자동 로드
+        //     - withSonarQubeEnv('SonarQube'): Jenkins System 설정의 SonarQube 서버 사용
+        //     - SonarQube Scanner 도구는 Jenkins → Tools 에서 'sonar-scanner' 이름으로 등록
+        //     - 분석 결과는 http://<CI/CD EC2>:8000/dashboard?id=s14p31s305 에서 확인
         // ──────────────────────────────────────
-        // stage('SonarQube Analysis') {
-        //     steps {
-        //         withSonarQubeEnv('SonarQube') {
-        //             sh '''
-        //                 sonar-scanner \
-        //                     -Dsonar.projectKey=s14p31s305 \
-        //                     -Dsonar.sources=ems/ingestion/app,ems/state-processor/app,ems/control/app,ems/ai/app,ems/db-writer/app
-        //             '''
-        //         }
-        //     }
-        // }
+        stage('SonarQube Analysis') {
+            when {
+                // master, ems, front 푸시 또는 master 타겟 MR 일 때만 분석
+                expression {
+                    env.SHOULD_DEPLOY == 'true' ||
+                    env.SHOULD_DEPLOY_DEV == 'true' ||
+                    env.SHOULD_DEPLOY_FRONTEND_DEV == 'true'
+                }
+            }
+            steps {
+                script {
+                    def scannerHome = tool 'sonar-scanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                }
+            }
+            post { failure { script { env.FAILED_STAGE = env.FAILED_STAGE ?: 'SonarQube' } } }
+        }
 
         // ──────────────────────────────────────
         //  5. Build (변경된 서비스만)
