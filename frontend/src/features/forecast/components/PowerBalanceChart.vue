@@ -1,131 +1,317 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { Chart } from 'chart.js/auto'
 import { useAiStore } from '@/stores/ai/ai.store'
 import { useI18n } from 'vue-i18n'
 
-interface ChartSeriesPoint {
-  timestamp: string
-  generationKw: number
-  demandKw: number
-  netKw: number
+interface PowerPoint {
+  ts: string
+  generationKw: number | null
+  consumptionKw: number | null
+  balanceKw: number | null
 }
 
-interface YAxisTick {
-  label: string
-  y: number
-}
-
-const VIEWBOX_WIDTH = 100
-const VIEWBOX_HEIGHT = 60
 const MIN_BOUND_GAP = 1
 
 const aiStore = useAiStore()
-const { generationForecast, demandForecast } = storeToRefs(aiStore)
-const { t } = useI18n()
+const { generationForecast, demandForecast, loading } = storeToRefs(aiStore)
+const { t, locale } = useI18n()
 
-const normalizedSeries = computed<ChartSeriesPoint[]>(() => {
-  if (generationForecast.value.length === 0 || demandForecast.value.length === 0) return []
+const chartCanvasRef = ref<HTMLCanvasElement | null>(null)
+const chartInstance = shallowRef<Chart<'line'> | null>(null)
 
-  const generationMap = new Map<string, number>()
-  generationForecast.value.forEach((item) => {
-    if (typeof item.predicted_kw === 'number' && Number.isFinite(item.predicted_kw)) {
-      generationMap.set(item.timestamp, item.predicted_kw)
-    }
-  })
-
-  const merged = demandForecast.value
-    .filter((item) => typeof item.predicted_kw === 'number' && Number.isFinite(item.predicted_kw))
-    .map((demandPoint) => {
-      const generationKw = generationMap.get(demandPoint.timestamp)
-      if (typeof generationKw !== 'number') return null
-      const demandKw = demandPoint.predicted_kw
-      return {
-        timestamp: demandPoint.timestamp,
-        generationKw,
-        demandKw,
-        netKw: generationKw - demandKw
-      }
-    })
-    .filter((item): item is ChartSeriesPoint => item !== null)
-
-  return merged.slice(0, 24)
-})
-
-const hasForecastData = computed(() => normalizedSeries.value.length > 2)
-
-const chartBounds = computed(() => {
-  if (!hasForecastData.value) {
-    return { min: -500, max: 1500 }
-  }
-
-  const values = normalizedSeries.value.flatMap((point) => [point.generationKw, point.demandKw, point.netKw])
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-
-  if (min === max) {
-    return { min: min - 100, max: max + 100 }
-  }
-
-  const gap = Math.max((max - min) * 0.1, MIN_BOUND_GAP)
-  return {
-    min: Math.floor((min - gap) / 100) * 100,
-    max: Math.ceil((max + gap) / 100) * 100
-  }
-})
-
-const toY = (value: number): number => {
-  const min = chartBounds.value.min
-  const max = chartBounds.value.max
-  const ratio = (value - min) / Math.max(max - min, MIN_BOUND_GAP)
-  return VIEWBOX_HEIGHT - ratio * VIEWBOX_HEIGHT
+const toFiniteNumberOrNull = (value: unknown): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
 }
 
-const toPath = (values: number[]): string => {
-  if (values.length === 0) return ''
+const buildDevFallbackSeries = (): PowerPoint[] => {
+  const baseDate = new Date()
+  baseDate.setMinutes(0, 0, 0)
 
-  return values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * VIEWBOX_WIDTH
-      const y = toY(value)
-      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
-    })
-    .join(' ')
-}
+  return Array.from({ length: 24 }, (_, hourOffset) => {
+    const pointDate = new Date(baseDate)
+    pointDate.setHours(baseDate.getHours() + hourOffset)
 
-const generationPath = computed(() => toPath(normalizedSeries.value.map((item) => item.generationKw)))
-const demandPath = computed(() => toPath(normalizedSeries.value.map((item) => item.demandKw)))
-const netPath = computed(() => toPath(normalizedSeries.value.map((item) => item.netKw)))
+    const daytimeFactor = Math.max(0, Math.sin(((hourOffset - 6) / 24) * Math.PI * 2))
+    const generationKw = Math.round(480 + daytimeFactor * 620)
+    const consumptionKw = Math.round(620 + Math.sin(((hourOffset + 2) / 24) * Math.PI * 2) * 210)
 
-const yAxisTicks = computed<YAxisTick[]>(() => {
-  const min = chartBounds.value.min
-  const max = chartBounds.value.max
-  const step = (max - min) / 4
-
-  return Array.from({ length: 5 }, (_, index) => {
-    const value = max - step * index
     return {
-      label: value.toLocaleString('ko-KR', { maximumFractionDigits: 0 }),
-      y: (index / 4) * VIEWBOX_HEIGHT
+      ts: pointDate.toISOString(),
+      generationKw,
+      consumptionKw,
+      balanceKw: generationKw - consumptionKw
     }
   })
+}
+
+const normalizeSeries = (points: PowerPoint[]): PowerPoint[] => {
+  const deduped = new Map<string, PowerPoint>()
+  points.forEach((point) => {
+    if (!point.ts) return
+    deduped.set(point.ts, point)
+  })
+
+  return [...deduped.values()]
+    .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+    .slice(0, 24)
+}
+
+const normalizedSeries = computed<PowerPoint[]>(() => {
+  if (generationForecast.value.length === 0 || demandForecast.value.length === 0) {
+    return import.meta.env.DEV ? buildDevFallbackSeries() : []
+  }
+
+  const generationMap = new Map<string, number | null>()
+  generationForecast.value.forEach((item) => {
+    generationMap.set(item.timestamp, toFiniteNumberOrNull(item.predicted_kw))
+  })
+
+  const merged = demandForecast.value.map((demandPoint) => {
+    const generationKw = generationMap.get(demandPoint.timestamp) ?? null
+    const consumptionKw = toFiniteNumberOrNull(demandPoint.predicted_kw)
+
+    return {
+      ts: demandPoint.timestamp,
+      generationKw,
+      consumptionKw,
+      balanceKw:
+        generationKw === null || consumptionKw === null
+          ? null
+          : generationKw - consumptionKw
+    }
+  })
+
+  return normalizeSeries(merged)
 })
+
+const hasForecastData = computed(() =>
+  normalizedSeries.value.some(
+    (point) => point.generationKw !== null || point.consumptionKw !== null || point.balanceKw !== null
+  )
+)
+
+const isLoading = computed(() => loading.value && normalizedSeries.value.length === 0)
 
 const peakTimeRange = computed(() => {
   if (!hasForecastData.value) return t('common.noData')
 
-  let maxPoint = normalizedSeries.value[0]
-  for (const point of normalizedSeries.value) {
-    if (point.demandKw > maxPoint.demandKw) {
+  const valid = normalizedSeries.value.filter((point) => point.consumptionKw !== null)
+  if (valid.length === 0) return t('common.noData')
+
+  let maxPoint = valid[0]
+  for (const point of valid) {
+    if ((point.consumptionKw ?? Number.NEGATIVE_INFINITY) > (maxPoint.consumptionKw ?? Number.NEGATIVE_INFINITY)) {
       maxPoint = point
     }
   }
 
-  const date = new Date(maxPoint.timestamp)
+  const date = new Date(maxPoint.ts)
   if (Number.isNaN(date.getTime())) return t('common.noData')
   const startHour = date.getHours().toString().padStart(2, '0')
   const endHour = ((date.getHours() + 4) % 24).toString().padStart(2, '0')
   return `${startHour}~${endHour}시`
+})
+
+interface YAxisRange {
+  min: number
+  max: number
+  step: number
+}
+
+const pickNiceStep = (rawStep: number): number => {
+  const candidateSteps = [50, 100, 200, 250, 500, 1000, 2000]
+  for (const step of candidateSteps) {
+    if (rawStep <= step) return step
+  }
+  return Math.ceil(rawStep / 1000) * 1000
+}
+
+const buildYAxisRange = (series: PowerPoint[]): YAxisRange => {
+  const values = series.flatMap((point) => [point.generationKw, point.consumptionKw, point.balanceKw]).filter((v): v is number => v !== null)
+
+  if (values.length === 0) {
+    return { min: -500, max: 1500, step: 500 }
+  }
+
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  if (rawMin === rawMax) {
+    const fallbackStep = pickNiceStep(Math.max(Math.abs(rawMin) * 0.2, 100))
+    return {
+      min: rawMin - fallbackStep * 2,
+      max: rawMax + fallbackStep * 2,
+      step: fallbackStep
+    }
+  }
+
+  const gap = Math.max((rawMax - rawMin) * 0.1, MIN_BOUND_GAP)
+  const paddedMin = rawMin - gap
+  const paddedMax = rawMax + gap
+  const step = pickNiceStep((paddedMax - paddedMin) / 4)
+
+  return {
+    min: Math.floor(paddedMin / step) * step,
+    max: Math.ceil(paddedMax / step) * step,
+    step
+  }
+}
+
+const toTimeLabel = (isoTimestamp: string): string => {
+  const date = new Date(isoTimestamp)
+  if (Number.isNaN(date.getTime())) return '--:--'
+  return date.toLocaleTimeString(locale.value, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
+
+const createOrUpdateChart = () => {
+  if (!chartCanvasRef.value) return
+
+  const points = normalizedSeries.value
+  const labels = points.map((point) => toTimeLabel(point.ts))
+  const range = buildYAxisRange(points)
+
+  const datasets = [
+    {
+      label: t('powerBalance.legend.generation'),
+      data: points.map((point) => point.generationKw),
+      borderColor: '#7dd3fc',
+      backgroundColor: 'rgba(125, 211, 252, 0.15)',
+      borderWidth: 2,
+      spanGaps: true,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.25
+    },
+    {
+      label: t('powerBalance.legend.demand'),
+      data: points.map((point) => point.consumptionKw),
+      borderColor: '#a5b4fc',
+      backgroundColor: 'rgba(165, 180, 252, 0.15)',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      spanGaps: true,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.25
+    },
+    {
+      label: t('powerBalance.legend.net'),
+      data: points.map((point) => point.balanceKw),
+      borderColor: '#6ee7b7',
+      backgroundColor: 'rgba(110, 231, 183, 0.15)',
+      borderWidth: 2,
+      spanGaps: true,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.25
+    }
+  ]
+
+  if (!chartInstance.value) {
+    chartInstance.value = markRaw(new Chart(chartCanvasRef.value, {
+      type: 'line',
+      data: {
+        labels,
+        datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const value = context.raw
+                if (typeof value !== 'number' || !Number.isFinite(value)) {
+                  return `${context.dataset.label}: -`
+                }
+                return `${context.dataset.label}: ${value.toLocaleString(locale.value, { maximumFractionDigits: 1 })} kW`
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: '#94a3b8',
+              maxTicksLimit: 5
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.15)'
+            }
+          },
+          y: {
+            min: range.min,
+            max: range.max,
+            ticks: {
+              color: '#94a3b8',
+              stepSize: range.step,
+              callback: (tickValue) => Number(tickValue).toLocaleString(locale.value)
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.22)'
+            }
+          }
+        }
+      }
+    }))
+
+    return
+  }
+
+  chartInstance.value.data.labels = labels
+  chartInstance.value.data.datasets = datasets
+  chartInstance.value.options.scales = {
+    x: {
+      ticks: {
+        color: '#94a3b8',
+        maxTicksLimit: 5
+      },
+      grid: {
+        color: 'rgba(148, 163, 184, 0.15)'
+      }
+    },
+    y: {
+      min: range.min,
+      max: range.max,
+      ticks: {
+        color: '#94a3b8',
+        stepSize: range.step,
+        callback: (tickValue) => Number(tickValue).toLocaleString(locale.value)
+      },
+      grid: {
+        color: 'rgba(148, 163, 184, 0.22)'
+      }
+    }
+  }
+  chartInstance.value.update()
+}
+
+onMounted(() => {
+  createOrUpdateChart()
+})
+
+watch([normalizedSeries, locale], () => {
+  createOrUpdateChart()
+})
+
+onBeforeUnmount(() => {
+  chartInstance.value?.destroy()
+  chartInstance.value = null
 })
 </script>
 
@@ -149,37 +335,15 @@ const peakTimeRange = computed(() => {
         <span class="legend-line net" />
         <span>{{ t('powerBalance.legend.net') }}</span>
       </div>
+      <span class="legend-unit">단위 : kW · 간격 : 1h</span>
     </div>
 
-    <div v-if="hasForecastData" class="chart-area">
-      <div class="y-axis">
-        <span class="unit">kW</span>
-        <div v-for="tick in yAxisTicks" :key="tick.label" class="tick-label" :style="{ top: `${tick.y / VIEWBOX_HEIGHT * 100}%` }">
-          {{ tick.label }}
-        </div>
-      </div>
-
+    <div v-if="isLoading" class="empty-state">{{ t('powerBalance.loading') }}</div>
+    <div v-else-if="hasForecastData" class="chart-area">
       <div class="plot-wrap">
-        <svg viewBox="0 0 100 60" preserveAspectRatio="none" class="plot-svg" :aria-label="t('powerBalance.ariaLabel')">
-          <g class="grid-lines">
-            <line v-for="tick in yAxisTicks" :key="`line-${tick.label}`" x1="0" :y1="tick.y" x2="100" :y2="tick.y" />
-          </g>
-
-          <path class="series generation" :d="generationPath" />
-          <path class="series demand" :d="demandPath" />
-          <path class="series net" :d="netPath" />
-        </svg>
-
-        <div class="x-axis">
-          <span>00:00</span>
-          <span>06:00</span>
-          <span>12:00</span>
-          <span>18:00</span>
-          <span>24:00</span>
-        </div>
+        <canvas ref="chartCanvasRef" class="plot-canvas" :aria-label="t('powerBalance.ariaLabel')" role="img" />
       </div>
     </div>
-
     <div v-else class="empty-state">{{ t('powerBalance.emptyState') }}</div>
 
     <p class="note">{{ t('powerBalance.note') }}</p>
@@ -215,6 +379,10 @@ const peakTimeRange = computed(() => {
   @apply flex items-center gap-1;
 }
 
+.legend-unit {
+  @apply ml-auto text-[10px] text-slate-400;
+}
+
 .legend-line {
   @apply inline-block h-[2px] w-5 rounded;
 }
@@ -236,53 +404,12 @@ const peakTimeRange = computed(() => {
   @apply flex min-h-[8rem] rounded border border-slate-700 bg-slate-950/60 p-2;
 }
 
-.y-axis {
-  @apply relative mr-2 w-9 flex-shrink-0 text-[10px] text-slate-400;
-}
-
-.unit {
-  @apply absolute -top-1 left-0 text-[10px] text-slate-500;
-}
-
-.tick-label {
-  @apply absolute left-0 -translate-y-1/2;
-}
-
 .plot-wrap {
   @apply flex min-w-0 flex-1 flex-col;
 }
 
-.plot-svg {
+.plot-canvas {
   @apply h-[7.2rem] w-full;
-}
-
-.grid-lines line {
-  stroke: rgba(148, 163, 184, 0.25);
-  stroke-width: 0.35;
-}
-
-.series {
-  fill: none;
-  stroke-width: 1.05;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.series.generation {
-  stroke: #7dd3fc;
-}
-
-.series.demand {
-  stroke: #a5b4fc;
-  stroke-dasharray: 2.2 1.5;
-}
-
-.series.net {
-  stroke: #6ee7b7;
-}
-
-.x-axis {
-  @apply mt-1 flex justify-between text-[10px] text-slate-400;
 }
 
 .empty-state {

@@ -2,11 +2,13 @@ import asyncio
 import threading
 
 from flask import Flask, jsonify
+from prometheus_flask_exporter import PrometheusMetrics
 from .config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    PrometheusMetrics(app, group_by="endpoint")
 
     @app.route("/health")
     def health():

@@ -1,6 +1,4 @@
-# Alertmanager → Mattermost 라우팅
-# MATTERMOST_WEBHOOK_URL은 .env로 주입되지 않으므로 직접 채워 주세요.
-# (환경변수 치환 원하면 envsubst 또는 alertmanager 컨테이너 entrypoint 수정 필요)
+# Alertmanager → Mattermost (Slack 호환 incoming webhook)
 global:
   resolve_timeout: 5m
 
@@ -13,9 +11,22 @@ route:
 
 receivers:
   - name: mattermost
-    webhook_configs:
-      - url: "MATTERMOST_WEBHOOK_URL_HERE"
+    slack_configs:
+      - api_url: "https://meeting.ssafy.com/hooks/coo7q6s76fdi8f5kxdi1rf8bce"
+        channel: "#alerts"
         send_resolved: true
+        username: "EMS Alertmanager"
+        icon_emoji: ":rotating_light:"
+        title: |-
+          [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+        text: |-
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          - severity: `{{ .Labels.severity }}`
+          - instance: `{{ .Labels.instance }}`
+          - started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ end }}
 
 inhibit_rules:
   - source_matchers: [severity="critical"]

@@ -1,8 +1,10 @@
 """AI 서비스 API — Flask 앱 정의 및 헬스체크."""
 
 from flask import Flask, jsonify
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
+PrometheusMetrics(app, group_by="endpoint")
 
 
 @app.route("/health")
