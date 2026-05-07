@@ -11,6 +11,10 @@
 #   POSTGRES_DSN=postgresql://user:pass@172.31.x.x:5432/dbname?sslmode=disable
 #
 # Tailscale로만 외부 접근. 9100/8085/9121/9187은 호스트에 바인딩되지만 Tailscale 외에는 차단되어야 함.
+#
+# 프로젝트명을 monitoring 으로 고정 → Jenkins 등 다른 compose의 --remove-orphans 영향 없음
+name: monitoring
+
 services:
   node-exporter:
     image: prom/node-exporter:v1.8.2
