@@ -142,6 +142,7 @@
       "net": "Net power forecast"
     },
     "ariaLabel": "AI forecast time-series chart",
+    "loading": "Loading AI forecast data...",
     "emptyState": "AI forecast data is not available yet.",
     "note": "* Abnormal ranges are highlighted in red."
   },
