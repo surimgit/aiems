@@ -67,6 +67,7 @@
       :equipment-data="equipmentData"
       :connections="connections"
       :is-edit-mode="isEditMode"
+      :is-add-armed="isAddArmed"
       @update-positions="(value) => (uiPositions = value)"
       @zoom-change="(value) => (isUiVisible = value > 16.0)"
       @map-click="openAddModal"
@@ -102,6 +103,7 @@ import type { ConnectionDirection, EquipmentFormData, MapConnection, MapEquipmen
 
 const topologyFeature = useTopologyFeature()
 const isEditMode = ref(false)
+const isAddArmed = ref(false)
 const isUiVisible = ref(true)
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 const equipmentData = ref<MapEquipment[]>([
