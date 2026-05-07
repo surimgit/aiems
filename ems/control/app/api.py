@@ -53,9 +53,52 @@ def create_app() -> Flask:
     app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
     app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
 
+    _register_error_handlers(app)
     _register_routes(app)
     _start_worker()
     return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """S305 표준 에러 응답 형식으로 통일.
+
+    모든 HTTP 에러를 아래 형식으로 직렬화한다:
+      { error_code, message, trace_id, details }
+    Flask-Smorest 422 validation 에러도 동일 형식으로 래핑.
+    """
+    import uuid as _uuid
+
+    def _err(code: str, msg: str, details: dict | None = None, status: int = 500):
+        return jsonify({
+            "error_code": code,
+            "message": msg,
+            "trace_id": str(_uuid.uuid4()),
+            "details": details or {},
+        }), status
+
+    @app.errorhandler(400)
+    def _h400(e):
+        return _err("BAD_REQUEST", getattr(e, "description", str(e)), status=400)
+
+    @app.errorhandler(404)
+    def _h404(e):
+        return _err("NOT_FOUND", getattr(e, "description", str(e)), status=404)
+
+    @app.errorhandler(405)
+    def _h405(e):
+        return _err("METHOD_NOT_ALLOWED", getattr(e, "description", str(e)), status=405)
+
+    @app.errorhandler(422)
+    def _h422(e):
+        # Flask-Smorest validation 에러: e.data['messages'] 에 필드별 오류 포함.
+        details: dict = {}
+        if hasattr(e, "data") and isinstance(e.data, dict):
+            details = e.data.get("messages", {})
+        return _err("VALIDATION_ERROR", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
+
+    @app.errorhandler(500)
+    def _h500(e):
+        return _err("INTERNAL_ERROR", "서버 내부 오류가 발생했습니다.", status=500)
 
 
 def _start_worker() -> None:
