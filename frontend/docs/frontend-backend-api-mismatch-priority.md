@@ -86,6 +86,23 @@
 
 ---
 
+### P0-4. `/resources` 응답 형태 단일화
+
+#### 현재 상태
+- 프론트는 `GET /api/plants/{site_id}/resources`를 배열(`ResourceDto[]`)로 기대
+- 실제 운영 구간에서 객체형 응답(`{ resources: [...] }` 또는 `{ items: [...] }`)이 들어와 `resources.map is not a function` 런타임 오류가 발생한 이력 존재
+
+#### 문제
+- 같은 엔드포인트에서 응답 shape가 환경/버전별로 달라지면 프론트 안정성이 저하됨
+
+#### 요청사항
+- `/resources` 성공 응답 shape를 단일화해 OpenAPI에 명시
+  - 권장: direct array `ResourceDto[]`
+  - 대안: envelope 사용 시 `{ resources: ResourceDto[] }`로 고정
+- 백엔드/문서/프론트를 동일 shape로 동기화
+
+---
+
 ## 3) P1 (이번 스프린트 내 정리 권장)
 
 ### P1-1. Control 목록 조회 쿼리 파라미터 통일

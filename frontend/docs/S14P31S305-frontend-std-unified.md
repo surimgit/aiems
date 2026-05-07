@@ -107,6 +107,7 @@ frontend/
 - API 계약은 `types/api-contracts.ts` 기준
 - UI 타입은 `types/common.ts`로 매핑
 - `api/*.client.ts`에서 mapper를 통해 DTO -> UI 타입 변환
+- 컬렉션 응답(`resources`, `events` 등)은 런타임에서 배열 여부를 우선 검증하고, envelope/object 응답(`{ resources: [...] }`, `{ items: [...] }`)을 함께 방어한다.
 
 ### 8.2 오류 처리
 - 네트워크/서버 오류는 Store 레벨 `error` 상태로 통합
@@ -255,6 +256,7 @@ Bottom 3 Panels (AI 예측 | KPI 요약 | AI 성과)
 - v1.0: 통합 STD 초안 작성 (대시보드 설계 + 프론트 전반 규칙 통합)
 - v1.1: Jira 176 반영 (하단 3패널 3열 고정, 잘림 완화, 정보 밀도 축소 규칙 확정)
 - v1.2: i18n 확장 및 설비명 alias 저장 플로우 반영 (국가/알람/최근명령/KPI 문구 전환, alias draft->일괄저장 규칙, 쿠키 영속화 정책 추가)
+- v1.3: `/resources` 응답 형태 불일치 대응 규칙 추가 (배열/객체 envelope 동시 방어, `resources.map` 런타임 에러 재발 방지)
 
 ---
 
