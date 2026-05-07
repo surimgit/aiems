@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request
 from flask.views import MethodView
 from flask_smorest import Api, Blueprint
 from marshmallow import Schema, fields
+from prometheus_flask_exporter import PrometheusMetrics
 
 from .config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
@@ -150,6 +151,7 @@ def _compute_summary(site_id: str, states: list[dict]) -> dict:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    PrometheusMetrics(app, group_by="endpoint")
     app.config["API_TITLE"] = "State API"
     app.config["API_VERSION"] = "1.0"
     app.config["OPENAPI_VERSION"] = "3.0.3"
