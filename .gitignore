@@ -13,3 +13,4 @@ mqtt_data/
 .claude/
 frontend/dist/
 retrospective.md
+.opencode/opencode.json
