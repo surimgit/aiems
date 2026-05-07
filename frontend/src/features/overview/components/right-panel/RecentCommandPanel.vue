@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useControlStore } from '@/stores/control/control.store'
 import { useI18n } from 'vue-i18n'
 import { useResourceAlias } from '@/features/overview/composables/useResourceAlias'
 import type { LocaleType } from '@/app/i18n'
+import ControlHistoryTable from './ControlHistoryTable.vue'
 
 const controlStore = useControlStore()
-const { pendingCommands } = storeToRefs(controlStore)
+const { pendingCommands, commandHistory, loading, error } = storeToRefs(controlStore)
 const { t, locale } = useI18n()
 const { getDisplayName } = useResourceAlias()
+const viewMode = ref<'summary' | 'table'>('summary')
 
 const statusToneMap: Record<string, 'success' | 'fail' | 'neutral'> = {
   ACCEPTED: 'success',
@@ -23,20 +25,24 @@ const statusToneMap: Record<string, 'success' | 'fail' | 'neutral'> = {
   TIMED_OUT: 'fail'
 }
 
-const fallbackItems = [
-  { command_id: 'cmd-1', action: 'CLOSE_SWITCH', target_resource_id: '스위치 2', status: 'ACCEPTED', created_at: '14:34:10' },
-  { command_id: 'cmd-2', action: 'START_DISCHARGE', target_resource_id: 'ESS', status: 'ACCEPTED', created_at: '14:33:50' },
-  { command_id: 'cmd-3', action: 'SHED_LOAD', target_resource_id: '부하 센터 3', status: 'REJECTED', created_at: '14:33:21' },
-  { command_id: 'cmd-4', action: 'SET_POWER_LIMIT', target_resource_id: '태양광 2', status: 'ACCEPTED', created_at: '14:32:45' },
-  { command_id: 'cmd-5', action: 'START_GENERATOR', target_resource_id: '디젤 발전기', status: 'ACCEPTED', created_at: '14:31:02' }
-]
-
 const displayedItems = computed(() => {
-  if (pendingCommands.value.length > 0) {
-    return pendingCommands.value.slice(0, 8)
-  }
-  return fallbackItems
+  return [...pendingCommands.value]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 8)
 })
+
+watch(
+  () => viewMode.value,
+  async (mode) => {
+    if (mode === 'table' && commandHistory.value.length === 0 && !loading.value) {
+      try {
+        await controlStore.fetchCommandHistory()
+      } catch {
+        // error state is handled by store
+      }
+    }
+  }
+)
 
 const resolveDisplayResourceName = (resourceId: string): string =>
   getDisplayName(resourceId, resourceId, locale.value as LocaleType)
@@ -58,10 +64,12 @@ const toResult = (status: string) => {
   <div class="panel-content">
     <div class="header-row">
       <p class="title">{{ t('recentPanel.title') }}</p>
-      <button class="view-all-btn" type="button">{{ t('recentPanel.viewAll') }}</button>
+      <button class="view-all-btn" type="button" @click="viewMode = viewMode === 'summary' ? 'table' : 'summary'">
+        {{ viewMode === 'summary' ? t('recentPanel.viewAll') : t('recentPanel.viewSummary') }}
+      </button>
     </div>
 
-    <ul class="result-list">
+    <ul v-if="viewMode === 'summary' && displayedItems.length > 0" class="result-list">
       <li v-for="item in displayedItems" :key="item.command_id" class="result-row">
         <p class="command-text">{{ resolveDisplayResourceName(item.target_resource_id) }} {{ item.action }}</p>
         <div class="right-meta">
@@ -70,6 +78,15 @@ const toResult = (status: string) => {
         </div>
       </li>
     </ul>
+
+    <p v-else-if="viewMode === 'summary'" class="empty-text">{{ t('recentPanel.empty') }}</p>
+
+    <ControlHistoryTable
+      v-else
+      :items="commandHistory"
+      :loading="loading"
+      :error="error"
+    />
   </div>
 </template>
 
@@ -95,7 +112,7 @@ const toResult = (status: string) => {
 }
 
 .result-row {
-  @apply flex items-center justify-between rounded border border-slate-800 bg-slate-900/60 px-2 py-2;
+  @apply grid grid-cols-[minmax(0,1fr)_auto] items-center rounded border border-slate-800 bg-slate-900/60 px-2 py-2;
 }
 
 .command-text {
@@ -103,7 +120,11 @@ const toResult = (status: string) => {
 }
 
 .right-meta {
-  @apply flex items-center gap-2 text-xs;
+  @apply grid grid-cols-[4.5rem_4.5rem] items-center justify-items-end gap-1 text-xs;
+}
+
+.status {
+  @apply inline-block w-[4.5rem] text-right;
 }
 
 .status.success {
@@ -119,6 +140,10 @@ const toResult = (status: string) => {
 }
 
 .time {
-  @apply text-slate-400;
+  @apply inline-block w-[4.5rem] text-right text-slate-400;
+}
+
+.empty-text {
+  @apply rounded border border-slate-700 bg-slate-900/50 px-3 py-3 text-xs text-slate-400;
 }
 </style>

@@ -148,6 +148,16 @@
   "recentPanel": {
     "title": "Recent Command Results",
     "viewAll": "View All",
+    "viewSummary": "Summary View",
+    "loading": "Loading command history...",
+    "error": "Failed to load command history.",
+    "empty": "No command history to display.",
+    "table": {
+      "time": "Time",
+      "status": "Status",
+      "command": "Command",
+      "target": "Target"
+    },
     "status": {
       "success": "Success",
       "fail": "Failed",

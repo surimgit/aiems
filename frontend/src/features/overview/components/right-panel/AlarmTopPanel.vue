@@ -75,7 +75,8 @@ const acknowledge = async (alarmId?: string) => {
 
 <template>
   <div class="panel-content">
-    <div class="mb-2 flex justify-end">
+    <div class="header-row">
+      <p class="title">{{ t('rightPanel.alarmTop3') }}</p>
       <button type="button" class="toggle-btn" @click="isFullView = !isFullView">
         {{ isFullView ? t('alarmPanel.viewTop5') : t('alarmPanel.viewAll') }}
       </button>
@@ -91,13 +92,21 @@ const acknowledge = async (alarmId?: string) => {
         <p class="time">{{ toTimeText(alarm.timestamp) }}</p>
       </li>
     </ul>
-    <p v-else class="text-sm text-slate-400">{{ t('alarmPanel.empty') }}</p>
+    <p v-else class="empty-text">{{ t('alarmPanel.empty') }}</p>
   </div>
 </template>
 
 <style scoped>
 .panel-content {
   @apply rounded border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-300;
+}
+
+.header-row {
+  @apply mb-2 flex items-center justify-between;
+}
+
+.title {
+  @apply text-sm font-semibold text-slate-100;
 }
 
 .toggle-btn {
@@ -138,5 +147,9 @@ const acknowledge = async (alarmId?: string) => {
 
 .time {
   @apply border-l border-slate-700 pl-3 text-xs text-slate-300;
+}
+
+.empty-text {
+  @apply rounded border border-slate-700 bg-slate-900/50 px-3 py-3 text-xs text-slate-400;
 }
 </style>
