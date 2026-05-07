@@ -9,7 +9,7 @@
   },
   "rightPanel": {
     "defaultTitle": "Panel",
-    "alarmTop3": "Alarms (Top 3)",
+    "alarmTop3": "Alarms (Top 5)",
     "recentCommand": "Recent Command Results",
     "countryLanguage": "Country Selection",
     "selectedResource": "Selected Equipment",
@@ -148,6 +148,16 @@
   "recentPanel": {
     "title": "Recent Command Results",
     "viewAll": "View All",
+    "viewSummary": "Summary View",
+    "loading": "Loading command history...",
+    "error": "Failed to load command history.",
+    "empty": "No command history to display.",
+    "table": {
+      "time": "Time",
+      "status": "Status",
+      "command": "Command",
+      "target": "Target"
+    },
     "status": {
       "success": "Success",
       "fail": "Failed",
@@ -161,6 +171,8 @@
   "alarmPanel": {
     "ack": "Acknowledge",
     "empty": "No active alarms.",
+    "viewAll": "View all alarms",
+    "viewTop5": "Summary view",
     "level": {
       "info": "Info",
       "warning": "Warning",

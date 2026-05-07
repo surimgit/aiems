@@ -31,6 +31,7 @@ interface ControlState {
   edgeId: string
   operatorId: string
   pendingCommands: PendingCommand[]
+  commandHistory: ControlResult[]
   loading: boolean
   error: string | null
 }
@@ -55,6 +56,7 @@ export const useControlStore = defineStore('control', {
     edgeId: DEFAULT_EDGE_ID,
     operatorId: DEFAULT_OPERATOR_ID,
     pendingCommands: [],
+    commandHistory: [],
     loading: false,
     error: null
   }),
@@ -169,7 +171,9 @@ export const useControlStore = defineStore('control', {
       this.error = null
 
       try {
-        return await listCommands({ site_id: this.siteId })
+        const history = await listCommands({ site_id: this.siteId })
+        this.commandHistory = Array.isArray(history) ? history : []
+        return this.commandHistory
       } catch (error) {
         this.error = (error as Error).message
         throw error

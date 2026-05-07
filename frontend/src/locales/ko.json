@@ -9,7 +9,7 @@
   },
   "rightPanel": {
     "defaultTitle": "패널",
-    "alarmTop3": "알람 (Top 3)",
+    "alarmTop3": "알람 (Top 5)",
     "recentCommand": "최근 명령 결과",
     "countryLanguage": "국가 선택",
     "selectedResource": "선택된 장비 정보",
@@ -148,6 +148,16 @@
   "recentPanel": {
     "title": "최근 명령 결과",
     "viewAll": "전체 보기",
+    "viewSummary": "요약 보기",
+    "loading": "제어 이력을 불러오는 중입니다.",
+    "error": "제어 이력을 불러오지 못했습니다.",
+    "empty": "표시할 제어 이력이 없습니다.",
+    "table": {
+      "time": "시간",
+      "status": "상태",
+      "command": "명령",
+      "target": "대상 설비"
+    },
     "status": {
       "success": "성공",
       "fail": "실패",
@@ -161,6 +171,8 @@
   "alarmPanel": {
     "ack": "확인",
     "empty": "활성 알람이 없습니다.",
+    "viewAll": "전체 알람 보기",
+    "viewTop5": "요약 보기",
     "level": {
       "info": "정보",
       "warning": "경고",
