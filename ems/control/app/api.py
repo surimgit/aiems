@@ -78,7 +78,8 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(400)
     def _h400(e):
-        return _err("BAD_REQUEST", getattr(e, "description", str(e)), status=400)
+        # S305 §3: INVALID_REQUEST — 요청 형식 또는 필수 필드 오류
+        return _err("INVALID_REQUEST", getattr(e, "description", str(e)), status=400)
 
     @app.errorhandler(404)
     def _h404(e):
@@ -86,15 +87,17 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(405)
     def _h405(e):
+        # S305 §3: METHOD_NOT_ALLOWED (§4: 405 추가됨)
         return _err("METHOD_NOT_ALLOWED", getattr(e, "description", str(e)), status=405)
 
     @app.errorhandler(422)
     def _h422(e):
+        # S305 §3: INVALID_REQUEST — 의미상 처리 불가 (validation 실패)
         # Flask-Smorest validation 에러: e.data['messages'] 에 필드별 오류 포함.
         details: dict = {}
         if hasattr(e, "data") and isinstance(e.data, dict):
             details = e.data.get("messages", {})
-        return _err("VALIDATION_ERROR", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
+        return _err("INVALID_REQUEST", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
 
     @app.errorhandler(500)
     def _h500(e):

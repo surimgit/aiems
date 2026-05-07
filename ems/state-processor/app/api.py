@@ -183,7 +183,8 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(400)
     def _h400(e):
-        return _err("BAD_REQUEST", getattr(e, "description", str(e)), status=400)
+        # S305 §3: INVALID_REQUEST — 요청 형식 또는 필수 필드 오류
+        return _err("INVALID_REQUEST", getattr(e, "description", str(e)), status=400)
 
     @app.errorhandler(404)
     def _h404(e):
@@ -191,19 +192,22 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(405)
     def _h405(e):
+        # S305 §3: METHOD_NOT_ALLOWED (§4: 405 추가됨)
         return _err("METHOD_NOT_ALLOWED", getattr(e, "description", str(e)), status=405)
 
-    @app.errorhandler(410)
-    def _h410(e):
-        return _err("GONE", getattr(e, "description", str(e)), status=410)
+    @app.errorhandler(409)
+    def _h409(e):
+        # S305 §3: CONFLICT — 현재 상태와 요청 충돌 (TimescaleDB 압축 chunk ack 거부 포함)
+        return _err("CONFLICT", getattr(e, "description", str(e)), status=409)
 
     @app.errorhandler(422)
     def _h422(e):
+        # S305 §3: INVALID_REQUEST — 의미상 처리 불가 (validation 실패)
         # Flask-Smorest validation 에러: e.data['messages'] 에 필드별 오류 포함.
         details: dict = {}
         if hasattr(e, "data") and isinstance(e.data, dict):
             details = e.data.get("messages", {})
-        return _err("VALIDATION_ERROR", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
+        return _err("INVALID_REQUEST", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
 
     @app.errorhandler(500)
     def _h500(e):
@@ -491,7 +495,7 @@ def _register_routes(app: Flask) -> None:
                     msg = str(e).lower()
                     if "compress" in msg or "chunk" in msg or "cannot update" in msg:
                         from flask import abort
-                        abort(410, "압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
+                        abort(409, "압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
                     raise
         finally:
             pool.putconn(conn)
@@ -842,26 +846,58 @@ def _register_routes(app: Flask) -> None:
 
             return [_alarm_row_to_dto(r) for r in rows]
 
-    @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>")
-    class PlantAlarmDetailResource(MethodView):
-        @blp.arguments(AlarmAckRequestSchema)
-        @blp.response(200, AlarmSchema)
-        def patch(self, body, site_id, alarm_id):
-            """알람 확인 처리 (acknowledged = true).
-
-            주의 (A안 정책): event_log 는 TimescaleDB hypertable 이며 30일 이후 chunk 가 압축됨.
-                          압축 chunk 는 UPDATE 가 거부되므로 30일 지난 알람은 ack 불가.
-                          압축 거부 에러 발생 시 410 Gone 으로 응답.
-            """
-            return _ack_alarm(site_id, alarm_id, body.get("acked_by") or "operator")
-
     @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>/ack")
     class PlantAlarmAckResource(MethodView):
         @blp.arguments(AlarmAckRequestSchema)
         @blp.response(200, AlarmSchema)
         def post(self, body, site_id, alarm_id):
-            """알람 확인 처리. 프론트/문서 표준 경로."""
+            """알람 확인 처리 (S305 표준 경로).
+
+            event_log 는 TimescaleDB hypertable 이며 30일 이후 chunk 가 압축됨.
+            압축 chunk 는 UPDATE 가 거부되므로 30일 지난 알람은 ack 불가 → 409 Conflict.
+            """
             return _ack_alarm(site_id, alarm_id, body.get("acked_by") or "operator")
+
+    # ── AI 관련 미구현 엔드포인트 (→ 503) ───────────────────────────────────
+    # 아래 3개 엔드포인트는 AI 서비스 활성화 전까지 503 FEATURE_UNAVAILABLE 로 응답.
+    # 기술 부채: 향후 ai-service 구현 시 state-processor에서 제거 후 ai-service로 이관.
+    # 참조: S305 dashboard-api.md §7, ai-api.md §3
+
+    def _ai_unavailable():
+        import uuid as _uuid
+        return jsonify({
+            "error_code": "FEATURE_UNAVAILABLE",
+            "message": "AI 서비스가 아직 활성화되지 않았습니다.",
+            "trace_id": str(_uuid.uuid4()),
+            "details": {},
+        }), 503
+
+    @blp.route("/plants/<string:site_id>/ai/latest")
+    class PlantAiLatestResource(MethodView):
+        def get(self, site_id):
+            """Plant AI 최신 결과 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/ai/latest
+            """
+            return _ai_unavailable()
+
+    @blp.route("/plants/<string:site_id>/forecasts")
+    class PlantForecastResource(MethodView):
+        def get(self, site_id):
+            """예측 목록 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/forecasts
+            """
+            return _ai_unavailable()
+
+    @blp.route("/plants/<string:site_id>/recommendations")
+    class PlantRecommendationResource(MethodView):
+        def get(self, site_id):
+            """권고 목록 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/recommendations
+            """
+            return _ai_unavailable()
 
     # ── 센서 시계열 (차트용) ──────────────────────────────────────────────────
 
