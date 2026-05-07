@@ -23,12 +23,14 @@ import ControlPanel from '@/features/overview/components/right-panel/ControlPane
 import LoadUsagePanel from '@/features/overview/components/right-panel/LoadUsagePanel.vue'
 import { useRightPanelState } from '@/features/overview/composables/useRightPanelState'
 import { useDashboardLayout } from '@/features/overview/composables/useDashboardLayout'
+import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
 import type { RightPanelMode } from '@/features/overview/types'
 
 const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
 const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
 const forecastFeature = useForecastFeature()
+const overviewPolling = useOverviewPolling()
 const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms.value.length))
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
@@ -78,9 +80,11 @@ onMounted(async () => {
 
   await initialize()
   await Promise.all([topologyFeature.initialize(), forecastFeature.fetchForecasts()])
+  overviewPolling.start()
 })
 
 onUnmounted(() => {
+  overviewPolling.stop()
   window.removeEventListener('resize', onResize)
   window.removeEventListener('keydown', onKeydown)
 })

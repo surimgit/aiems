@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Chart } from 'chart.js/auto'
 import { useAiStore } from '@/stores/ai/ai.store'
@@ -19,7 +19,7 @@ const { generationForecast, demandForecast, loading } = storeToRefs(aiStore)
 const { t, locale } = useI18n()
 
 const chartCanvasRef = ref<HTMLCanvasElement | null>(null)
-const chartInstance = ref<Chart<'line'> | null>(null)
+const chartInstance = shallowRef<Chart<'line'> | null>(null)
 
 const toFiniteNumberOrNull = (value: unknown): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
@@ -214,7 +214,7 @@ const createOrUpdateChart = () => {
   ]
 
   if (!chartInstance.value) {
-    chartInstance.value = new Chart(chartCanvasRef.value, {
+    chartInstance.value = markRaw(new Chart(chartCanvasRef.value, {
       type: 'line',
       data: {
         labels,
@@ -268,7 +268,7 @@ const createOrUpdateChart = () => {
           }
         }
       }
-    })
+    }))
 
     return
   }
@@ -307,7 +307,7 @@ onMounted(() => {
 
 watch([normalizedSeries, locale], () => {
   createOrUpdateChart()
-}, { deep: true })
+})
 
 onBeforeUnmount(() => {
   chartInstance.value?.destroy()
