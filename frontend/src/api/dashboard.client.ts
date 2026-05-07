@@ -40,7 +40,16 @@ export const getPowerSummary = async (siteId: string): Promise<PowerSummary> => 
 }
 
 export const getResources = async (siteId: string): Promise<ResourceInfo[]> => {
-  const resources = await http.get<ResourceDto[]>(`/api/plants/${siteId}/resources`)
+  const payload = await http.get<ResourceDto[] | { resources?: ResourceDto[]; items?: ResourceDto[] }>(`/api/plants/${siteId}/resources`)
+
+  const resources = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.resources)
+      ? payload.resources
+      : Array.isArray(payload.items)
+        ? payload.items
+        : []
+
   return resources.map(mapResourceDto)
 }
 

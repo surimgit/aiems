@@ -1,10 +1,16 @@
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+</script>
+
 <template>
   <aside class="topology-legend">
-    <h3 class="font-semibold mb-2">범례</h3>
+    <h3 class="font-semibold mb-2">{{ t('topology.legend.title') }}</h3>
     <ul class="space-y-1 text-sm">
-      <li>전력 흐름</li>
-      <li>정상 / 경고 / 비상</li>
-      <li>인터록 차단</li>
+      <li>{{ t('topology.legend.items.powerFlow') }}</li>
+      <li>{{ t('topology.legend.items.status') }}</li>
+      <li>{{ t('topology.legend.items.interlock') }}</li>
     </ul>
   </aside>
 </template>

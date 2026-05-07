@@ -107,6 +107,7 @@ frontend/
 - API 계약은 `types/api-contracts.ts` 기준
 - UI 타입은 `types/common.ts`로 매핑
 - `api/*.client.ts`에서 mapper를 통해 DTO -> UI 타입 변환
+- 컬렉션 응답(`resources`, `events` 등)은 런타임에서 배열 여부를 우선 검증하고, envelope/object 응답(`{ resources: [...] }`, `{ items: [...] }`)을 함께 방어한다.
 
 ### 8.2 오류 처리
 - 네트워크/서버 오류는 Store 레벨 `error` 상태로 통합
@@ -172,6 +173,24 @@ Bottom 3 Panels (AI 예측 | KPI 요약 | AI 성과)
   - tablet 8개(2x4)
   - monitor 12개(3x4)
   - wall 20개(4x5)
+- 국가 카드 텍스트 규칙:
+  - locale=ko: `KR 대한민국`
+  - locale=en: `KR Korea`
+- 최근 명령 설비명 표시는 임시 문자열 번역 금지, `설비 별칭(alias) -> 원본 id` 우선순위로 표시
+- 선택 장비 패널의 이름 편집은 `적용(임시 저장)` 단계에서 draft만 갱신하며, 패널 하단 `변경사항 저장` 클릭 시에만 쿠키에 영구 반영
+
+### 11.5 다국어(i18n) 및 설비 별칭 저장 규칙
+- 다국어 프레임워크: `vue-i18n` (로컬 메시지 파일 `src/locales/ko.json`, `src/locales/en.json`)
+- locale 영속화: `localStorage` 키 `ai-ems.locale`
+- 설비 별칭 영속화: 쿠키 키 `ai-ems.resource-aliases`
+  - 저장 단위: `{ [resourceId]: { ko?: string, en?: string } }`
+  - 저장 시점: 사용자가 명시적으로 `변경사항 저장`을 클릭한 경우
+  - 보관 정책: `max-age=315360000`(10년), `path=/`, `samesite=lax`
+- 표시 우선순위:
+  1) locale별 alias
+  2) API `name`
+  3) `resource_id`
+- 한 locale에서 alias는 1개만 유지하며, 재저장 시 최신값으로 덮어쓴다.
 
 ---
 
@@ -236,6 +255,8 @@ Bottom 3 Panels (AI 예측 | KPI 요약 | AI 성과)
 ## 16. 변경 이력
 - v1.0: 통합 STD 초안 작성 (대시보드 설계 + 프론트 전반 규칙 통합)
 - v1.1: Jira 176 반영 (하단 3패널 3열 고정, 잘림 완화, 정보 밀도 축소 규칙 확정)
+- v1.2: i18n 확장 및 설비명 alias 저장 플로우 반영 (국가/알람/최근명령/KPI 문구 전환, alias draft->일괄저장 규칙, 쿠키 영속화 정책 추가)
+- v1.3: `/resources` 응답 형태 불일치 대응 규칙 추가 (배열/객체 envelope 동시 방어, `resources.map` 런타임 에러 재발 방지)
 
 ---
 

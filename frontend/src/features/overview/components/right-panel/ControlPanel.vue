@@ -4,18 +4,20 @@ import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useControlStore } from '@/stores/control/control.store'
 import type { CommandAction } from '@/types/common'
+import { useI18n } from 'vue-i18n'
 
 const dashboardStore = useDashboardStore()
 const controlStore = useControlStore()
 
 const { selectedEss, selectedResource } = storeToRefs(dashboardStore)
 const { loading, error } = storeToRefs(controlStore)
+const { t } = useI18n()
 
 const resultMessage = ref('')
 
 const submit = async (action: CommandAction) => {
   if (!selectedEss.value) {
-    resultMessage.value = '선택된 ESS가 없습니다.'
+    resultMessage.value = t('selectedResource.control.noEssSelected')
     return
   }
 
@@ -26,9 +28,9 @@ const submit = async (action: CommandAction) => {
       target_resource_id: selectedEss.value.ess_id,
       action
     })
-    resultMessage.value = `명령 전송 완료: ${result.status}`
+    resultMessage.value = `${t('selectedResource.control.commandSuccess')}: ${result.status}`
   } catch {
-    resultMessage.value = '명령 전송 실패'
+    resultMessage.value = t('selectedResource.control.commandFailed')
   }
 }
 </script>
@@ -36,16 +38,16 @@ const submit = async (action: CommandAction) => {
 <template>
   <div class="panel-content space-y-3">
     <p class="text-xs text-slate-400">
-      대상: <span class="text-slate-100">{{ selectedResource?.name || selectedResource?.resource_id || '선택 없음' }}</span>
+      {{ t('selectedResource.control.target') }}: <span class="text-slate-100">{{ selectedResource?.name || selectedResource?.resource_id || t('selectedResource.control.noneSelected') }}</span>
     </p>
     <p v-if="selectedResource && selectedResource.resource_type !== 'ESS'" class="text-xs text-amber-300">
-      현재는 ESS 제어 명령만 지원됩니다. ESS 노드를 선택하면 제어가 활성화됩니다.
+      {{ t('selectedResource.control.onlyEssSupported') }}
     </p>
     <div class="grid grid-cols-2 gap-2">
-      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('START_CHARGE')">충전 시작</button>
-      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('STOP_CHARGE')">충전 중지</button>
-      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('START_DISCHARGE')">방전 시작</button>
-      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('STOP_DISCHARGE')">방전 중지</button>
+      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('START_CHARGE')">{{ t('selectedResource.control.actions.startCharge') }}</button>
+      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('STOP_CHARGE')">{{ t('selectedResource.control.actions.stopCharge') }}</button>
+      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('START_DISCHARGE')">{{ t('selectedResource.control.actions.startDischarge') }}</button>
+      <button class="control-btn" :disabled="!selectedEss || loading" @click="submit('STOP_DISCHARGE')">{{ t('selectedResource.control.actions.stopDischarge') }}</button>
     </div>
     <p v-if="resultMessage" class="text-xs text-cyan-300">{{ resultMessage }}</p>
     <p v-if="error" class="text-xs text-red-400">{{ error }}</p>

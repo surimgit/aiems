@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAiStore } from '@/stores/ai/ai.store'
+import { useI18n } from 'vue-i18n'
 
 const aiStore = useAiStore()
 const { recommendations, modelStatus } = storeToRefs(aiStore)
+const { t } = useI18n()
 
 const highPriorityCount = computed(() => recommendations.value.filter((item) => item.priority === 'high').length)
 const avgConfidence = computed(() => {
@@ -77,7 +79,7 @@ const modelStatusText = computed(() => {
 
 <template>
   <section class="panel-card">
-    <h3 class="title">AI 성과 <span class="sub-title">(이번 달)</span></h3>
+    <h3 class="title">{{ t('aiPerformance.title') }} <span class="sub-title">({{ t('common.thisMonth') }})</span></h3>
 
     <div class="gauge-card">
       <div class="gauge-wrap" role="img" aria-label="AI 성과 달성률 게이지">
@@ -98,17 +100,17 @@ const modelStatusText = computed(() => {
 
       <div class="gauge-footer">
         <div class="footer-item">
-          <p class="footer-label">목표</p>
+          <p class="footer-label">{{ t('aiPerformance.target') }}</p>
           <p class="footer-value">{{ formattedTarget }}</p>
         </div>
         <div class="footer-item align-right">
-          <p class="footer-label">달성률</p>
+          <p class="footer-label">{{ t('aiPerformance.achievementRate') }}</p>
           <p class="footer-value">{{ achievementRate.toFixed(1) }}%</p>
         </div>
       </div>
     </div>
 
-    <p class="meta">고우선 추천 {{ highPriorityCount }}건 · 평균 신뢰도 {{ avgConfidence === null ? 'N/A' : `${(avgConfidence * 100).toFixed(1)}%` }} · 모델 상태 {{ modelStatusText }}</p>
+    <p class="meta">{{ t('aiPerformance.meta.highPriority', { count: highPriorityCount }) }} · {{ t('aiPerformance.meta.avgConfidence') }} {{ avgConfidence === null ? 'N/A' : `${(avgConfidence * 100).toFixed(1)}%` }} · {{ t('aiPerformance.meta.modelStatus') }} {{ modelStatusText }}</p>
   </section>
 </template>
 

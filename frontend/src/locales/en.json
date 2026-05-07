@@ -1,0 +1,170 @@
+{
+  "topbar": {
+    "title": "AI EMS Dashboard",
+    "subtitle": "Energy Management System",
+    "alarm": "Alarm",
+    "recent": "Recent Commands",
+    "countryLanguage": "Country/Language",
+    "settings": "Settings"
+  },
+  "rightPanel": {
+    "defaultTitle": "Panel",
+    "alarmTop3": "Alarms (Top 3)",
+    "recentCommand": "Recent Command Results",
+    "countryLanguage": "Country Selection",
+    "selectedResource": "Selected Equipment",
+    "control": "Equipment Control",
+    "loadUsage": "Load Usage Status"
+  },
+  "countryPanel": {
+    "searchPlaceholder": "Search country",
+    "languageTitle": "Language",
+    "apply": "Apply",
+    "applied": "Applied"
+  },
+  "common": {
+    "thisMonth": "This Month",
+    "noData": "No Data",
+    "save": "Save",
+    "cancel": "Cancel",
+    "apply": "Apply"
+  },
+  "topology": {
+    "legend": {
+      "title": "Legend",
+      "items": {
+        "powerFlow": "Power flow",
+        "status": "Normal / Warning / Critical",
+        "interlock": "Interlock blocked"
+      }
+    },
+    "selectionOverlay": {
+      "selectedItem": "Selected Item"
+    }
+  },
+  "kpi": {
+    "title": "KPI Summary",
+    "units": {
+      "kwh": "kWh",
+      "won": "KRW",
+      "count": " cases"
+    },
+    "subText": {
+      "vsLastMonth": "vs last month",
+      "basedOnCurrentAlarm": "based on current alarms"
+    },
+    "items": {
+      "generation": {
+        "label": "Total Generation"
+      },
+      "consumption": {
+        "label": "Total Consumption"
+      },
+      "selfSufficiency": {
+        "label": "Self-sufficiency"
+      },
+      "saving": {
+        "label": "Cost Saving"
+      }
+    }
+  },
+  "status": {
+    "normal": "Normal",
+    "warning": "Warning",
+    "critical": "Critical",
+    "offline": "Offline",
+    "idle": "Idle",
+    "charging": "Charging",
+    "discharging": "Discharging",
+    "fault": "Fault"
+  },
+  "selectedResource": {
+    "sections": {
+      "summary": "Selected Equipment Summary",
+      "control": "Equipment Control",
+      "loadUsage": "Load Usage Overview"
+    },
+    "info": {
+      "equipmentId": "Equipment ID",
+      "equipmentType": "Equipment Type",
+      "status": "Status",
+      "commsStatus": "Communication",
+      "currentPower": "Current Power",
+      "voltage": "Voltage",
+      "capacity": "Capacity",
+      "empty": "Select an equipment node from the topology.",
+      "editName": "Edit name",
+      "editNamePlaceholder": "Enter a display name"
+    },
+    "control": {
+      "target": "Target",
+      "noneSelected": "None selected",
+      "onlyEssSupported": "Only ESS control commands are currently supported. Select an ESS node to enable control.",
+      "noEssSelected": "No ESS is selected.",
+      "commandSuccess": "Command sent",
+      "commandFailed": "Command failed",
+      "actions": {
+        "startCharge": "Start Charge",
+        "stopCharge": "Stop Charge",
+        "startDischarge": "Start Discharge",
+        "stopDischarge": "Stop Discharge"
+      }
+    },
+    "loadUsage": {
+      "title": "Load Usage Status",
+      "expand": "View all",
+      "collapse": "Compact view",
+      "fallback": {
+        "loadCenter": "Load Center {index}"
+      }
+    },
+    "alias": {
+      "saveAll": "Save changes"
+    }
+  },
+  "aiPerformance": {
+    "title": "AI Performance",
+    "target": "Target",
+    "achievementRate": "Achievement",
+    "meta": {
+      "highPriority": "High-priority recommendations {count}",
+      "avgConfidence": "Average confidence",
+      "modelStatus": "Model status"
+    }
+  },
+  "powerBalance": {
+    "title": "AI Forecast",
+    "subTitle24h": "24h",
+    "peakExpected": "Peak Expected",
+    "legend": {
+      "generation": "Generation forecast",
+      "demand": "Demand forecast",
+      "net": "Net power forecast"
+    },
+    "ariaLabel": "AI forecast time-series chart",
+    "emptyState": "AI forecast data is not available yet.",
+    "note": "* Abnormal ranges are highlighted in red."
+  },
+  "recentPanel": {
+    "title": "Recent Command Results",
+    "viewAll": "View All",
+    "status": {
+      "success": "Success",
+      "fail": "Failed",
+      "running": "Running",
+      "created": "Created",
+      "blocked": "Blocked",
+      "expired": "Expired",
+      "timeout": "Timed Out"
+    }
+  },
+  "alarmPanel": {
+    "ack": "Acknowledge",
+    "empty": "No active alarms.",
+    "level": {
+      "info": "Info",
+      "warning": "Warning",
+      "critical": "Critical"
+    }
+  }
+}

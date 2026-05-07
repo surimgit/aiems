@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { KpiSummaryItem } from '../index'
+import { useI18n } from 'vue-i18n'
 
 defineProps<{
   items: KpiSummaryItem[]
 }>()
+
+const { t } = useI18n()
 
 const iconByKey: Record<NonNullable<KpiSummaryItem['icon']>, string> = {
   generation: '⚡',
@@ -21,7 +24,7 @@ const getDeltaClass = (direction?: KpiSummaryItem['deltaDirection']): string => 
 
 <template>
   <section class="panel-card">
-    <h3 class="title">KPI 요약 <span class="sub-title">(이번 달)</span></h3>
+    <h3 class="title">{{ t('kpi.title') }} <span class="sub-title">({{ t('common.thisMonth') }})</span></h3>
     <div class="kpi-grid">
       <article v-for="item in items" :key="item.id" class="kpi-card">
         <header class="kpi-card-header">
