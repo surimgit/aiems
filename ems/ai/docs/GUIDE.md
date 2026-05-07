@@ -4,8 +4,11 @@
 
 - [EMS AI Current Design](./AI_CURRENT_FINAL_DESIGN.md)
 - [Baseline Solar Training Result](./ml/baseline-training-result.md)
+- [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
+- [Satellite v6 RunPod Live Inference - 2026-05-07](./ops/satellite-v6-runpod-live-inference-2026-05-07.md)
 - [Load Profile And LLM Structuring](./ml/load-profile-and-llm.md)
 - [AI Code Map](./ops/ai-code-map.md)
+- [GK2A Download Ops Note](./ops/gk2a-download-ops-note.md)
 
 이 문서는 `ems/ai` 문서를 빠르게 찾기 위한 진입점이다.
 
@@ -17,25 +20,28 @@
 4. [Load Forecast Data Plan](./data/load-forecast-data-plan.md)
 5. [Model Strategy](./ml/model-strategy.md)
 6. [Inference And Retraining](./ml/inference-and-retraining.md)
-7. [GPU Training Runbook](./ml/gpu-training-runbook.md)
-8. [LLM Role](./ml/llm-role.md)
-9. [Repo Structure](./ops/repo-structure.md)
-10. [Python Scripts](./python-scripts.md)
-
-## Shared Project Docs
+7. [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
+8. [Satellite v6 RunPod Live Inference - 2026-05-07](./ops/satellite-v6-runpod-live-inference-2026-05-07.md)
+9. [GPU Training Runbook](./ml/gpu-training-runbook.md)
+10. [LLM Role](./ml/llm-role.md)
+11. [Repo Structure](./ops/repo-structure.md)
+12. [Python Scripts](./python-scripts.md)
 
 ## Global Solar Training Plan
 
 - [global-solar-training-plan.md](./ml/global-solar-training-plan.md): NASA POWER 글로벌 데이터 정의, 학습 진행 방식, 부족 데이터 정리
 - [gpu-training-stages.md](./ml/gpu-training-stages.md): GPU 서버에서 1차 MLP, 2차 LightGBM, 3차 site correction을 실행하는 절차
 
+## Shared Project Docs
+
 팀 공용 설계 문서는 아래 루트를 기준으로 본다.
 
-- [AI Development Guide](../../../IdeaProjects/S305/AI_DEVELOPMENT_GUIDE.md)
-- [AI Training And Inference Strategy](../../../IdeaProjects/S305/10-ai-contracts/ai-training-inference-strategy.md)
-- [Solar Forecast Problem](../../../IdeaProjects/S305/10-ai-contracts/solar-forecast-problem.md)
-- [Training Dataset Contract](../../../IdeaProjects/S305/10-ai-contracts/training-dataset.md)
-- [Forecast Contract](../../../IdeaProjects/S305/10-ai-contracts/forecast-contract.md)
+- [AI Development Guide](../../../../../IdeaProjects/S305/AI_DEVELOPMENT_GUIDE.md)
+- [AI Current RunPod Satellite Status - 2026-05-07](../../../../../IdeaProjects/S305/10-ai-contracts/ai-current-runpod-satellite-status.md)
+- [AI Training And Inference Strategy](../../../../../IdeaProjects/S305/10-ai-contracts/ai-training-inference-strategy.md)
+- [Solar Forecast Problem](../../../../../IdeaProjects/S305/10-ai-contracts/solar-forecast-problem.md)
+- [Training Dataset Contract](../../../../../IdeaProjects/S305/10-ai-contracts/training-dataset.md)
+- [Forecast Contract](../../../../../IdeaProjects/S305/10-ai-contracts/forecast-contract.md)
 
 ## Local AI Docs Map
 
@@ -53,12 +59,18 @@
 
 - [model-strategy.md](./ml/model-strategy.md): 지금 어떤 모델을 학습시키는지와 이유
 - [inference-and-retraining.md](./ml/inference-and-retraining.md): 추론, 로그 적재, 재학습 구조
+- [satellite-image-training-handoff-2026-05-06.md](./ml/satellite-image-training-handoff-2026-05-06.md): GK2A 위성 이미지 직접 학습, anomaly filter 비교 결과, 다음 작업 메모
 - [gpu-training-runbook.md](./ml/gpu-training-runbook.md): GPU 서버 학습 준비, 환경 변수, 실행 명령
 - [llm-role.md](./ml/llm-role.md): LLM이 추론 시점에서 어떤 역할을 하는지 설명
+
+최신 운영 후보는 `satellite_wind_safe_v6`이다. 기존 `satellite_image_wind_compare_*v5`는 ASOS 컬럼 해석 문제로 폐기했고, v7 upwind/visibility 실험은 v6보다 성능이 낮아 현재 후보에서 제외한다. 자세한 원인과 feature 목록은 위성 학습 handoff 문서와 RunPod live inference 문서에 있다.
 
 ### `ops/`
 
 - [repo-structure.md](./ops/repo-structure.md): 폴더 구조, `.gitkeep`, 정리 원칙
+- [ai-code-map.md](./ops/ai-code-map.md): 런타임 기준 코드/스크립트 역할 맵
+- [gk2a-download-ops-note.md](./ops/gk2a-download-ops-note.md): GK2A 다운로드 경로, 실패 패턴, 재시작/운영 메모
+- [satellite-v6-runpod-live-inference-2026-05-07.md](./ops/satellite-v6-runpod-live-inference-2026-05-07.md): v6 모델 선택, RunPod 배포, 실제 KMA/GK2A API live 추론 결과
 - [gpu-env-setup.md](./gpu-env-setup.md): GPU 환경 셋업
 
 ### Root Docs

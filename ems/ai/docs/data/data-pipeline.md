@@ -141,6 +141,61 @@ KMA APIHub GK2A LE2
 3. 안정화되면 4병렬로 늘린다.
 4. `overwrite: false`라 기존 `.nc` 파일은 skip된다.
 
+### GK2A 1-Year Completion And Retry Flow
+
+GK2A archive는 중간 학습을 반복하지 않고 2025년 1년치 수집을 먼저 끝낸 뒤
+offline cloud feature 실험에 연결한다.
+
+기본 흐름:
+
+```text
+monthly download/resume
+  -> build retry index
+  -> retry missing/failed/rejected list
+  -> rebuild retry index
+  -> only then extract cloud features and train
+```
+
+실패/거절 목록 생성:
+
+```bash
+python ems/ai/scripts/build_gk2a_failure_index.py \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml
+```
+
+Google Drive가 다른 경로로 마운트된 PC에서는 `--raw-root`로 실제 `.nc` 루트를 지정한다.
+
+```bash
+python ems/ai/scripts/build_gk2a_failure_index.py \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml \
+  --raw-root "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2"
+```
+
+결과:
+
+- `raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.json`
+- `raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.csv`
+
+분류 기준:
+
+- `MISSING`: 기대 경로에 파일이 없고 manifest 실패 기록도 없음
+- `FAILED`: 다운로드 시도는 있었지만 최종 실패
+- `REJECTED_OR_NO_DATA`: 401/403/404/429, no data, limit, denied 계열 응답
+- `SUSPICIOUS_SMALL_FILE`: `.nc` 파일은 있으나 크기가 너무 작아 정상 NetCDF로 보기 어려움
+
+재시도:
+
+```bash
+python ems/ai/scripts/retry_gk2a_failure_index.py \
+  --index "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.json" \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml \
+  --limit 50
+```
+
+재시도 후에는 `build_gk2a_failure_index.py`를 다시 실행해서 남은 목록을 갱신한다.
+기상청이 실제로 데이터를 제공하지 않는 시간대는 계속 `REJECTED_OR_NO_DATA`로 남을 수 있으므로,
+최종 학습 전에는 해당 목록을 결측 구간으로 별도 보관한다.
+
 ### Forecast-Compatible Weather Feature Pipeline
 
 운영 예측 후보 모델은 inference 시점에 존재하는 feature만 사용해야 한다.

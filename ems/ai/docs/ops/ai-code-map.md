@@ -2,10 +2,16 @@
 
 This document maps the current `ems/ai` folder to runtime responsibilities.
 
+Related ops note:
+
+- [gk2a-download-ops-note.md](./gk2a-download-ops-note.md): GK2A 다운로드 경로, 용량 특성, 404 처리, 재시작 운영 메모
+
 ## Top-Level Folders
 
 ```text
 ems/ai/
+  service/      Flask AI MSA runtime service
+  models/       packaged model artifacts used by service and RunPod
   configs/      YAML configs for training, data sources, and RunPod
   docs/         AI design and runbooks
   notebooks/    manual GPU/Jupyter setup notebooks
@@ -22,6 +28,37 @@ G:/내 드라이브/s305-ai-data
 ```
 
 or later under S3/RDS according to the deployment plan.
+
+## Flask AI Service
+
+```text
+service/app/main.py
+```
+
+Flask entrypoint for the AI MSA. It exposes:
+
+- `GET /health`
+- `GET /docs`
+- `GET /api/ai/models`
+- `POST /api/ai/site-profile/structure`
+- `POST /api/ai/predict-solar`
+- `POST /api/ai/predict-capacity-factor`
+- `POST /api/ai/predict-load`
+- `POST /api/ai/forecast`
+
+MVC-style layout:
+
+```text
+service/app/controllers/    HTTP routes
+service/app/services/       usecases
+service/app/repositories/   model artifact loading
+service/app/domain/         profile/load/postprocess helper logic
+service/app/schemas/        request/response schemas
+service/app/adapters/       external API/DB adapters
+```
+
+`service/` is the deployable runtime boundary. The offline scripts below remain
+available for training, data collection, and batch jobs.
 
 ## Training Code
 
@@ -195,6 +232,10 @@ scripts/run_gk2a_le2_archive_monthly.py
 
 Collect GK2A cloud/GK2A LE2 archive NetCDF data. The monthly runner is the
 preferred way to resume long 2025 archive downloads.
+
+Current operational caveats and restart behavior are documented in:
+
+- [gk2a-download-ops-note.md](./gk2a-download-ops-note.md)
 
 ```text
 scripts/audit_download_sources.py
