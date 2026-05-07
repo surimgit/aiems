@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 node_modules/
+frontend/dist/
 .DS_Store
 *.log
 ems/ai/checkpoints/*
@@ -20,3 +21,10 @@ redis_data/
 pg_data/
 mqtt_data/
 .vscode/
+.claude/
+
+# 테스트 파일
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
