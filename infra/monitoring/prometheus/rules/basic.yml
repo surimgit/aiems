@@ -1,0 +1,64 @@
+groups:
+  - name: ems-basic
+    interval: 30s
+    rules:
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "노드 다운: {{ $labels.instance }}"
+          description: "{{ $labels.instance }} node-exporter가 2분 이상 응답 없음"
+
+      - alert: HighCpu
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU 사용률 높음: {{ $labels.instance }}"
+          description: "5분 평균 CPU > 85% ({{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "메모리 사용률 높음: {{ $labels.instance }}"
+          description: "메모리 사용 > 90% ({{ $value | printf \"%.1f\" }}%)"
+
+      - alert: DiskAlmostFull
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "디스크 사용률 높음: {{ $labels.instance }} {{ $labels.mountpoint }}"
+          description: "디스크 사용 > 85% ({{ $value | printf \"%.1f\" }}%)"
+
+      - alert: ContainerRestarting
+        expr: increase(container_start_time_seconds{name!=""}[10m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "컨테이너 재시작 반복: {{ $labels.name }}"
+          description: "10분 내 2회 이상 재시작"
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL 다운"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis 다운"
