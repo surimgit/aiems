@@ -5,22 +5,24 @@ const props = withDefaults(defineProps<{
   mode?: DashboardLayoutMode
   preset?: DashboardLayoutPreset
   panelOpen?: boolean
+  mapExpanded?: boolean
 }>(), {
   mode: 'laptop',
-  panelOpen: false
+  panelOpen: false,
+  mapExpanded: false
 })
 </script>
 
 <template>
-  <section class="dashboard-shell" :class="[`mode-${props.mode}`, { 'panel-open': props.panelOpen }]">
-    <div class="main-area">
+  <section class="dashboard-shell" :class="[`mode-${props.mode}`, { 'panel-open': props.panelOpen, 'map-expanded': props.mapExpanded }]">
+    <div class="main-area" :class="{ 'main-area-expanded': props.mapExpanded }">
       <slot name="topbar" />
 
       <div class="topology-area">
         <slot name="topology" />
       </div>
 
-      <div class="bottom-area">
+      <div v-if="!props.mapExpanded" class="bottom-area">
         <div class="bottom-item">
           <slot name="power-balance" />
         </div>
@@ -47,6 +49,10 @@ const props = withDefaults(defineProps<{
 .main-area {
   @apply grid min-h-0 grid-cols-1 gap-5;
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.main-area-expanded {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .topology-area {

@@ -35,6 +35,7 @@ const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
 const rightPanel = useRightPanelState()
+const isMapExpanded = ref(false)
 const { mode } = useDashboardLayout(() => viewportWidth.value, () => rightPanel.isOpen.value)
 
 const onResize = () => {
@@ -92,7 +93,7 @@ onUnmounted(() => {
 
 <template>
   <div class="overview-page">
-    <DashboardShell :mode="mode" :panel-open="rightPanel.isOpen.value">
+    <DashboardShell :mode="mode" :panel-open="rightPanel.isOpen.value" :map-expanded="isMapExpanded">
       <template #topbar>
         <TopBarKpiStrip
           :power-summary="powerSummary"
@@ -104,15 +105,25 @@ onUnmounted(() => {
       </template>
 
       <template #topology>
-        <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
-          <template #svg>
-            <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
-            <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
-          </template>
-          <template #overlay>
-            <TopologyLegend />
-          </template>
-        </TopologyStage>
+        <div class="topology-wrap">
+          <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
+            <template #svg>
+              <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
+              <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
+            </template>
+            <template #overlay>
+              <TopologyLegend />
+            </template>
+          </TopologyStage>
+          <button
+            type="button"
+            class="map-expand-btn"
+            @click="isMapExpanded = !isMapExpanded"
+            :aria-label="isMapExpanded ? '지도 축소' : '지도 확장'"
+          >
+            {{ isMapExpanded ? '⤡' : '⤢' }}
+          </button>
+        </div>
       </template>
 
       <template #power-balance>
@@ -144,5 +155,13 @@ onUnmounted(() => {
 <style scoped>
 .overview-page {
   @apply h-full min-h-0 overflow-y-auto overflow-x-hidden bg-slate-950;
+}
+
+.topology-wrap {
+  @apply relative h-full min-h-0;
+}
+
+.map-expand-btn {
+  @apply absolute bottom-3 right-3 z-20 rounded border border-white/20 bg-slate-900/80 px-2 py-1 text-sm text-white backdrop-blur;
 }
 </style>

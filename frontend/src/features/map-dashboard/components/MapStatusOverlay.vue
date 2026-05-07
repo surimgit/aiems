@@ -4,8 +4,9 @@
       v-for="equip in equipmentData"
       :key="equip.id"
       class="absolute w-[150px] rounded-lg border border-white/10 bg-slate-900/40 text-white shadow-xl backdrop-blur-md transition-transform duration-75 pointer-events-auto"
-      :class="{ 'cursor-pointer hover:border-blue-500': isEditMode }"
+      :class="{ 'cursor-pointer hover:border-blue-500': isEditMode && !isDragging, 'cursor-grabbing': draggingId === equip.id }"
       :style="getStyle(equip.id)"
+      @mousedown="onDragStart($event, equip.id)"
       @click="handleEquipClick(equip.id)"
     >
       <div
@@ -28,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import type { MapEquipment } from '../types'
 
 const props = defineProps<{
@@ -46,6 +47,52 @@ const statusLabel = {
   normal: '정상',
   stopped: '중지',
   error: '이상'
+}
+
+const dragOffsets = ref<Record<string, { x: number; y: number }>>({})
+const draggingId = ref<string | null>(null)
+const isDragging = ref(false)
+let dragStartMouse = { x: 0, y: 0 }
+let dragStartOffset = { x: 0, y: 0 }
+let dragMoved = false
+
+const onDragMove = (event: MouseEvent) => {
+  const id = draggingId.value
+  if (!id) return
+  const dx = event.clientX - dragStartMouse.x
+  const dy = event.clientY - dragStartMouse.y
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+    dragMoved = true
+    isDragging.value = true
+  }
+  dragOffsets.value[id] = {
+    x: dragStartOffset.x + dx,
+    y: dragStartOffset.y + dy
+  }
+}
+
+const onDragEnd = () => {
+  draggingId.value = null
+  setTimeout(() => {
+    isDragging.value = false
+  }, 0)
+}
+
+const onDragStart = (event: MouseEvent, id: string) => {
+  if (event.button !== 0) return
+  draggingId.value = id
+  dragMoved = false
+  dragStartMouse = { x: event.clientX, y: event.clientY }
+  const current = dragOffsets.value[id] ?? { x: 0, y: 0 }
+  dragStartOffset = { x: current.x, y: current.y }
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+const onMouseUp = () => {
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onMouseUp)
+  onDragEnd()
 }
 
 type Anchor = 'left' | 'right' | 'top' | 'bottom'
@@ -115,15 +162,23 @@ const getStyle = (id: string) => {
   left = clamp(left, 8, width - modalWidth - 8)
   top = clamp(top, 8, height - modalHeight - 8)
 
+  const offset = dragOffsets.value[id] ?? { x: 0, y: 0 }
+
   return {
-    left: `${left}px`,
-    top: `${top}px`,
+    left: `${left + offset.x}px`,
+    top: `${top + offset.y}px`,
     transform: `scale(${zoomScale})`,
     transformOrigin: 'top left'
   }
 }
 
 const handleEquipClick = (id: string) => {
+  if (dragMoved) return
   if (props.isEditMode) emit('edit-equip', id)
 }
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onMouseUp)
+})
 </script>

@@ -69,7 +69,7 @@
       :is-edit-mode="isEditMode"
       :is-add-armed="isAddArmed"
       @update-positions="(value) => (uiPositions = value)"
-      @zoom-change="(value) => (isUiVisible = value > 16.0)"
+      @zoom-change="handleZoomChange"
       @map-click="openAddModal"
       @equip-click="openEditModal"
     />
@@ -78,6 +78,7 @@
       v-show="isUiVisible"
       :equipment-data="equipmentData"
       :ui-positions="uiPositions"
+      :map-zoom="mapZoom"
       :is-edit-mode="isEditMode"
       @edit-equip="openEditModal"
     />
@@ -105,6 +106,7 @@ const topologyFeature = useTopologyFeature()
 const isEditMode = ref(false)
 const isAddArmed = ref(false)
 const isUiVisible = ref(true)
+const mapZoom = ref(16)
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 const equipmentData = ref<MapEquipment[]>([
   { id: 'solar-1', name: 'SOLAR #1', type: 'GENERATOR', status: 'normal', power: '640 kW', lngLat: [129.074, 35.1795] },
@@ -219,6 +221,11 @@ const openEditModal = (id: string) => {
   const target = equipmentData.value.find((item) => item.id === id)
   if (!target) return
   modalConfig.value = { show: true, mode: 'edit', formData: { ...target } }
+}
+
+const handleZoomChange = (value: number) => {
+  mapZoom.value = value
+  isUiVisible.value = value > 14.0
 }
 
 const handleSave = (formData: EquipmentFormData) => {
