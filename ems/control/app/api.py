@@ -64,8 +64,9 @@ def _start_worker() -> None:
     from .adapters.db_writer import ControlDBWriter
     from .adapters.event_publisher import EventPublisher
     from .adapters.policy_reader import PolicyReader
+    from .adapters.topology_reader import TopologyReader
     from .domain.rule_engine import run
-    from .config import CONTROL_INTERVAL_SECONDS
+    from .config import CONTROL_INTERVAL_SECONDS, STATE_PROCESSOR_URL, SITE_ID
 
     _POLICY_REFRESH_INTERVAL = 10
 
@@ -121,6 +122,7 @@ def _start_worker() -> None:
         db = ControlDBWriter()
         event_pub = EventPublisher()
         policy = PolicyReader()
+        topology = TopologyReader(STATE_PROCESSOR_URL, SITE_ID)
         await db.connect()
         await event_pub.connect()
         await policy.connect()
@@ -134,7 +136,8 @@ def _start_worker() -> None:
                     try:
                         states = await reader.get_all()
                         if states:
-                            commands, events = await run(states, policy, event_pub)
+                            graph = await topology.fetch()
+                            commands, events = await run(states, policy, event_pub, topology_graph=graph)
                             sent = 0
                             for cmd in commands:
                                 if not _should_send(cmd, states):
@@ -152,6 +155,7 @@ def _start_worker() -> None:
                     await asyncio.sleep(CONTROL_INTERVAL_SECONDS)
         finally:
             refresh_task.cancel()
+            await topology.close()
             await db.close()
             await event_pub.close()
             await policy.close()
