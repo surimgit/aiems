@@ -1,55 +1,40 @@
 <template>
   <div class="relative h-full w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950">
-    <div class="absolute left-3 top-3 z-30 w-[320px] rounded-lg border border-white/10 bg-slate-950/85 p-2 text-xs text-white backdrop-blur">
-      <div class="mb-2 flex items-center justify-between">
-        <strong>Map Control</strong>
-        <div class="flex items-center gap-1.5">
-          <button
-            type="button"
-            class="rounded bg-slate-700 px-2 py-1 font-semibold"
-            @click="isControlCollapsed = !isControlCollapsed"
-          >
-            {{ isControlCollapsed ? '펼치기' : '접기' }}
+    <div
+      class="absolute left-3 top-3 z-30 rounded-lg border border-white/10 bg-slate-950/85 p-2 text-xs text-white backdrop-blur"
+      :class="isControlCollapsed ? 'w-[96px]' : 'w-[208px]'"
+    >
+      <div v-if="isControlCollapsed" class="flex justify-center">
+        <button type="button" class="w-full rounded bg-slate-700 px-2 py-1 font-semibold" @click="handleExpand">
+          펼치기
+        </button>
+      </div>
+
+      <div v-else>
+        <div class="mb-2 flex items-center justify-between">
+          <strong>Map</strong>
+          <button type="button" class="rounded bg-rose-700 px-2 py-1 font-semibold" @click="handleComplete">
+            완료
           </button>
+        </div>
+
+        <div class="mb-2 grid grid-cols-2 gap-1.5">
           <button
             type="button"
             class="rounded px-2 py-1 font-semibold"
-            :class="isEditMode ? 'bg-rose-600' : 'bg-blue-600'"
-            @click="isEditMode = !isEditMode"
+            :class="isAddArmed ? 'bg-emerald-600' : 'bg-slate-700'"
+            @click="toggleAddArmed"
           >
-            {{ isEditMode ? '편집 종료' : '편집 시작' }}
+            {{ isAddArmed ? '추가 대기중' : '장비 추가' }}
           </button>
-        </div>
-      </div>
-
-      <div v-if="!isControlCollapsed">
-        <div class="mb-2 rounded border border-white/10 p-2">
-          <p class="mb-1 text-slate-300">장비 추가 기본 타입</p>
-          <div class="mb-1 grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              class="rounded px-2 py-1 font-semibold"
-              :class="isAddArmed ? 'bg-emerald-600' : 'bg-slate-700'"
-              :disabled="!isEditMode"
-              @click="toggleAddArmed"
-            >
-              {{ isAddArmed ? '장비 추가 대기중' : '장비 추가' }}
-            </button>
-            <button
-              type="button"
-              class="rounded bg-slate-700 px-2 py-1 font-semibold"
-              :disabled="!isAddArmed"
-              @click="isAddArmed = false"
-            >
-              취소
-            </button>
-          </div>
-          <select v-model="defaultAddType" class="w-full rounded bg-slate-800 px-2 py-1">
-            <option value="GENERATOR">GENERATOR</option>
-            <option value="ESS">ESS</option>
-            <option value="LOAD">LOAD</option>
-          </select>
-          <p class="mt-1 text-[11px] text-slate-400">편집 시작 후 지도 빈 공간 클릭 시 추가 모달이 열립니다.</p>
+          <button
+            type="button"
+            class="rounded bg-slate-700 px-2 py-1 font-semibold"
+            :disabled="!isAddArmed"
+            @click="isAddArmed = false"
+          >
+            취소
+          </button>
         </div>
 
         <div class="rounded border border-white/10 p-2">
@@ -77,6 +62,11 @@
             </select>
           </div>
           <button type="button" class="w-full rounded bg-blue-600 px-2 py-1 font-semibold" @click="upsertConnection">연결 반영</button>
+
+          <div v-if="selectedLineId" class="mt-2 rounded border border-rose-400/40 bg-rose-900/20 p-2">
+            <p class="mb-1 text-[11px] text-slate-200">선 선택됨: {{ selectedLineId }}</p>
+            <button type="button" class="w-full rounded bg-rose-700 px-2 py-1 font-semibold" @click="removeSelectedLine">선 삭제</button>
+          </div>
         </div>
       </div>
     </div>
@@ -86,16 +76,19 @@
       :connections="connections"
       :is-edit-mode="isEditMode"
       :is-add-armed="isAddArmed"
+      :selected-line-id="selectedLineId"
       @update-positions="(value) => (uiPositions = value)"
-      @zoom-change="(value) => (isUiVisible = value > 16.0)"
+      @zoom-change="handleZoomChange"
       @map-click="handleMapClick"
       @equip-click="handleEquipClick"
+      @line-click="handleLineClick"
     />
 
     <MapStatusOverlay
       v-show="isUiVisible"
       :equipment-data="equipmentData"
       :ui-positions="uiPositions"
+      :map-zoom="mapZoom"
       :is-edit-mode="isEditMode"
       @edit-equip="openEditModal"
     />
@@ -132,7 +125,9 @@ const isEditMode = ref(false)
 const isControlCollapsed = ref(false)
 const defaultAddType = ref<MapEquipment['type']>('LOAD')
 const isAddArmed = ref(false)
+const selectedLineId = ref<string | null>(null)
 const isUiVisible = ref(true)
+const mapZoom = ref(16)
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 
 const equipmentData = ref<MapEquipment[]>([
@@ -234,6 +229,12 @@ const upsertConnection = () => {
   }
 }
 
+const removeSelectedLine = () => {
+  if (!selectedLineId.value) return
+  connections.value = connections.value.filter((line) => line.id !== selectedLineId.value)
+  selectedLineId.value = null
+}
+
 const openAddModal = (lngLat: [number, number]) => {
   modalConfig.value = {
     show: true,
@@ -245,6 +246,17 @@ const openAddModal = (lngLat: [number, number]) => {
 const toggleAddArmed = () => {
   if (!isEditMode.value) return
   isAddArmed.value = !isAddArmed.value
+}
+
+const handleExpand = () => {
+  isControlCollapsed.value = false
+  isEditMode.value = true
+}
+
+const handleComplete = () => {
+  isAddArmed.value = false
+  isEditMode.value = false
+  isControlCollapsed.value = true
 }
 
 const handleMapClick = (lngLat: [number, number]) => {
@@ -283,6 +295,16 @@ const handleEquipClick = (id: string) => {
     return
   }
   emit('select-node', id)
+}
+
+const handleLineClick = (lineId: string) => {
+  selectedLineId.value = lineId
+  emit('select-line', lineId)
+}
+
+const handleZoomChange = (value: number) => {
+  mapZoom.value = value
+  isUiVisible.value = value > 14.0
 }
 
 watch(
