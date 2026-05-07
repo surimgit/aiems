@@ -148,6 +148,16 @@
   "recentPanel": {
     "title": "최근 명령 결과",
     "viewAll": "전체 보기",
+    "viewSummary": "요약 보기",
+    "loading": "제어 이력을 불러오는 중입니다.",
+    "error": "제어 이력을 불러오지 못했습니다.",
+    "empty": "표시할 제어 이력이 없습니다.",
+    "table": {
+      "time": "시간",
+      "status": "상태",
+      "command": "명령",
+      "target": "대상 설비"
+    },
     "status": {
       "success": "성공",
       "fail": "실패",
