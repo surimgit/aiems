@@ -1,0 +1,68 @@
+# 각 EC2 호스트에 배포하는 Exporter 묶음
+# 모든 EC2(공통):
+#   docker compose -f docker-compose.exporters.yml --profile common up -d
+# Redis가 있는 EC2 (ingestion):
+#   docker compose -f docker-compose.exporters.yml --profile common --profile redis up -d
+# DB EC2:
+#   docker compose -f docker-compose.exporters.yml --profile common --profile postgres up -d
+#
+# 환경변수(.env 또는 export):
+#   REDIS_ADDR=redis://172.31.x.x:6379
+#   POSTGRES_DSN=postgresql://user:pass@172.31.x.x:5432/dbname?sslmode=disable
+#
+# Tailscale로만 외부 접근. 9100/8085/9121/9187은 호스트에 바인딩되지만 Tailscale 외에는 차단되어야 함.
+#
+# 프로젝트명을 monitoring 으로 고정 → Jenkins 등 다른 compose의 --remove-orphans 영향 없음
+name: monitoring
+
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: always
+    profiles: [common]
+    pid: host
+    network_mode: host
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+      - --web.listen-address=:9100
+    volumes:
+      - /:/host:ro,rslave
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: always
+    profiles: [common]
+    privileged: true
+    ports:
+      - "8085:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: redis-exporter
+    restart: always
+    profiles: [redis]
+    environment:
+      REDIS_ADDR: ${REDIS_ADDR}
+    ports:
+      - "9121:9121"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: postgres-exporter
+    restart: always
+    profiles: [postgres]
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_DSN}
+    ports:
+      - "9187:9187"

@@ -22,6 +22,12 @@ from ..config import (
 )
 
 STREAM_DB_WRITE = "mg:db:write"
+_ACK_STATUS_VALUES = {"PENDING", "ACCEPTED", "REJECTED", "TIMEOUT"}
+
+
+def normalize_ack_status(status: str | None, default: str = "PENDING") -> str:
+    value = (status or default).upper()
+    return value if value in _ACK_STATUS_VALUES else default
 
 
 class ControlDBWriter:
@@ -80,7 +86,7 @@ class ControlDBWriter:
             "payload": command["payload"],
             "reason": command.get("reason", ""),
             "issued_by": command.get("issued_by", "rule"),
-            "ack_status": "pending",
+            "ack_status": "PENDING",
         }
         await self._redis.xadd(STREAM_DB_WRITE, {"data": json.dumps(envelope, ensure_ascii=False)})
 
@@ -90,7 +96,7 @@ class ControlDBWriter:
             "kind": "command",
             "update_ack": True,
             "command_id": command_id,
-            "ack_status": status,
+            "ack_status": normalize_ack_status(status),
         }
         await self._redis.xadd(STREAM_DB_WRITE, {"data": json.dumps(envelope, ensure_ascii=False)})
 
@@ -100,7 +106,7 @@ class ControlDBWriter:
             "kind": "command",
             "update_ack": True,
             "command_id": command_id,
-            "ack_status": "accepted",   # verify 단계는 이미 accepted 상태
+            "ack_status": "ACCEPTED",   # verify 단계는 이미 accepted 상태
             "verified": verified,
         }
         await self._redis.xadd(STREAM_DB_WRITE, {"data": json.dumps(envelope, ensure_ascii=False)})

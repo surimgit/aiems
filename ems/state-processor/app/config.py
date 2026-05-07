@@ -23,9 +23,24 @@ CONSUMER_GROUP = "state-group"
 CONSUMER_NAME = "state-processor-1"
 
 # ── DB (TimescaleDB) ──────────────────────────────────────────────────────
-# master .env 우선 (TIMESCALE_*), 옛 변수도 fallback
+# 시계열 (sensor_data / event_log / control_history) 조회용.
 DB_HOST = os.getenv("TIMESCALE_HOST") or os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("TIMESCALE_PORT") or os.getenv("DB_PORT", 5432))
 DB_NAME = os.getenv("TIMESCALE_DB") or os.getenv("DB_NAME", "emsdb")
 DB_USER = os.getenv("TIMESCALE_USER") or os.getenv("DB_USER", "ems")
 DB_PASSWORD = os.getenv("TIMESCALE_PASSWORD") or os.getenv("DB_PASSWORD", "ems1234")
+
+# ── Control DB (PostgreSQL) ───────────────────────────────────────────────
+# 운영 데이터 (topology_*, control_policy 등) 조회용.
+# state-processor 가 토폴로지 응답을 만들기 위해 read-only 로 접근.
+CONTROL_DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
+CONTROL_DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+CONTROL_DB_NAME = os.getenv("CONTROL_DB", "control_db")
+CONTROL_DB_USER = os.getenv("CONTROL_USER", "control_user")
+CONTROL_DB_PASSWORD = os.getenv("CONTROL_PASSWORD", "")
+
+# ── Simulator Topology API ────────────────────────────────────────────────
+# 설계문서 §3 기준 토폴로지 master = simulator/topology 서비스.
+# state-processor 는 control_db (EMS 메타데이터) 와 이 API (런타임 토폴로지) 를
+# 합쳐서 응답한다. 운영자가 simulator UI 에서 라인을 추가하면 자동 반영.
+SIMULATOR_TOPOLOGY_URL = os.getenv("SIMULATOR_TOPOLOGY_URL", "http://host.docker.internal:8081")

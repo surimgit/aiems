@@ -24,10 +24,22 @@ SITE_ID = os.getenv("SITE_ID", "PLANT-ALPHA")
 CONTROL_INTERVAL_SECONDS = 1.0
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul")
 
+# ── 외부 서비스 ───────────────────────────────────────────────────────────
+# state-processor 토폴로지 API (control 이 매 iteration HTTP 호출)
+STATE_PROCESSOR_URL = os.getenv("STATE_PROCESSOR_URL", "http://state-processor:5002")
+
 # ── DB (PostgreSQL control_db) ────────────────────────────────────────────
-# master .env 우선 (POSTGRES_* + CONTROL_*), 옛 변수도 fallback
+# control_policy / control_policy_history 등 운영 데이터.
 DB_HOST = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT", 5432))
 DB_NAME = os.getenv("CONTROL_DB") or os.getenv("DB_NAME", "emsdb")
 DB_USER = os.getenv("CONTROL_USER") or os.getenv("DB_USER", "ems")
 DB_PASSWORD = os.getenv("CONTROL_PASSWORD") or os.getenv("DB_PASSWORD", "ems1234")
+
+# ── TimescaleDB ───────────────────────────────────────────────────────────
+# control_history (시계열) — /api/control/commands 조회용.
+TS_DB_HOST = os.getenv("TIMESCALE_HOST", "timescaledb")
+TS_DB_PORT = int(os.getenv("TIMESCALE_PORT", 5432))
+TS_DB_NAME = os.getenv("TIMESCALE_DB", "timescale_db")
+TS_DB_USER = os.getenv("TIMESCALE_USER", "timescale_user")
+TS_DB_PASSWORD = os.getenv("TIMESCALE_PASSWORD", "")

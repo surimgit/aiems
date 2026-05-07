@@ -1,121 +1,191 @@
-name: ems
-
 services:
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: mosquitto
+  gateway:
+    build:
+      context: ./gateway
     ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
-    restart: unless-stopped
+      # 로컬 http://localhost → 컨테이너 내부 nginx(8080) 로 포워딩
+      - "80:8080"
+    depends_on:
+      ingestion:
+        condition: service_healthy
+      state-processor:
+        condition: service_healthy
+      control:
+        condition: service_healthy
+      # ai-service:
+      #   condition: service_healthy
 
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-
-  timescaledb:
-    image: timescale/timescaledb:latest-pg16
-    container_name: timescaledb
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=ems
-      - POSTGRES_PASSWORD=ems1234
-      - POSTGRES_DB=emsdb
-    volumes:
-      - timescaledb_data:/var/lib/postgresql/data
-      - ./ems/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./ems/db/aggregation.sql:/docker-entrypoint-initdb.d/02-aggregation.sql
-      - ./ems/db/migrate_001_verified_column.sql:/docker-entrypoint-initdb.d/03-migrate_001.sql
-      - ./ems/db/migrate_002_alarm_columns.sql:/docker-entrypoint-initdb.d/04-migrate_002.sql
-      - ./ems/db/migrate_003_topology.sql:/docker-entrypoint-initdb.d/05-migrate_003.sql
-      - ./ems/db/migrate_004_policy_seed.sql:/docker-entrypoint-initdb.d/06-migrate_004.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ems -d emsdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    restart: unless-stopped
+  stream-init:
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.stream-init
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: "no"
 
   ingestion:
-    build: ./ems/ingestion
-    container_name: ingestion
-    ports:
-      - "5000:5000"
-    environment:
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - SITE_ID=PLANT-ALPHA
-    depends_on:
-      - mosquitto
-      - redis
-    restart: unless-stopped
-
-  state-processor:
-    build: ./ems/state-processor
-    container_name: state-processor
-    ports:
-      - "5002:5002"
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - SITE_ID=PLANT-ALPHA
-      - DB_HOST=timescaledb
-      - DB_PORT=5432
-      - DB_NAME=emsdb
-      - DB_USER=ems
-      - DB_PASSWORD=ems1234
-    depends_on:
-      redis:
-        condition: service_started
-      timescaledb:
-        condition: service_healthy
-    restart: unless-stopped
-
-  control:
-    build: ./ems/control
-    container_name: control
+    build:
+      context: ./ems/ingestion
+      args:
+        PORT: 5001
     ports:
       - "5001:5001"
+    env_file: .env
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - MQTT_HOST=mosquitto
-      - MQTT_PORT=1883
-      - SITE_ID=PLANT-ALPHA
-      - DB_HOST=timescaledb
-      - DB_PORT=5432
-      - DB_NAME=emsdb
-      - DB_USER=ems
-      - DB_PASSWORD=ems1234
+      FLASK_APP: app.main:app
     depends_on:
-      redis:
+      stream-init:
+        condition: service_completed_successfully
+      mqtt:
         condition: service_started
-      mosquitto:
-        condition: service_started
+
+  state-processor:
+    build:
+      context: ./ems/state-processor
+      args:
+        PORT: 5002
+    ports:
+      - "5002:5002"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
+
+  control:
+    build:
+      context: ./ems/control
+      args:
+        PORT: 5003
+    ports:
+      - "5003:5003"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stream-init:
+        condition: service_completed_successfully
+
+  # ai-service:
+  #   build:
+  #     context: ./ems/ai-service
+  #     args:
+  #       PORT: 5004
+  #   ports:
+  #     - "5004:5004"
+  #   env_file: .env
+  #   environment:
+  #     FLASK_APP: app.main:app
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     stream-init:
+  #       condition: service_completed_successfully
+
+  db-writer:
+    build:
+      context: ./ems/db-writer
+      args:
+        PORT: 5005
+    ports:
+      - "5005:5005"
+    env_file: .env
+    environment:
+      FLASK_APP: app.main:app
+    depends_on:
       timescaledb:
         condition: service_healthy
-    restart: unless-stopped
+      stream-init:
+        condition: service_completed_successfully
 
-  ai-service:
-    build:
-      context: .
-      dockerfile: ems/ai/service/Dockerfile
-    container_name: ai-service
-    ports:
-      - "5004:5004"
+  timescaledb:
+    image: timescale/timescaledb:2.15.3-pg15
+    restart: always
     environment:
-      - S305_SOLAR_MODEL_PATH=/app/ems/ai/models/solar_kpx_lightgbm/model.joblib
-      - S305_CAPACITY_FACTOR_MODEL_PATH=/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib
-    restart: unless-stopped
+      POSTGRES_PASSWORD: ${TIMESCALE_ROOT_PASSWORD}
+      TIMESCALE_DB: ${TIMESCALE_DB}
+      TIMESCALE_USER: ${TIMESCALE_USER}
+      TIMESCALE_PASSWORD: ${TIMESCALE_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./infra/init_timescale.sh:/docker-entrypoint-initdb.d/init_timescale.sh
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  postgres:
+    image: postgres:15.5
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      STATE_DB: ${STATE_DB}
+      STATE_USER: ${STATE_USER}
+      STATE_PASSWORD: ${STATE_PASSWORD}
+      AI_DB: ${AI_DB}
+      AI_USER: ${AI_USER}
+      AI_PASSWORD: ${AI_PASSWORD}
+      CONTROL_DB: ${CONTROL_DB}
+      CONTROL_USER: ${CONTROL_USER}
+      CONTROL_PASSWORD: ${CONTROL_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/init_postgres.sh:/docker-entrypoint-initdb.d/init_postgres.sh
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: [ "CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mqtt:
+    image: eclipse-mosquitto:2.0.18
+    restart: always
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    environment:
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    entrypoint: [ "/bin/sh", "/mosquitto/config/entrypoint.sh" ]
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./infra/mosquitto/acl.template:/mosquitto/config/acl.template:ro
+      - ./infra/mosquitto/entrypoint.sh:/mosquitto/config/entrypoint.sh:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
 
 volumes:
-  timescaledb_data:
+  timescale_data:
+  postgres_data:
+  redis_data:
+  mqtt_data:
+  mqtt_log:

@@ -23,6 +23,9 @@ from ..domain.aggregator import WindowAggregator
 from .timescale_writer import TimescaleWriter
 from .postgres_writer import PostgresWriter
 
+_STALE_COMMAND_TIMEOUT_SEC = 300
+_STALE_COMMAND_CLEANUP_INTERVAL_SEC = 60
+
 
 async def _ensure_group(client: aioredis.Redis, stream: str) -> None:
     """consumer group이 없으면 생성. init_streams.py가 이미 만들었으면 BUSYGROUP."""
@@ -92,7 +95,7 @@ async def _handle_db_write(
             if envelope.get("update_ack"):
                 await ts.update_command_ack(
                     envelope["command_id"],
-                    envelope.get("ack_status", "accepted"),
+                    envelope.get("ack_status", "ACCEPTED"),
                     envelope.get("verified"),
                 )
             else:
@@ -161,6 +164,20 @@ async def _batch_flush(aggregator: WindowAggregator, ts: TimescaleWriter) -> Non
             print(f"[db-writer] sensor_data flush 실패: {e}")
 
 
+async def _command_history_maintenance(ts: TimescaleWriter) -> None:
+    """control_history 상태값 정규화와 stale pending 정리를 주기적으로 수행."""
+    while True:
+        try:
+            await ts.normalize_command_ack_statuses()
+        except Exception as e:
+            print(f"[db-writer] control_history ack_status normalize 실패: {e}")
+        try:
+            await ts.timeout_stale_pending_commands(_STALE_COMMAND_TIMEOUT_SEC)
+        except Exception as e:
+            print(f"[db-writer] control_history stale pending timeout 실패: {e}")
+        await asyncio.sleep(_STALE_COMMAND_CLEANUP_INTERVAL_SEC)
+
+
 async def run() -> None:
     """db-writer 메인 진입점. 모든 자원 초기화 + 루프 동시 실행."""
     client = aioredis.Redis(
@@ -184,6 +201,7 @@ async def run() -> None:
         await asyncio.gather(
             _consume_loop(client, aggregator, ts, pg),
             _batch_flush(aggregator, ts),
+            _command_history_maintenance(ts),
         )
     finally:
         await ts.close()

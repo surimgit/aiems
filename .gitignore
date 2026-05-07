@@ -7,8 +7,6 @@ node_modules/
 .DS_Store
 *.log
 ems/ai/checkpoints/*
-!ems/ai/checkpoints/satellite_wind_safe_v6/
-!ems/ai/checkpoints/satellite_wind_safe_v6/.gitkeep
 ems/ai/data/raw/*
 ems/ai/data/processed/*
 ems/ai/logs/*

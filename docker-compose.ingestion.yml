@@ -8,6 +8,8 @@ services:
       context: ./infra
       dockerfile: Dockerfile.stream-init
     env_file: .env
+    environment:
+      - REDIS_PORT=6379
     depends_on:
       redis:
         condition: service_healthy
@@ -22,7 +24,10 @@ services:
       - "${INGESTION_PORT:-5001}:5001"
     env_file: .env
     environment:
-      FLASK_APP: app.main:app
+      - FLASK_APP=app.main:app
+      - REDIS_PORT=6379
+      - MQTT_PORT=1883
+      - MQTT_BROKER_PORT=1883
     restart: always
     depends_on:
       redis:
