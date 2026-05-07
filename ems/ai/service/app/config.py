@@ -29,6 +29,10 @@ class Settings:
         "S305_CAPACITY_FACTOR_MODEL_PATH",
         str(AI_ROOT / "models" / "kpx_5min_capacity_factor_lightgbm" / "model.joblib"),
     )
+    default_satellite_model_path: str = os.getenv(
+        "S305_SATELLITE_MODEL_PATH",
+        str(AI_ROOT / "checkpoints" / "satellite_wind_safe_v6" / "best_model.pt"),
+    )
     default_irradiance_threshold: float = float(os.getenv("S305_IRRADIANCE_THRESHOLD", "10.0"))
     default_max_capacity_factor: float = float(os.getenv("S305_MAX_CAPACITY_FACTOR", "1.0"))
     openai_api_key_env: str = os.getenv("S305_OPENAI_API_KEY_ENV", "OPENAI_API_KEY")

@@ -53,6 +53,23 @@
 - 다음 모델 구조로 ConvLSTM/3D CNN을 검토한다.
   - 가능하면 sequence를 `T=3`에서 `T=6`으로 늘린다.
 
+### 2026-05-07 Data Check Addendum
+
+- 추가 스크립트:
+  - `ems/ai/scripts/analyze_satellite_anomaly_bundle.py`
+  - `ems/ai/scripts/evaluate_satellite_checkpoint_crossval.py`
+- 로컬 데이터 검증 산출물:
+  - `ems/ai/outputs/satellite_anomaly_compare_v4_data_check`
+- 확인 결과:
+  - `strong_filter` val에서 1h는 6h보다 target 평균과 피크 시간 비중이 높다.
+  - `1h RMSE > 6h RMSE`는 horizon 자체가 더 어렵다는 결론으로 바로 해석하면 안 된다.
+  - 같은 `(region, target_timestamp_kst)`가 1h/2h/3h/6h를 모두 가지는 fair set을 만들었다.
+    - `no_filter`: `4560 / 8269`
+    - `mild_filter`: `4384 / 7877`
+    - `strong_filter`: `4112 / 7400`
+- 다음 실제 실행:
+  - GPU 서버에서 `evaluate_satellite_checkpoint_crossval.py`로 `strong_filter` checkpoint를 `no_filter` val/fair-val에 재평가한다.
+
 ## 2026-04-30 Branch State
 
 - branch: `ems-ai/temp`
@@ -438,6 +455,11 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
 
 ## Next
 
+- 현재 운영 후보는 `satellite_wind_safe_v6`로 고정한다.
+- v5 wind bundle은 ASOS `WD`/후반 컬럼 파싱 문제로 폐기한다.
+- v7 upwind/visibility 실험은 v6보다 성능이 낮아 현재 운영 후보에서 제외한다.
+- 다음 위성 쪽 핵심 작업은 live `gk2a_area_proxy`를 실제 GK2A NetCDF 64x64 crop 입력으로 교체하는 것이다.
+- EC2 Forecast-AI에서 RunPod endpoint 호출, 24시간 horizon 생성, forecast DB 저장 흐름을 연결한다.
 - 오프라인 백테스트 흐름 정리
 - KPX 태양광 API `2024-09-07`부터 이어서 수집
 - 소비 데이터 정규화 스크립트 작성
@@ -449,3 +471,94 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
 - 한국천문연구원 특일 정보를 load prior에 join
 - 소비 예측에 필요한 현장 데이터 스키마 정의
 - LLM context 입력 포맷 초안 정의
+
+## 2026-05-07 Satellite v6 RunPod Live Inference State
+
+현재 운영 후보 모델은 `satellite_wind_safe_v6`로 고정한다.
+
+선택 이유:
+
+- v6 `satellite_wind_safe_strong`가 real no-filter validation에서 가장 안정적이었다.
+- v7 `upwind + visibility`는 clean/real validation 모두에서 v6보다 성능이 떨어졌다.
+- v5 wind bundle은 ASOS `WD`와 후반 컬럼 파싱 문제가 있어 폐기한다.
+
+v6 성능:
+
+```text
+clean_strong_val:
+  MAE  0.085128
+  RMSE 0.106228
+
+real_no_filter_fair_val:
+  MAE  0.092938
+  RMSE 0.118638
+
+real_no_filter_val:
+  MAE  0.096450
+  RMSE 0.123338
+```
+
+운영 해석:
+
+- capacity factor 기준 평균 절대 오차는 대략 `0.09 ~ 0.10`이다.
+- 100 kW 설비 기준으로는 평균 절대 오차를 대략 `9 ~ 10 kW` 수준으로 설명할 수 있다.
+- 현재 지표는 KPX 판매/거래 label 기반이므로 사이트 실측 로그가 쌓이면 site correction이 필요하다.
+
+RunPod 상태:
+
+```text
+image: tkatnsdl1996/s305-ems-ai-inference:satellite-v6-netcdf
+digest: sha256:3816bc9ae78abda2e054953860df27210525674d8215b530a696521c5265a010
+endpoint name: social_rose_sawfish
+endpoint id: 2vpedud72bqd09
+template id: 1g9q2pe5se
+gpu tested: NVIDIA GeForce RTX 4090
+```
+
+RunPod `runtime_check` 결과:
+
+```text
+cuda: true
+gpu: NVIDIA GeForce RTX 4090
+model_exists: true
+model_device: cuda
+```
+
+실제 KMA APIHub 호출 기반 live 추론 결과:
+
+```text
+task: predict_live_satellite_capacity_factor
+input_mode: gk2a_area_proxy
+target: Daejeon
+target_time_kst: 2026-05-07T16:00:00+09:00
+horizon_hours: 1
+installed_capacity_kw: 100
+
+capacity_factor: 0.1968025863
+predicted_generation_kw: 19.6802586317
+```
+
+사용한 KMA 값:
+
+```text
+T1H: 21
+REH: 50
+RN1: 0
+SKY: 3
+PTY: 0
+VEC: 269
+WSD: 5
+```
+
+현재 한계:
+
+- live 위성 입력은 아직 실제 NetCDF 64x64 crop이 아니라 `gk2a_area_proxy`이다.
+- 즉, GK2A area scalar를 이미지 텐서 형태로 확장해서 넣고 있다.
+- 정식 모델 입력 일치를 위해서는 KMA APIHub live GK2A NetCDF를 받아 `xarray`/`pyproj`로 사용자 위치 주변 64x64 patch를 crop해야 한다.
+
+코드/문서:
+
+- 상세 문서: `ems/ai/docs/ops/satellite-v6-runpod-live-inference-2026-05-07.md`
+- Flask service: `ems/ai/service/app/services/live_satellite_service.py`
+- RunPod handler: `ems/ai/runpod/handler.py`
+- inference module: `ems/ai/inference/satellite_wind_safe.py`

@@ -1,5 +1,10 @@
 .git
 .idea
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
 **/.venv/
 **/venv/
 **/node_modules/
@@ -11,4 +16,6 @@
 ems/ai/data/
 ems/ai/outputs/
 ems/ai/logs/
-ems/ai/checkpoints/
+ems/ai/checkpoints/*
+!ems/ai/checkpoints/satellite_wind_safe_v6/
+!ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt

@@ -27,6 +27,39 @@ class CapacityFactorPredictionRequestSchema(Schema):
     features = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True, validate=validate.Length(min=1))
 
 
+class SatelliteCapacityFactorPredictionRequestSchema(CapacityFactorPredictionRequestSchema):
+    device = fields.String(load_default=None, allow_none=True)
+    image_normalization = fields.String(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(["binary", "legacy_percent"]),
+    )
+
+
+class LiveSatelliteCapacityFactorPredictionRequestSchema(Schema):
+    site_id = fields.String(load_default=None, allow_none=True)
+    region = fields.String(load_default="대전시")
+    latitude = fields.Float(load_default=None, allow_none=True)
+    longitude = fields.Float(load_default=None, allow_none=True)
+    dong_code = fields.String(load_default=None, allow_none=True)
+    installed_capacity_kw = fields.Float(load_default=100.0)
+    estimated_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    model_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    horizon_hours = fields.Integer(load_default=1, validate=validate.OneOf([1, 2, 3, 6]))
+    target_time = fields.String(load_default=None, allow_none=True)
+    weather_search_hours = fields.Integer(load_default=6)
+    satellite_search_hours = fields.Integer(load_default=12)
+    model_path = fields.String(load_default=None, allow_none=True)
+    model_version = fields.String(load_default=None, allow_none=True)
+    device = fields.String(load_default=None, allow_none=True)
+    image_normalization = fields.String(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(["binary", "legacy_percent"]),
+    )
+    max_capacity_factor = fields.Float(load_default=None, allow_none=True)
+
+
 class PredictionResponseSchema(Schema):
     ok = fields.Boolean(required=True)
     task = fields.String(required=True)
@@ -35,6 +68,21 @@ class PredictionResponseSchema(Schema):
     predictions = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     structured_profile = fields.Raw(allow_none=True)
     context_features = fields.Raw(allow_none=True)
+    metadata = fields.Raw(allow_none=True)
+
+
+class LiveSatellitePredictionResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    input_mode = fields.String(required=True)
+    warnings = fields.List(fields.String(), required=True)
+    site = fields.Raw(required=True)
+    target = fields.Raw(required=True)
+    weather = fields.Raw(required=True)
+    satellite = fields.Raw(required=True)
+    model_input = fields.Raw(required=True)
+    prediction = fields.Raw(required=True)
+    prediction_result = fields.Raw(required=True)
 
 
 class SiteProfileRequestSchema(Schema):

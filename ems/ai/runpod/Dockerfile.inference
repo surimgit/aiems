@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 WORKDIR /app
 
@@ -15,5 +15,6 @@ ENV PYTHONPATH=/app
 ENV S305_AI_DATA_ROOT=/workspace/s305-ai-data
 ENV S305_AI_OUTPUT_ROOT=/workspace/runs
 ENV S305_CAPACITY_FACTOR_MODEL_PATH=/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib
+ENV S305_SATELLITE_MODEL_PATH=/app/ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt
 
 CMD ["python", "-m", "ems.ai.runpod.handler"]

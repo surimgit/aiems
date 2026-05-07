@@ -11,3 +11,7 @@ gunicorn==21.2.0
 python-dotenv==1.0.1
 requests==2.32.3
 pyyaml==6.0.2
+xarray==2025.1.2
+pyproj==3.7.0
+netCDF4==1.7.2
+h5netcdf==1.4.1

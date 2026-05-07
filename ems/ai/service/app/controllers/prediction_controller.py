@@ -7,15 +7,19 @@ from ..schemas.prediction_schema import (
     CapacityFactorPredictionRequestSchema,
     ForecastRequestSchema,
     ForecastResponseSchema,
+    LiveSatelliteCapacityFactorPredictionRequestSchema,
+    LiveSatellitePredictionResponseSchema,
     LoadPredictionRequestSchema,
     LoadPredictionResponseSchema,
     ModelListResponseSchema,
     PredictionResponseSchema,
     SiteProfileRequestSchema,
     SiteProfileResponseSchema,
+    SatelliteCapacityFactorPredictionRequestSchema,
     SolarPredictionRequestSchema,
 )
 from ..services.forecast_service import ForecastService
+from ..services.live_satellite_service import LiveSatellitePredictionService
 from ..services.load_service import LoadService
 from ..services.model_service import ModelService
 from ..services.prediction_service import PredictionService
@@ -28,6 +32,7 @@ prediction_service = PredictionService()
 site_profile_service = SiteProfileService()
 load_service = LoadService()
 forecast_service = ForecastService(prediction_service=prediction_service, load_service=load_service)
+live_satellite_service = LiveSatellitePredictionService(prediction_service=prediction_service)
 
 
 @blp.route("/models")
@@ -51,6 +56,22 @@ class CapacityFactorPredictionResource(MethodView):
     @blp.response(200, PredictionResponseSchema)
     def post(self, payload):
         return prediction_service.predict_capacity_factor(payload)
+
+
+@blp.route("/predict-satellite-capacity-factor")
+class SatelliteCapacityFactorPredictionResource(MethodView):
+    @blp.arguments(SatelliteCapacityFactorPredictionRequestSchema)
+    @blp.response(200, PredictionResponseSchema)
+    def post(self, payload):
+        return prediction_service.predict_satellite_capacity_factor(payload)
+
+
+@blp.route("/predict-live-satellite-capacity-factor")
+class LiveSatelliteCapacityFactorPredictionResource(MethodView):
+    @blp.arguments(LiveSatelliteCapacityFactorPredictionRequestSchema)
+    @blp.response(200, LiveSatellitePredictionResponseSchema)
+    def post(self, payload):
+        return live_satellite_service.predict(payload)
 
 
 @blp.route("/forecast")
