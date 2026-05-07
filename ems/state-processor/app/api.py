@@ -13,9 +13,26 @@ from .config import (
     CONTROL_DB_HOST, CONTROL_DB_PORT, CONTROL_DB_NAME,
     CONTROL_DB_USER, CONTROL_DB_PASSWORD,
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
+    SIMULATOR_TOPOLOGY_URL,
 )
 
 _KNOWN_SITES = [SITE_ID]
+
+
+def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
+    """simulator/topology 의 GET /api/topology 를 호출. 실패 시 None.
+
+    설계문서 §3 기준 토폴로지 master 는 simulator/topology 서비스다.
+    EMS 가 응답을 만들 때 control_db (메타데이터) 와 이 응답 (런타임 라인) 을 합친다.
+    """
+    try:
+        import requests
+        resp = requests.get(f"{SIMULATOR_TOPOLOGY_URL}/api/topology", timeout=timeout_sec)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"[state-processor][topology] simulator 응답 실패 (DB 만 사용): {e}")
+        return None
 
 # ── DTO 변환 헬퍼 (module-level) ──────────────────────────────────────────────
 # 시뮬레이터의 DIESEL → 프론트 enum DIESEL_GENERATOR 로 변환.
@@ -738,6 +755,80 @@ def _register_routes(app: Flask) -> None:
                     "controllable": bool(controllable),
                     "interlock_blocked": bool(reported.get("interlock_blocked", False)),
                 })
+
+            # ── simulator topology 융합 (설계문서 §3 master) ─────────────────
+            # 운영자가 simulator UI 또는 API 로 추가한 라인/스위치/노드를 흡수.
+            # control_db 에 없는 자원이 있으면 추가, 있는 자원은 EMS DB 메타데이터 우선 유지.
+            sim_topo = _fetch_simulator_topology()
+            if sim_topo:
+                existing_node_ids = {n["node_id"] for n in nodes}
+                existing_line_ids = {l["line_id"] for l in lines}
+                existing_switch_ids = {s["switch_id"] for s in switches}
+
+                # simulator-only 노드 추가 (좌표는 simulator 응답에 없으면 0,0)
+                for n in sim_topo.get("nodes", []) or []:
+                    nid = n.get("node_id")
+                    if not nid or nid in existing_node_ids:
+                        continue
+                    pos = n.get("position") or {}
+                    nodes.append({
+                        "node_id": nid,
+                        "node_type": (n.get("node_type") or "BUS"),
+                        "resource_id": n.get("resource_id"),
+                        "position": {
+                            "x": float(pos.get("x") or 0.0),
+                            "y": float(pos.get("y") or 0.0),
+                        },
+                        "status": _node_status(n.get("resource_id")),
+                    })
+                    existing_node_ids.add(nid)
+
+                # simulator-only 라인 + 그 안의 스위치 추가
+                for l in sim_topo.get("lines", []) or []:
+                    lid = l.get("line_id")
+                    if not lid:
+                        continue
+                    sw = l.get("switch") or {}
+                    sw_id = sw.get("switch_id")
+                    if lid not in existing_line_ids:
+                        flow = _line_flow_kw(l.get("from_node_id"))
+                        # status 산출 시 우리 _line_status 는 sw_by_line 만 보니까,
+                        # simulator-only 라인은 simulator 의 switch position 으로 직접 판정.
+                        if sw_id:
+                            live_state = state_by_switch.get(sw_id, {})
+                            live_pos = (live_state.get("reported_state") or {}).get("switch_state")
+                            sim_pos = (sw.get("position") or "").upper()
+                            pos_for_status = live_pos or sim_pos
+                            line_status = "OPEN" if pos_for_status == "OPEN" else (
+                                "NORMAL" if pos_for_status == "CLOSED" else "UNKNOWN"
+                            )
+                        else:
+                            line_status = (l.get("status") or "NORMAL").upper()
+                        lines.append({
+                            "line_id": lid,
+                            "from_node_id": l.get("from_node_id"),
+                            "to_node_id": l.get("to_node_id"),
+                            "direction": _direction(flow),
+                            "flow_kw": round(flow, 2),
+                            "status": line_status,
+                        })
+                        existing_line_ids.add(lid)
+                    # 스위치도 — simulator-only 라인이 아니어도 스위치는 추가될 수 있음
+                    if sw_id and sw_id not in existing_switch_ids:
+                        live_state = state_by_switch.get(sw_id, {})
+                        reported = live_state.get("reported_state") or {}
+                        sim_pos = (sw.get("position") or "").upper()
+                        position = reported.get("switch_state") or sim_pos or "UNKNOWN"
+                        switches.append({
+                            "switch_id": sw_id,
+                            "line_id": lid,
+                            "position": position,
+                            "controllable": bool(sw.get("controllable", True)),
+                            "interlock_blocked": bool(
+                                reported.get("interlock_blocked", sw.get("interlock_blocked", False))
+                            ),
+                        })
+                        existing_switch_ids.add(sw_id)
 
             return {
                 "site_id": site_id,
