@@ -1,0 +1,23 @@
+# Alertmanager → Mattermost 라우팅
+# MATTERMOST_WEBHOOK_URL은 .env로 주입되지 않으므로 직접 채워 주세요.
+# (환경변수 치환 원하면 envsubst 또는 alertmanager 컨테이너 entrypoint 수정 필요)
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: mattermost
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: mattermost
+    webhook_configs:
+      - url: "MATTERMOST_WEBHOOK_URL_HERE"
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [alertname, instance]
