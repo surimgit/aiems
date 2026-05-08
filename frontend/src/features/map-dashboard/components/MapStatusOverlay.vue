@@ -23,6 +23,12 @@
       <div class="px-3 py-2 text-[12px] opacity-80">
         <p>전력: {{ equip.power }}</p>
         <p>상태: {{ statusLabel[equip.status] }}</p>
+        <p v-if="props.visibleMetrics.voltage && equip.metrics?.voltage !== undefined">전압: {{ equip.metrics.voltage.toFixed(1) }} V</p>
+        <p v-if="props.visibleMetrics.current && equip.metrics?.current !== undefined">전류: {{ equip.metrics.current.toFixed(1) }} A</p>
+        <p v-if="props.visibleMetrics.soc && equip.metrics?.soc !== undefined">SOC: {{ equip.metrics.soc.toFixed(1) }} %</p>
+        <p v-if="props.visibleMetrics.frequency && equip.metrics?.frequency !== undefined">주파수: {{ equip.metrics.frequency.toFixed(2) }} Hz</p>
+        <p v-if="props.visibleMetrics.pf && equip.metrics?.pf !== undefined">역률: {{ equip.metrics.pf.toFixed(2) }}</p>
+        <p v-if="props.visibleMetrics.mode && equip.metrics?.mode">모드: {{ equip.metrics.mode }}</p>
       </div>
     </div>
   </div>
@@ -36,6 +42,14 @@ const props = defineProps<{
   equipmentData: MapEquipment[]
   uiPositions: Record<string, { x: number; y: number }>
   mapZoom: number
+  visibleMetrics: {
+    voltage: boolean
+    current: boolean
+    soc: boolean
+    frequency: boolean
+    pf: boolean
+    mode: boolean
+  }
   isEditMode: boolean
 }>()
 

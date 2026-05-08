@@ -26,7 +26,7 @@ import { useDashboardLayout } from '@/features/overview/composables/useDashboard
 import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
 import type { RightPanelMode } from '@/features/overview/types'
 
-const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
+const { powerSummary, activeAlarms, resources, initialize } = useOverviewFeature()
 const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
 const forecastFeature = useForecastFeature()
@@ -106,7 +106,7 @@ onUnmounted(() => {
 
       <template #topology>
         <div class="topology-wrap">
-          <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
+          <TopologyStage :topology="topologyFeature.topology.value" :resources="resources" @select-node="handleSelectNode">
             <template #svg>
               <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
               <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
