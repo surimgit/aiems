@@ -1,6 +1,8 @@
 # EMS AI Current Design
 
-This document is the current baseline design after the first GPU training run.
+This document is the current AI runtime design. The initial LightGBM baseline is
+kept as a historical tabular baseline, while the current solar runtime candidate
+is the satellite image model `satellite_wind_safe_v6`.
 
 ## Core Position
 
@@ -17,15 +19,15 @@ AI is prediction-only.
 ```text
 Training
 SSAFY shared GPU
-→ stage 1 MLP
-→ stage 2 LightGBM
-→ baseline model artifact
+→ legacy tabular baseline: MLP / LightGBM
+→ current satellite candidate: satellite_wind_safe_v6
+→ model artifacts
 
 Operation
 EC2 Forecast-AI
 → KMA forecast collection
 → telemetry/history lookup
-→ feature engineering
+→ feature engineering / live satellite input assembly
 → RunPod predict call
 → forecast_result DB save
 → EMS response or stream publish
@@ -38,6 +40,40 @@ EMS Rule Engine
 
 RunPod is used for inference. Initial training is performed on the SSAFY shared
 GPU.
+
+## Current Solar Runtime Candidate
+
+The current solar runtime candidate is `satellite_wind_safe_v6`.
+
+```text
+selected model: satellite_wind_safe_v6
+checkpoint: ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt
+runtime inference: RunPod Serverless
+runtime image: tkatnsdl1996/s305-ems-ai-inference:satellite-v6-netcdf
+RunPod endpoint: social_rose_sawfish / 2vpedud72bqd09
+```
+
+Validation result:
+
+```text
+clean_strong_val RMSE 0.106228 / MAE 0.085128
+real_no_filter_fair_val RMSE 0.118638 / MAE 0.092938
+real_no_filter_val RMSE 0.123338 / MAE 0.096450
+```
+
+RunPod live inference with real KMA APIHub data succeeded.
+
+```text
+input_mode: gk2a_area_proxy
+target: Daejeon
+forecast target: 2026-05-07T16:00:00+09:00
+capacity_factor: 0.1968025863
+100 kW generation estimate: 19.6802586317 kW
+```
+
+Current caveat: `gk2a_area_proxy` expands GK2A area scalar data into an image
+tensor. Full production alignment still needs live GK2A NetCDF 64x64 crop
+extraction using `xarray` and `pyproj`.
 
 ## Forecast Cycle
 
@@ -52,15 +88,16 @@ The current operational target is:
 This is not a sub-second control loop. RunPod Serverless can use `workersMin=0`
 to avoid idle GPU cost. Cold start is acceptable for this forecast cycle.
 
-## Solar Forecast Model
+## Legacy Solar Forecast Baseline
 
-The current baseline model is LightGBM, a Microsoft open-source Gradient
-Boosting Decision Tree framework.
+The first tabular baseline model is LightGBM, a Microsoft open-source Gradient
+Boosting Decision Tree framework. It remains useful as a fallback and comparison
+baseline, but it is not the current satellite runtime candidate.
 
 Stage layout:
 
 - Stage 1: MLP baseline, used to verify end-to-end neural training.
-- Stage 2: LightGBM baseline, current main solar baseline.
+- Stage 2: LightGBM baseline, legacy tabular solar baseline.
 - Stage 3: site correction LightGBM, activated after actual site logs exist.
 
 Input features:

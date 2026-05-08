@@ -119,14 +119,20 @@ python ems/ai/scripts/check_kma_station.py --config ems/ai/configs/data_sources/
 ### `scripts/run_gk2a_le2_archive_monthly.py`
 
 - 역할: GK2A LE2 archive 수집을 월 단위 subprocess로 분할 실행
+- 실행 방식:
+  - 단일 Python 프로세스가 월 단위로 순차 실행한다.
+  - `overwrite: false` 기준으로 이미 받은 `.nc` 파일은 건너뛴다.
+  - 과도한 병렬 실행 대신 month/failure cooldown을 둬서 APIHub rate-limit 위험을 낮춘다.
 - 주요 입력:
   - `--start-month YYYY-MM`
   - `--end-month YYYY-MM`
   - `--minute-offset 0|30`
+  - `--month-sleep-seconds`
+  - `--failure-sleep-seconds`
 - 예시:
 
 ```bash
-python ems/ai/scripts/run_gk2a_le2_archive_monthly.py --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml --start-month 2025-01 --end-month 2025-12 --minute-offset 0 --stop-on-failure
+python ems/ai/scripts/run_gk2a_le2_archive_monthly.py --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml --minute-offset 0 --month-sleep-seconds 10 --failure-sleep-seconds 120 --stop-on-failure
 ```
 
 ### `scripts/collect_kasi_special_days.py`
@@ -417,3 +423,37 @@ PYTHONPATH=ems/ai python -m train.infer --config ems/ai/configs/solar_kpx_baseli
 ### `train/config.py`
 
 - 역할: YAML config 로딩
+
+## GK2A Retry Ops Note
+
+### `scripts/retry_missing_gk2a_le2.py`
+
+- role:
+  - retry only missing GK2A files from a prepared JSONL list
+- current behavior:
+  - `404` -> mark as `SKIPPED_404`
+  - retriable timeout / `5xx` -> retry up to `--extra-attempts`
+  - `200` -> save `.nc`
+- note:
+  - if a later run hits `403 Forbidden`, those failed items are not complete and must be retried on the next day or after cooldown
+
+### `scripts/run_gk2a_missing_chunks.py`
+
+- role:
+  - split a large missing JSONL list into sequential chunks and run retries chunk by chunk
+- why it was added:
+  - a whole-list retry can look hung when early sections are dominated by `404`
+  - chunked execution makes progress visible and resumable
+- main inputs:
+  - `--list-file`
+  - `--chunk-size`
+  - `--extra-attempts`
+- example:
+
+```bash
+python -m ems.ai.scripts.run_gk2a_missing_chunks \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml \
+  --list-file ems/ai/logs/gk2a_missing_202508_202512.jsonl \
+  --chunk-size 200 \
+  --extra-attempts 2
+```

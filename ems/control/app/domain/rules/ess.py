@@ -22,11 +22,21 @@ def evaluate(flow: dict, policy) -> list[dict]:
     if not ess_devices:
         return []
 
+    # Phase E (PLAN_TOPOLOGY_AWARE_CONTROL.md):
+    # 토폴로지 고립 / wire_fault / fault 인 ESS 에는 명령 발행 안 함.
+    dispatchable_ids = {e["device_id"] for e in flow.get("dispatchable_ess_devices", [])}
+
     # ESS는 net_power에 자기 자신도 포함되어 있어, 보정 net = 외부 net - ess_p
     external_net = flow["net_power"] - flow["ess_p"]
     commands = []
 
     for ess in ess_devices:
+        if ess["device_id"] not in dispatchable_ids:
+            # Phase E: dispatchable 이 아니면 룰 평가 스킵.
+            # Phase H: 한 번씩 명시 로그 (rule_engine 디바운스 캐시와 별개로 단순 print).
+            comms = ess.get("comms_health") or "unknown"
+            print(f"[control][ess] skip {ess['device_id']} command: not dispatchable (comms={comms})")
+            continue
         soc = ess["SOC"]
         if soc is None:
             continue
