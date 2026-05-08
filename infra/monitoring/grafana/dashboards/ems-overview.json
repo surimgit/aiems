@@ -313,7 +313,7 @@
         "tooltip": {"mode": "multi", "sort": "desc"}
       },
       "targets": [
-        {"expr": "sum by (instance) (rate(container_cpu_usage_seconds_total{id=~\"/docker/.+\"}[5m])) * 100", "legendFormat": "{{instance}}", "refId": "A"}
+        {"expr": "sum by (instance) (rate(container_cpu_usage_seconds_total{id=~\".*:docker:.+\"}[5m])) * 100", "legendFormat": "{{instance}}", "refId": "A"}
       ],
       "title": "Container CPU by Host",
       "type": "timeseries"
