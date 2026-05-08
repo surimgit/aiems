@@ -292,9 +292,16 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
     # Heartbeat 두절 감지 — STATE_TTL과 별도로 통신 단절 자체를 감지
     # ingestion이 heartbeat 수신 시 ems:heartbeat:{site_id}:{device_id} 키를 TTL 30s로 저장
     # 키가 없으면 = 30초 이상 heartbeat 미수신 = 통신 두절
+    #
+    # SWITCH 같은 정적 자원은 heartbeat 를 발신하지 않으므로 검사 제외 (오탐 방지).
+    # heartbeat 발신 주체: SOLAR / DIESEL / ESS / LOAD (active edge 시뮬레이터)
+    _HEARTBEAT_RESOURCE_TYPES = {"solar", "diesel", "ess", "load"}
     from ...config import SITE_ID
     for device_id, state in states.items():
-        resource_type = state.get("resource_type", "unknown").lower()
+        resource_type = (state.get("resource_type") or "unknown").lower()
+        if resource_type not in _HEARTBEAT_RESOURCE_TYPES:
+            # SWITCH / LINE / GRID 등 정적 자원은 heartbeat 안 보냄 → 검사 제외
+            continue
         hb_key = f"ems:heartbeat:{SITE_ID}:{device_id}"
         hb_exists = await redis.exists(hb_key)
         evt_key = f"{device_id}:EVT-N-013"
