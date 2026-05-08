@@ -31,7 +31,7 @@ class Settings:
     )
     default_satellite_model_path: str = os.getenv(
         "S305_SATELLITE_MODEL_PATH",
-        str(AI_ROOT / "checkpoints" / "satellite_wind_safe_v6" / "best_model.pt"),
+        str(AI_ROOT / "checkpoints" / "satellite_wind_safe_multihorizon_24h_v10" / "best_model.pt"),
     )
     default_irradiance_threshold: float = float(os.getenv("S305_IRRADIANCE_THRESHOLD", "10.0"))
     default_max_capacity_factor: float = float(os.getenv("S305_MAX_CAPACITY_FACTOR", "1.0"))

@@ -1,12 +1,16 @@
 # Satellite v6 RunPod Live Inference - 2026-05-07
 
+Status: superseded for the 1~24h front-end graph path by
+`satellite_wind_safe_multihorizon_24h_v10`. This document is kept as historical
+context for the v6 short-control champion (`1h`, `2h`, `3h`, `6h`).
+
 이 문서는 2026-05-07 기준 EMS AI의 위성 이미지 기반 태양광 추론 상태를 정리한다.
 
 ## Current Decision
 
-현재 운영 후보 모델은 `satellite_wind_safe_v6`이다.
+2026-05-07 당시 운영 후보 모델은 `satellite_wind_safe_v6`였다.
 
-v7 `upwind + visibility` 실험은 v6보다 성능이 낮았으므로 현재 운영 후보에서 제외한다.
+v7 `upwind + visibility` 실험은 v6보다 성능이 낮았으므로 당시 후보에서 제외했다.
 
 ```text
 selected model: satellite_wind_safe_v6
@@ -277,3 +281,59 @@ h5netcdf==1.4.1
 - 24시간 horizon을 여러 시간 target으로 반복 호출하는 orchestration 추가
 - EC2 Forecast-AI에서 RunPod endpoint 호출 및 DB 저장 연결
 - 사이트 실측 발전량 로그 기반 site correction/retraining 설계
+
+## Next Implementation Plan
+
+### 1. Replace `gk2a_area_proxy`
+
+구현 순서:
+
+1. 현재 `live_satellite_service.py`의 proxy 생성 경로를 유지한 채 `satellite_input_mode`를 `proxy` / `netcdf_crop`으로 분리한다.
+2. 신규 cropper 모듈을 만든다.
+   - 후보 파일: `ems/ai/service/app/services/gk2a_netcdf_cropper.py`
+   - 역할: KMA APIHub live GK2A NetCDF 파일 수신, `xarray` 로드, `pyproj` 좌표 변환, site 주변 64x64 crop 생성
+3. CA, CF, CT, CLD 채널을 학습 때의 `(3, 4, 64, 64)` 순서와 normalization에 맞춘다.
+4. archived GK2A NetCDF 샘플로 cropper 단위 테스트를 만든다.
+5. live API 호출 실패 또는 NetCDF 미제공 시에는 명시적으로 warning을 붙이고 proxy fallback 여부를 설정값으로 제어한다.
+
+완료 기준:
+
+- response `input_mode`가 `gk2a_netcdf_crop`으로 나온다.
+- `image_shape=(3,4,64,64)`가 유지된다.
+- 동일 site/time에 대해 proxy와 real crop을 구분해 로그에 남긴다.
+
+### 2. Connect Forecast-AI 24-hour Operation
+
+Historical v6 constraint:
+
+- 현재 v6 checkpoint의 horizon map은 `1, 2, 3, 6` 시간만 지원한다.
+- 따라서 v6 단독으로는 24시간 그래프를 만들 수 없다는 제약이 있었다.
+- 현재 1~24h 프런트 그래프 기본 모델은 v10이므로, 아래 v6/fallback 계획은 과거 메모다.
+
+Historical MVP 구현 순서:
+
+1. Forecast-AI orchestration을 만든다.
+   - 30분마다 실행
+   - site/profile/weather/telemetry context 조회
+   - RunPod `predict_live_satellite_capacity_factor` 호출
+2. 우선 v6 지원 horizon인 `1, 2, 3, 6` 시간 예측을 저장한다.
+3. 7~24시간 구간은 별도 정책을 명확히 선택한다.
+   - 이 과거 계획은 현재 v10 직접 1~24h 예측으로 대체됐다.
+4. `forecast_result` 저장 adapter를 구현한다.
+   - `forecast_time`
+   - `target_time`
+   - `site_id`
+   - `predicted_solar_kw`
+   - `predicted_load_kw`
+   - `confidence`
+   - `fallback_flag`
+   - `model_version`
+   - `input_mode`
+   - `postprocess_reason`
+5. 실측 telemetry와 매칭하는 `forecast_actual_log` batch를 별도 작업으로 둔다.
+
+완료 기준:
+
+- 한 번의 scheduler run이 target horizon rows를 생성한다.
+- v6 row와 fallback row가 `model_version`, `input_mode`, `fallback_flag`로 구분된다.
+- DB에 저장된 결과를 EMS Rule Engine 또는 dashboard가 조회할 수 있다.

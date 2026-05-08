@@ -32,7 +32,7 @@ WORKSPACE = Path(os.getenv("S305_RUNPOD_WORKSPACE", "/workspace"))
 DEFAULT_DATA_ROOT = WORKSPACE / "s305-ai-data"
 DEFAULT_OUTPUT_ROOT = WORKSPACE / "runs"
 DEFAULT_CAPACITY_FACTOR_MODEL = "/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib"
-DEFAULT_SATELLITE_MODEL = "/app/ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt"
+DEFAULT_SATELLITE_MODEL = "/app/ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt"
 
 
 def _download(url: str, destination: Path) -> None:

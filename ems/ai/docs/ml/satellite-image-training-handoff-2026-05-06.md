@@ -525,7 +525,9 @@ satellite_upwind_visibility_strong:
   real_no_filter_val RMSE 0.142217 / MAE 0.113110
 ```
 
-따라서 현재 운영 후보는 v6 `satellite_wind_safe_strong`이다.
+따라서 2026-05-06 당시 운영 후보는 v6 `satellite_wind_safe_strong`이다.
+현재 1~24h RunPod/프런트 그래프 기본 모델은
+`satellite_wind_safe_multihorizon_24h_v10`이다.
 
 v6 최종 기준:
 

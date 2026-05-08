@@ -5,7 +5,7 @@
 - [EMS AI Current Design](./AI_CURRENT_FINAL_DESIGN.md)
 - [Baseline Solar Training Result](./ml/baseline-training-result.md)
 - [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
-- [Satellite v6 RunPod Live Inference - 2026-05-07](./ops/satellite-v6-runpod-live-inference-2026-05-07.md)
+- [Satellite v10 RunPod Live Inference - 2026-05-08](./ops/satellite-v10-runpod-live-inference-2026-05-08.md)
 - [Load Profile And LLM Structuring](./ml/load-profile-and-llm.md)
 - [AI Code Map](./ops/ai-code-map.md)
 - [GK2A Download Ops Note](./ops/gk2a-download-ops-note.md)
@@ -21,7 +21,7 @@
 5. [Model Strategy](./ml/model-strategy.md)
 6. [Inference And Retraining](./ml/inference-and-retraining.md)
 7. [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
-8. [Satellite v6 RunPod Live Inference - 2026-05-07](./ops/satellite-v6-runpod-live-inference-2026-05-07.md)
+8. [Satellite v10 RunPod Live Inference - 2026-05-08](./ops/satellite-v10-runpod-live-inference-2026-05-08.md)
 9. [GPU Training Runbook](./ml/gpu-training-runbook.md)
 10. [LLM Role](./ml/llm-role.md)
 11. [Repo Structure](./ops/repo-structure.md)
@@ -63,14 +63,15 @@
 - [gpu-training-runbook.md](./ml/gpu-training-runbook.md): GPU 서버 학습 준비, 환경 변수, 실행 명령
 - [llm-role.md](./ml/llm-role.md): LLM이 추론 시점에서 어떤 역할을 하는지 설명
 
-최신 운영 후보는 `satellite_wind_safe_v6`이다. 기존 `satellite_image_wind_compare_*v5`는 ASOS 컬럼 해석 문제로 폐기했고, v7 upwind/visibility 실험은 v6보다 성능이 낮아 현재 후보에서 제외한다. 자세한 원인과 feature 목록은 위성 학습 handoff 문서와 RunPod live inference 문서에 있다.
+최신 RunPod/프런트 그래프 기본 모델은 `satellite_wind_safe_multihorizon_24h_v10`이다. `satellite_wind_safe_v6`는 `1h`, `2h`, `3h`, `6h` 단기 제어 champion으로 보관한다. 기존 `satellite_image_wind_compare_*v5`는 ASOS 컬럼 해석 문제로 폐기했고, v7 upwind/visibility 실험은 v6보다 성능이 낮아 현재 후보에서 제외한다.
 
 ### `ops/`
 
 - [repo-structure.md](./ops/repo-structure.md): 폴더 구조, `.gitkeep`, 정리 원칙
 - [ai-code-map.md](./ops/ai-code-map.md): 런타임 기준 코드/스크립트 역할 맵
 - [gk2a-download-ops-note.md](./ops/gk2a-download-ops-note.md): GK2A 다운로드 경로, 실패 패턴, 재시작/운영 메모
-- [satellite-v6-runpod-live-inference-2026-05-07.md](./ops/satellite-v6-runpod-live-inference-2026-05-07.md): v6 모델 선택, RunPod 배포, 실제 KMA/GK2A API live 추론 결과
+- [satellite-v10-runpod-live-inference-2026-05-08.md](./ops/satellite-v10-runpod-live-inference-2026-05-08.md): v10 모델 선택, RunPod 배포, 실제 KMA/GK2A API live 추론 결과
+- [satellite-v6-runpod-live-inference-2026-05-07.md](./ops/satellite-v6-runpod-live-inference-2026-05-07.md): v6 단기 제어 champion 관련 과거 운영 메모
 - [gpu-env-setup.md](./gpu-env-setup.md): GPU 환경 셋업
 
 ### Root Docs

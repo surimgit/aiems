@@ -1,6 +1,29 @@
 # Model Strategy
 
-## Current Model
+## Current Runtime Models
+
+현재 태양광 runtime은 목적별로 분리한다.
+
+- `satellite_wind_safe_v6`
+  - 단기 제어용 champion
+  - 지원 horizon: `1h`, `2h`, `3h`, `6h`
+- `satellite_wind_safe_multihorizon_24h_v10`
+  - 프런트 예측 그래프용 1~24h multi-horizon 모델
+  - checkpoint: `ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
+  - RunPod inference 기본 satellite model path
+
+- 입력:
+  - GK2A image sequence
+  - safe wind/weather feature
+  - 태양고도, 시간, 설비용량 feature
+- 출력:
+  - capacity factor
+  - `predicted_generation_kw`
+- 현재 한계:
+  - live input은 아직 실제 NetCDF 64x64 crop이 아니라 `gk2a_area_proxy`이다.
+  - v10은 1~24h를 직접 예측하지만, 실제 운영 정확도는 live weather/GK2A 입력 품질에 의존한다.
+
+## Legacy First Model
 
 현재 바로 학습 가능한 모델은 `태양광 발전량 1시간 ahead 예측 모델`이다.
 
@@ -13,9 +36,9 @@
 - 출력:
   - `future_solar_P_kw`
 
-## Why This Model Comes First
+## Why The Legacy Model Came First
 
-현재 공공데이터만으로 가장 현실적으로 만들 수 있는 모델이기 때문이다.
+초기에는 공공데이터만으로 가장 현실적으로 만들 수 있는 모델이었기 때문이다.
 
 - 발전 예측:
   - `KMA + KPX`만으로 baseline 가능

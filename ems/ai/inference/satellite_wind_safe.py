@@ -3,14 +3,14 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 
-MODEL_NAME = "satellite_wind_safe_v6"
+MODEL_NAME = "satellite_wind_safe_multihorizon_24h_v10"
 
 BASE_NUM_COLS = [
     "cap_scaled",
@@ -36,9 +36,19 @@ WIND_SAFE_COLS = [
     "asos_rn_log1p",
 ]
 
-DEFAULT_NUM_COLS = BASE_NUM_COLS + WIND_SAFE_COLS
+HORIZON_CONTEXT_COLS = [
+    "horizon_hours_scaled",
+    "horizon_hours_sin",
+    "horizon_hours_cos",
+    "anchor_hour_sin",
+    "anchor_hour_cos",
+    "anchor_day_of_year_sin",
+    "anchor_day_of_year_cos",
+]
+
+DEFAULT_NUM_COLS = BASE_NUM_COLS + WIND_SAFE_COLS + HORIZON_CONTEXT_COLS
 DEFAULT_REGION_MAP = {"대전시": 0, "부산시": 1, "서울시": 2, "울산시": 3, "제주도": 4}
-DEFAULT_HORIZON_MAP = {1: 0, 2: 1, 3: 2, 6: 3}
+DEFAULT_HORIZON_MAP = {horizon: horizon - 1 for horizon in range(1, 25)}
 
 
 class SatelliteInferenceError(ValueError):
@@ -48,6 +58,7 @@ class SatelliteInferenceError(ValueError):
 @dataclass(frozen=True)
 class SatelliteModelMetadata:
     model_path: Path
+    model_name: str
     num_cols: list[str]
     region_map: dict[str, int]
     horizon_map: dict[int, int]
@@ -93,9 +104,23 @@ def _parse_time(value: Any) -> datetime:
         raise SatelliteInferenceError(f"Invalid target_time: {value}") from exc
 
 
+def _target_timestamp(source: dict[str, Any]) -> datetime:
+    return _parse_time(_first_present(source, ("target_time", "target_timestamp_kst", "timestamp_kst")))
+
+
+def _anchor_timestamp(source: dict[str, Any], payload: dict[str, Any], target_timestamp: datetime, horizon_hours: int) -> datetime:
+    value = _first_present(
+        source,
+        ("anchor_time", "anchor_timestamp_kst", "base_time", "forecast_time", "prediction_time"),
+        _first_present(payload, ("anchor_time", "anchor_timestamp_kst", "base_time", "forecast_time", "prediction_time"), None),
+    )
+    if value is not None:
+        return _parse_time(value)
+    return target_timestamp - timedelta(hours=horizon_hours)
+
+
 def _time_features(source: dict[str, Any]) -> dict[str, float]:
-    timestamp_value = _first_present(source, ("target_time", "target_timestamp_kst", "timestamp_kst"))
-    timestamp = _parse_time(timestamp_value)
+    timestamp = _target_timestamp(source)
     hour = int(_first_present(source, ("hour",), timestamp.hour))
     day_of_year = int(_first_present(source, ("day_of_year", "doy"), timestamp.timetuple().tm_yday))
     month = int(_first_present(source, ("month",), timestamp.month))
@@ -114,6 +139,9 @@ def _time_features(source: dict[str, Any]) -> dict[str, float]:
 
 def _derived_num_features(source: dict[str, Any], payload: dict[str, Any]) -> dict[str, float]:
     values = _time_features(source)
+    target_timestamp = _target_timestamp(source)
+    horizon_hours = int(_float(_first_present(source, ("horizon_hours",), payload.get("horizon_hours", 1)), 1.0))
+    anchor_timestamp = _anchor_timestamp(source, payload, target_timestamp, horizon_hours)
 
     capacity_kw = _first_present(
         source,
@@ -139,6 +167,11 @@ def _derived_num_features(source: dict[str, Any], payload: dict[str, Any]) -> di
     temperature_c = _float(_first_present(source, ("asos_ta", "temperature_c", "TMP", "T1H"), 15.0))
     humidity_pct = _float(_first_present(source, ("asos_hm", "humidity_pct", "REH"), 60.0))
     rainfall_mm = _float(_first_present(source, ("asos_rn", "rainfall_mm", "RN1", "PCP"), 0.0))
+    horizon_rad = 2.0 * math.pi * horizon_hours / 24.0
+    anchor_hour = anchor_timestamp.hour
+    anchor_day_of_year = anchor_timestamp.timetuple().tm_yday
+    anchor_hour_rad = 2.0 * math.pi * anchor_hour / 24.0
+    anchor_doy_rad = 2.0 * math.pi * anchor_day_of_year / 366.0
 
     values.update(
         {
@@ -153,6 +186,13 @@ def _derived_num_features(source: dict[str, Any], payload: dict[str, Any]) -> di
             "asos_ta_scaled": (temperature_c + 30.0) / 70.0,
             "asos_hm_scaled": humidity_pct / 100.0,
             "asos_rn_log1p": math.log1p(max(0.0, rainfall_mm)),
+            "horizon_hours_scaled": (horizon_hours - 1.0) / 23.0,
+            "horizon_hours_sin": math.sin(horizon_rad),
+            "horizon_hours_cos": math.cos(horizon_rad),
+            "anchor_hour_sin": math.sin(anchor_hour_rad),
+            "anchor_hour_cos": math.cos(anchor_hour_rad),
+            "anchor_day_of_year_sin": math.sin(anchor_doy_rad),
+            "anchor_day_of_year_cos": math.cos(anchor_doy_rad),
         }
     )
     return values
@@ -244,7 +284,10 @@ def _build_model_from_state(state: dict[str, Any], num_dim: int):
     horizon_weight = state["horizon.weight"]
     tab0 = state["tab.0.weight"]
     tab2 = state["tab.2.weight"]
-    head0 = state["head.0.weight"]
+    has_single_head = "head.0.weight" in state
+    has_dual_head = "short_head.0.weight" in state and "long_head.0.weight" in state
+    if not has_single_head and not has_dual_head:
+        raise SatelliteInferenceError("Satellite checkpoint must contain either head.* or short_head.*/long_head.*")
 
     image_channels = int(conv1.shape[1])
     image_widths = (int(conv1.shape[0]), int(conv2.shape[0]), int(conv3.shape[0]))
@@ -252,7 +295,9 @@ def _build_model_from_state(state: dict[str, Any], num_dim: int):
     n_horizons, horizon_dim = int(horizon_weight.shape[0]), int(horizon_weight.shape[1])
     tab_hidden = (int(tab0.shape[0]), int(tab2.shape[0]))
     inferred_num_dim = int(tab0.shape[1]) - region_dim - horizon_dim
-    head_hidden = int(head0.shape[0])
+    head_hidden = int(state["head.0.weight"].shape[0]) if has_single_head else None
+    short_head_hidden = int(state["short_head.0.weight"].shape[0]) if has_dual_head else None
+    long_head_hidden = int(state["long_head.0.weight"].shape[0]) if has_dual_head else None
 
     if inferred_num_dim != num_dim:
         raise SatelliteInferenceError(
@@ -285,18 +330,37 @@ def _build_model_from_state(state: dict[str, Any], num_dim: int):
                 nn.Linear(tab_hidden[0], tab_hidden[1]),
                 nn.SiLU(),
             )
-            self.head = nn.Sequential(
-                nn.Linear(c3 + tab_hidden[1], head_hidden),
-                nn.SiLU(),
-                nn.Dropout(0.1),
-                nn.Linear(head_hidden, 1),
-            )
+            if has_single_head:
+                self.head = nn.Sequential(
+                    nn.Linear(c3 + tab_hidden[1], head_hidden),
+                    nn.SiLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(head_hidden, 1),
+                )
+            else:
+                self.short_head = nn.Sequential(
+                    nn.Linear(c3 + tab_hidden[1], short_head_hidden),
+                    nn.SiLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(short_head_hidden, 1),
+                )
+                self.long_head = nn.Sequential(
+                    nn.Linear(c3 + tab_hidden[1], long_head_hidden),
+                    nn.SiLU(),
+                    nn.Dropout(0.15),
+                    nn.Linear(long_head_hidden, 1),
+                )
 
         def forward(self, image, num, region, horizon):
             image_feat = self.image(image).flatten(1)
             tab_input = torch.cat([num, self.region(region), self.horizon(horizon)], dim=1)
             tab_feat = self.tab(tab_input)
-            return self.head(torch.cat([image_feat, tab_feat], dim=1)).squeeze(1)
+            shared = torch.cat([image_feat, tab_feat], dim=1)
+            if has_single_head:
+                return self.head(shared).squeeze(1)
+            short_pred = self.short_head(shared).squeeze(1)
+            long_pred = self.long_head(shared).squeeze(1)
+            return torch.where(horizon >= 6, long_pred, short_pred)
 
     model = SatelliteSolarModel()
     model.load_state_dict(state)
@@ -343,6 +407,7 @@ class SatelliteWindSafePredictor:
         self.model = model
         self.metadata = SatelliteModelMetadata(
             model_path=path,
+            model_name=str(checkpoint.get("model_name") or path.parent.name or MODEL_NAME),
             num_cols=num_cols,
             region_map={str(key): int(value) for key, value in region_map.items()},
             horizon_map={int(key): int(value) for key, value in horizon_map.items()},
@@ -435,7 +500,7 @@ class SatelliteWindSafePredictor:
                     "postprocess_reason": ",".join(reasons) if reasons else "none",
                     "confidence": 0.95 if "night_zero_clamp" in reasons else 0.75,
                     "fallback_flag": False,
-                    "model_version": payload.get("model_version") or MODEL_NAME,
+                    "model_version": payload.get("model_version") or self.metadata.model_name,
                 }
             )
 
@@ -447,6 +512,7 @@ class SatelliteWindSafePredictor:
             "structured_profile": payload.get("structured_profile"),
             "context_features": payload.get("context_features"),
             "metadata": {
+                "model_name": self.metadata.model_name,
                 "num_cols": self.metadata.num_cols,
                 "region_map": self.metadata.region_map,
                 "horizon_map": self.metadata.horizon_map,
