@@ -8,6 +8,7 @@ import pandas as pd
 from ..config import settings
 from ..domain.capacity_factor import capacity_kw, is_night_for_capacity_factor
 from ..repositories.model_repository import ModelRepository
+from .runpod_client import RunpodClient
 
 try:
     from train.solar_postprocess import postprocess_solar_predictions
@@ -16,8 +17,9 @@ except ImportError:
 
 
 class PredictionService:
-    def __init__(self, repository: ModelRepository | None = None) -> None:
+    def __init__(self, repository: ModelRepository | None = None, runpod_client: RunpodClient | None = None) -> None:
         self.repository = repository or ModelRepository()
+        self.runpod_client = runpod_client or RunpodClient()
 
     def predict_solar(self, payload: dict[str, Any]) -> dict[str, Any]:
         loaded = self.repository.load("solar", payload.get("model_path"))
@@ -108,6 +110,9 @@ class PredictionService:
         }
 
     def predict_satellite_capacity_factor(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.runpod_client.enabled:
+            return self.runpod_client.run_sync("predict_satellite_capacity_factor", payload)
+
         try:
             from ems.ai.inference.satellite_wind_safe import predict_satellite_capacity_factor
         except ImportError:

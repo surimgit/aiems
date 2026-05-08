@@ -16,6 +16,7 @@ from astral import Observer
 from astral.sun import elevation
 
 from ..config import AI_ROOT, settings
+from .runpod_client import RunpodClient
 
 try:
     from dotenv import load_dotenv
@@ -73,11 +74,21 @@ class WeatherSnapshot:
 
 
 class LiveSatellitePredictionService:
-    def __init__(self, prediction_service: Any, *, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        prediction_service: Any,
+        *,
+        session: requests.Session | None = None,
+        runpod_client: RunpodClient | None = None,
+    ) -> None:
         self.prediction_service = prediction_service
         self.session = session or requests.Session()
+        self.runpod_client = runpod_client or RunpodClient()
 
     def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.runpod_client.enabled:
+            return self.runpod_client.run_sync("predict_live_satellite_capacity_factor", payload)
+
         key = self._auth_key()
         warnings: list[str] = []
 

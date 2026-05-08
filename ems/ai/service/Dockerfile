@@ -10,6 +10,7 @@ COPY ems/ai/service/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY ems/ai/service /app/ems/ai/service
+COPY ems/ai/inference /app/ems/ai/inference
 COPY ems/ai/models /app/ems/ai/models
 COPY ems/ai/train /app/ems/ai/train
 

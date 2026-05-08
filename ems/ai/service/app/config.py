@@ -39,6 +39,11 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", os.getenv("S305_OPENAI_MODEL", "gpt-5.4-nano"))
     openai_enabled: bool = os.getenv("S305_OPENAI_ENABLED", "false").lower() == "true"
     load_prior_data_root: str = os.getenv("S305_AI_DATA_ROOT", str(AI_ROOT / "data"))
+    runpod_enabled: bool = os.getenv("S305_RUNPOD_ENABLED", "true").lower() == "true"
+    runpod_endpoint_id: str = os.getenv("S305_RUNPOD_ENDPOINT_ID", os.getenv("RUNPOD_ENDPOINT_ID", "2vpedud72bqd09"))
+    runpod_api_key_env: str = os.getenv("S305_RUNPOD_API_KEY_ENV", "RUNPOD_KEY")
+    runpod_base_url: str = os.getenv("S305_RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
+    runpod_timeout_seconds: float = float(os.getenv("S305_RUNPOD_TIMEOUT_SECONDS", "180"))
 
 
 settings = Settings()
