@@ -45,7 +45,7 @@ class LiveSatelliteCapacityFactorPredictionRequestSchema(Schema):
     installed_capacity_kw = fields.Float(load_default=100.0)
     estimated_capacity_kw = fields.Float(load_default=None, allow_none=True)
     model_capacity_kw = fields.Float(load_default=None, allow_none=True)
-    horizon_hours = fields.Integer(load_default=1, validate=validate.OneOf([1, 2, 3, 6]))
+    horizon_hours = fields.Integer(load_default=1, validate=validate.Range(min=1, max=24))
     target_time = fields.String(load_default=None, allow_none=True)
     weather_search_hours = fields.Integer(load_default=6)
     satellite_search_hours = fields.Integer(load_default=12)

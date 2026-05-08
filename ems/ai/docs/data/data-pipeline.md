@@ -19,7 +19,9 @@ External source
 현재 브랜치의 태양광 파이프라인은 두 갈래다.
 
 - 기존 hourly kW baseline: KMA ASOS + KPX hourly 발전량
-- 최신 운영 후보: KPX 5분 capacity factor + 시간/태양고도 feature + LightGBM
+- legacy tabular comparison: KPX 5분 capacity factor + 시간/태양고도 feature + LightGBM
+- 단기 제어 champion: GK2A image sequence + safe weather/time tabular feature + `satellite_wind_safe_v6`
+- RunPod/프런트 그래프 기본 모델: GK2A image sequence + solar/weather/cloud feature + `satellite_wind_safe_multihorizon_24h_v10`
 - 운영 예측 확장 방향: KMA 초단기/단기예보 기반 forecast-compatible weather feature
 
 ### 1. KMA 수집
@@ -67,7 +69,7 @@ KPX 태양광은 연간 CSV 외에 일별 API 수집 경로도 둔다.
 
 ## KPX 5-Min Capacity Factor Pipeline
 
-운영 예측 후보는 발전량 kW를 직접 예측하기보다 capacity factor를 예측하고,
+이 경로는 legacy tabular comparison이다. 발전량 kW를 직접 예측하기보다 capacity factor를 예측하고,
 site별 `installed_capacity_kw`를 곱해 kW로 변환한다.
 
 ```text
@@ -88,7 +90,7 @@ KPX solar generation
 - `validate_solar_model.py`
 - `run_operational_solar_forecast.py`
 
-현재 모델:
+legacy 모델:
 
 - artifact: `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
 - train rows: `16,969`
@@ -103,6 +105,33 @@ KPX solar generation
 - `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
 - RunPod endpoint id 예시: `bmmyj6f7xh82wa`
 - model version: `kpx_5min_capacity_factor_lightgbm`
+
+## Satellite v10 Runtime Pipeline
+
+현재 RunPod/프런트 그래프 기본 모델은 `satellite_wind_safe_multihorizon_24h_v10`이다. `satellite_wind_safe_v6`는 단기 제어용 `1h`, `2h`, `3h`, `6h` champion으로 보관한다.
+
+```text
+KMA APIHub live weather
+  + GK2A area scalar proxy today
+  + target time/site/capacity/time features
+    -> satellite image tensor proxy
+    -> satellite_wind_safe_multihorizon_24h_v10
+    -> capacity factor
+    -> predicted_generation_kw
+```
+
+현재 한계:
+
+- live input은 아직 실제 NetCDF 64x64 crop이 아니라 `gk2a_area_proxy`이다.
+- KMA APIHub GK2A area API가 정각 `NO_DATA`를 반환하면 같은 nominal frame에서 `±10`분, 2분 간격의 가까운 product를 찾는다.
+- 다음 작업은 KMA APIHub live GK2A NetCDF를 받아 `xarray`/`pyproj`로 site 주변 64x64 patch를 crop하는 것이다.
+
+운영 후보 artifact:
+
+- `ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
+- `ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt`
+- Flask endpoint: `POST /api/ai/predict-live-satellite-capacity-factor`
+- RunPod task: `predict_live_satellite_capacity_factor`
 
 ## GK2A Cloud Archive Pipeline
 

@@ -1,5 +1,54 @@
 # AI Progress Summary
 
+## 2026-05-08 Satellite v10 RunPod Live Inference State
+
+현재 RunPod/프런트 그래프 기본 모델은
+`satellite_wind_safe_multihorizon_24h_v10`이다.
+
+- checkpoint:
+  - `ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
+- supported horizon:
+  - `1h` through `24h`
+- Docker Hub image:
+  - `tkatnsdl1996/s305-ems-ai-inference:satellite-v10-24h`
+- latest pushed digest after GK2A nearest-time patch:
+  - `sha256:62993e1011911d489522b2dc4e890780c85927018b7fc97e303d0e31a3edf6b8`
+- RunPod endpoint:
+  - `social_rose_sawfish / 2vpedud72bqd09`
+
+`satellite_wind_safe_v6`는 `1h`, `2h`, `3h`, `6h` 단기 제어 champion으로
+보관한다. 24시간 프런트 그래프는 v10을 직접 호출한다.
+
+검증 결과:
+
+```text
+clean_strong_val        MAE 0.079356 / RMSE 0.100202
+real_no_filter_fair_val MAE 0.109242 / RMSE 0.140547
+real_no_filter_val      MAE 0.094894 / RMSE 0.124597
+```
+
+RunPod live inference 확인:
+
+```text
+target: 2026-05-09T12:00:00+09:00
+region: 대전시
+horizon: 24h
+installed_capacity_kw: 100
+worker: er46y1jtx71iud
+device: cuda
+predicted_capacity_factor: 0.8625134825706482
+predicted_generation_kw: 86.25134825706482
+```
+
+KMA APIHub GK2A area API가 정각에 `NO_DATA`를 반환할 수 있어 live runtime에
+근처 2분 product 탐색을 넣었다. 검증 응답에서는 nominal `202605081000`이
+source `202605080958`, nominal `202605081100`이 source `202605081058`로
+보정됐다.
+
+상세 문서:
+
+- [satellite-v10-runpod-live-inference-2026-05-08.md](./ops/satellite-v10-runpod-live-inference-2026-05-08.md)
+
 ## 2026-05-06 GK2A Satellite Image Training Handoff
 
 상세 문서:
@@ -455,9 +504,9 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
 
 ## Next
 
-- 현재 운영 후보는 `satellite_wind_safe_v6`로 고정한다.
+- 2026-05-07 당시 운영 후보는 `satellite_wind_safe_v6`로 고정했다. 현재 1~24h RunPod/프런트 그래프 기본 모델은 v10이다.
 - v5 wind bundle은 ASOS `WD`/후반 컬럼 파싱 문제로 폐기한다.
-- v7 upwind/visibility 실험은 v6보다 성능이 낮아 현재 운영 후보에서 제외한다.
+- v7 upwind/visibility 실험은 v6보다 성능이 낮아 당시 후보에서 제외한다.
 - 다음 위성 쪽 핵심 작업은 live `gk2a_area_proxy`를 실제 GK2A NetCDF 64x64 crop 입력으로 교체하는 것이다.
 - EC2 Forecast-AI에서 RunPod endpoint 호출, 24시간 horizon 생성, forecast DB 저장 흐름을 연결한다.
 - 오프라인 백테스트 흐름 정리
@@ -474,7 +523,9 @@ python ems/ai/scripts/build_load_prior.py --config ems/ai/configs/ops/load_prior
 
 ## 2026-05-07 Satellite v6 RunPod Live Inference State
 
-현재 운영 후보 모델은 `satellite_wind_safe_v6`로 고정한다.
+2026-05-07 당시 운영 후보 모델은 `satellite_wind_safe_v6`로 고정했다.
+현재 1~24h RunPod/프런트 그래프 기본 모델은
+`satellite_wind_safe_multihorizon_24h_v10`이다.
 
 선택 이유:
 

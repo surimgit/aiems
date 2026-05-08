@@ -521,7 +521,7 @@ G:/내 드라이브/s305-ai-data
 - feature importance:
   - `ems/ai/models/kpx_5min_capacity_factor_lightgbm/feature_importance.csv`
 
-#### Current Model Metrics
+#### Legacy Model Metrics
 
 - train rows: `16,969`
 - validation rows: `2,786`
@@ -540,8 +540,9 @@ G:/내 드라이브/s305-ai-data
 
 #### How It Is Used
 
-- RunPod inference용 최신 운영 후보 모델
+- legacy tabular fallback/comparison model
 - `run_operational_solar_forecast.py`에서 site capacity를 곱해 kW 예측으로 변환
+- 현재 태양광 운영 후보는 `satellite_wind_safe_v6`이다.
 
 ## 3. Processed Assets
 

@@ -18,7 +18,7 @@ live inference:
   -> gk2a_area_proxy image tensor
 ```
 
-현재 운영 후보 `satellite_wind_safe_v6`는 위성 image tensor를 입력으로 받는다. 다만 live 추론은 아직 실제 NetCDF crop이 아니라 `gk2a_area_proxy`이다.
+현재 RunPod/프런트 그래프 기본 모델 `satellite_wind_safe_multihorizon_24h_v10`는 위성 image tensor를 입력으로 받는다. `satellite_wind_safe_v6`는 `1h`, `2h`, `3h`, `6h` 단기 제어 champion으로 보관한다. 다만 live 추론은 아직 실제 NetCDF crop이 아니라 `gk2a_area_proxy`이다.
 
 ## Training Archive
 
@@ -41,10 +41,16 @@ Lambert Conformal
 
 ## Current Packaged Dataset
 
-현재 최종 운영 후보의 학습 기준은 v6 safe wind bundle이다.
+현재 RunPod 기본 모델의 학습 기준은 v10 solar/weather/cloud weighted bundle이다.
 
 ```text
-satellite_image_wind_safe_regions_2025_20260507_095435.zip
+satellite_wind_safe_multihorizon_24h_regions_2025_20260508_095509.zip
+```
+
+v10 run output:
+
+```text
+/home/j-k14s305/s305-work/runs/satellite_wind_safe_multihorizon_24h_v10_solar_weather_cloud_weighted
 ```
 
 v5는 폐기한다.
@@ -72,12 +78,17 @@ getGk2acldArea
 
 ```text
 GK2A area scalar
+-> exact hourly product lookup
+-> if exact product is NO_DATA, search nearby product within ±10 minutes in 2-minute steps
 -> CA / CLD proxy encoding
 -> CF_PROXY / CT_PROXY 생성
 -> shape (3, 4, 64, 64)
 ```
 
 즉, live 추론은 학습과 동일한 실제 위성 crop 입력이 아니다.
+
+2026-05-08 RunPod 검증에서 nominal `202605081000`은 source
+`202605080958`, nominal `202605081100`은 source `202605081058`로 보정됐다.
 
 ## Production Gap
 
@@ -91,5 +102,6 @@ GK2A area scalar
 
 ## Related Docs
 
+- [Satellite v10 RunPod Live Inference - 2026-05-08](./satellite-v10-runpod-live-inference-2026-05-08.md)
 - [Satellite v6 RunPod Live Inference - 2026-05-07](./satellite-v6-runpod-live-inference-2026-05-07.md)
 - [Satellite Image Training Handoff - 2026-05-06](../ml/satellite-image-training-handoff-2026-05-06.md)

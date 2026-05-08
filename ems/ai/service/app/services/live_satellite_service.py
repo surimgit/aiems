@@ -88,8 +88,8 @@ class LiveSatellitePredictionService:
         latitude, longitude = self._site_lat_lon(payload, region)
         dong_code = str(payload.get("dong_code") or REGION_DONG_CODE[region])
         horizon_hours = int(self._float(payload.get("horizon_hours"), 1.0))
-        if horizon_hours not in {1, 2, 3, 6}:
-            raise ValueError("horizon_hours must be one of 1, 2, 3, 6 for the satellite model")
+        if not 1 <= horizon_hours <= 24:
+            raise ValueError("horizon_hours must be between 1 and 24 for the satellite model")
 
         now_kst = datetime.now(KST).replace(second=0, microsecond=0)
         target_time = self._target_time(payload.get("target_time"), now_kst, horizon_hours)
@@ -441,6 +441,13 @@ class LiveSatellitePredictionService:
             "latitude": self._optional_float(item.get("lat")),
         }
 
+    @staticmethod
+    def _nearby_gk2a_date_times(nominal_time: datetime, *, window_minutes: int = 10) -> list[str]:
+        offsets = [0]
+        for minute in range(2, max(0, window_minutes) + 1, 2):
+            offsets.extend([-minute, minute])
+        return [(nominal_time + timedelta(minutes=offset)).strftime("%Y%m%d%H%M") for offset in offsets]
+
     def _fetch_satellite_sequence(
         self,
         dong_code: str,
@@ -453,25 +460,43 @@ class LiveSatellitePredictionService:
         records: list[dict[str, Any]] = []
         base = now_kst.replace(minute=0, second=0, microsecond=0)
         for offset in range(max(0, search_hours) + 1):
-            date_time = (base - timedelta(hours=offset)).strftime("%Y%m%d%H00")
-            try:
-                ca = self._fetch_gk2a_value(GK2A_CLA_AREA_URL, "ca", date_time, dong_code, key)
-                time.sleep(0.05)
-                cld = self._fetch_gk2a_value(GK2A_CLD_AREA_URL, "cld", date_time, dong_code, key)
-                time.sleep(0.05)
-            except Exception:
-                warnings.append(f"gk2a_area_request_failed:{date_time}")
+            nominal_time = base - timedelta(hours=offset)
+            nominal_date_time = nominal_time.strftime("%Y%m%d%H%M")
+            matched_date_time: str | None = None
+            matched_ca: dict[str, Any] | None = None
+            matched_cld: dict[str, Any] | None = None
+            failed = False
+
+            for candidate_date_time in self._nearby_gk2a_date_times(nominal_time):
+                try:
+                    ca = self._fetch_gk2a_value(GK2A_CLA_AREA_URL, "ca", candidate_date_time, dong_code, key)
+                    time.sleep(0.05)
+                    cld = self._fetch_gk2a_value(GK2A_CLD_AREA_URL, "cld", candidate_date_time, dong_code, key)
+                    time.sleep(0.05)
+                except Exception:
+                    failed = True
+                    warnings.append(f"gk2a_area_request_failed:{candidate_date_time}")
+                    continue
+                if ca is not None or cld is not None:
+                    matched_date_time = candidate_date_time
+                    matched_ca = ca
+                    matched_cld = cld
+                    break
+
+            if matched_date_time is None:
+                if not failed:
+                    warnings.append(f"gk2a_area_no_data_near:{nominal_date_time}")
                 continue
-            if ca is None and cld is None:
-                warnings.append(f"gk2a_area_no_data:{date_time}")
-                continue
+            if matched_date_time != nominal_date_time:
+                warnings.append(f"gk2a_area_nearest_used:{nominal_date_time}->{matched_date_time}")
             records.append(
                 {
-                    "date_time": date_time,
-                    "CA": ca["value"] if ca else None,
-                    "CLD": cld["value"] if cld else None,
-                    "ca_unit": ca.get("unit") if ca else None,
-                    "cld_unit": cld.get("unit") if cld else None,
+                    "date_time": nominal_date_time,
+                    "source_date_time": matched_date_time,
+                    "CA": matched_ca["value"] if matched_ca else None,
+                    "CLD": matched_cld["value"] if matched_cld else None,
+                    "ca_unit": matched_ca.get("unit") if matched_ca else None,
+                    "cld_unit": matched_cld.get("unit") if matched_cld else None,
                 }
             )
             if len(records) >= 3:
@@ -526,6 +551,7 @@ class LiveSatellitePredictionService:
                 {
                     "frame_index": index,
                     "date_time": record.get("date_time"),
+                    "source_date_time": record.get("source_date_time"),
                     "proxy_source_date_time": record.get("proxy_source_date_time"),
                     "CA": ca,
                     "CLD": cld,
