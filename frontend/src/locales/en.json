@@ -27,7 +27,8 @@
     "noData": "No Data",
     "save": "Save",
     "cancel": "Cancel",
-    "apply": "Apply"
+    "apply": "Apply",
+    "close": "Close"
   },
   "topology": {
     "legend": {
@@ -179,5 +180,17 @@
       "warning": "Warning",
       "critical": "Critical"
     }
+  },
+  "anomalyBanner": {
+    "simple": "Anomaly detected",
+    "detectedWithTarget": "{name} anomaly detected",
+    "level": {
+      "critical": "Anomaly Alert · Critical",
+      "warning": "Anomaly Alert · Warning",
+      "info": "Anomaly Alert"
+    },
+    "summary": "{total} active alarms",
+    "summaryWithCritical": "{critical} critical · {total} total",
+    "openAlarmPanel": "Open alarm panel"
   }
 }

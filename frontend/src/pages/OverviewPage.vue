@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useOverviewFeature } from '@/features/overview'
 import { useTopologyFeature } from '@/features/topology'
 import { useForecastFeature } from '@/features/forecast'
 import { buildKpiSummary } from '@/features/kpi'
 import TopBarKpiStrip from '@/features/overview/components/TopBarKpiStrip.vue'
+import AnomalyAlertBanner from '@/features/overview/components/AnomalyAlertBanner.vue'
 import DashboardShell from '@/features/overview/components/DashboardShell.vue'
 import TopologyStage from '@/features/topology/components/TopologyStage.vue'
 import TopologyLegend from '@/features/topology/components/TopologyLegend.vue'
@@ -25,18 +27,36 @@ import { useRightPanelState } from '@/features/overview/composables/useRightPane
 import { useDashboardLayout } from '@/features/overview/composables/useDashboardLayout'
 import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
 import type { RightPanelMode } from '@/features/overview/types'
+import type { AlarmData } from '@/types/common'
 
 const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
 const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
 const forecastFeature = useForecastFeature()
 const overviewPolling = useOverviewPolling()
+const dashboardStore = useDashboardStore()
 const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms.value.length))
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
 const rightPanel = useRightPanelState()
 const isMapExpanded = ref(false)
 const { mode } = useDashboardLayout(() => viewportWidth.value, () => rightPanel.isOpen.value)
+
+const previewAlarmForBanner = computed<AlarmData[]>(() => {
+  if (activeAlarms.value.length > 0) return activeAlarms.value
+  if (!import.meta.env.DEV) return []
+
+  return [
+    {
+      alarm_id: 'preview-alarm-175',
+      level: 'critical',
+      code: 'ANOMALY_PREVIEW',
+      message: '배너 UI 확인용 임시 이상 감지 알람입니다.',
+      timestamp: new Date().toISOString(),
+      acknowledged: false
+    }
+  ]
+})
 
 const onResize = () => {
   viewportWidth.value = window.innerWidth
@@ -58,6 +78,19 @@ const handleTopbarMode = (nextMode: RightPanelMode) => {
 
 const handleSelectNode = (nodeId: string) => {
   topologyFeature.selectNode(nodeId)
+  rightPanel.open('selected-resource')
+}
+
+const handleOpenResourceFromBanner = (resourceId: string) => {
+  topologyFeature.selectNode(resourceId)
+  rightPanel.open('selected-resource')
+}
+
+const handleOpenResourceFallbackFromBanner = () => {
+  const candidate = dashboardStore.resources[0]?.resource_id
+  if (candidate) {
+    topologyFeature.selectNode(candidate)
+  }
   rightPanel.open('selected-resource')
 }
 
@@ -95,13 +128,20 @@ onUnmounted(() => {
   <div class="overview-page">
     <DashboardShell :mode="mode" :panel-open="rightPanel.isOpen.value" :map-expanded="isMapExpanded">
       <template #topbar>
-        <TopBarKpiStrip
-          :power-summary="powerSummary"
-          :active-alarm-count="activeAlarms.length"
-          :current-mode="rightPanel.mode.value"
-          :panel-open="rightPanel.isOpen.value"
-          @toggle-mode="handleTopbarMode"
-        />
+        <div class="topbar-stack">
+          <TopBarKpiStrip
+            :power-summary="powerSummary"
+            :active-alarm-count="activeAlarms.length"
+            :current-mode="rightPanel.mode.value"
+            :panel-open="rightPanel.isOpen.value"
+            @toggle-mode="handleTopbarMode"
+          />
+          <AnomalyAlertBanner
+            :active-alarms="previewAlarmForBanner"
+            @open-alarm-panel="handleOpenResourceFallbackFromBanner"
+            @open-resource="handleOpenResourceFromBanner"
+          />
+        </div>
       </template>
 
       <template #topology>
@@ -159,6 +199,10 @@ onUnmounted(() => {
 
 .topology-wrap {
   @apply relative h-full min-h-0;
+}
+
+.topbar-stack {
+  @apply space-y-2;
 }
 
 .map-expand-btn {
