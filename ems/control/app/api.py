@@ -475,34 +475,47 @@ def _register_routes(app: Flask) -> None:
     class CommandListResource(MethodView):
         @blp.response(200, CommandHistorySchema(many=True))
         def get(self):
+            """명령 이력 조회.
+
+            쿼리 파라미터 (모두 옵션):
+              - site_id: 특정 plant 필터 (멀티 plant 지원)
+              - device_id: 특정 디바이스 필터
+              - limit: 기본 100, 최대 1000
+              - offset: 기본 0 (페이지네이션)
+
+            정렬: time DESC.
+            """
+            site_id = request.args.get("site_id")
             device_id = request.args.get("device_id")
             limit = min(int(request.args.get("limit", 100)), 1000)
+            offset = max(int(request.args.get("offset", 0)), 0)
+
+            filters: list[str] = []
+            params: list = []
+            if site_id:
+                filters.append("site_id = %s")
+                params.append(site_id)
+            if device_id:
+                filters.append("device_id = %s")
+                params.append(device_id)
+            where_clause = ("WHERE " + " AND ".join(filters)) if filters else ""
+
             # control_history 는 TimescaleDB 시계열 — TS pool 사용.
             pool = get_ts_pool()
             conn = pool.getconn()
             try:
                 with conn.cursor() as cur:
-                    if device_id:
-                        cur.execute(
-                            """
-                            SELECT command_id, site_id, device_id, resource_type,
-                                   command_type, payload, reason, issued_by, ack_status, time
-                            FROM control_history
-                            WHERE device_id = %s
-                            ORDER BY time DESC LIMIT %s
-                            """,
-                            (device_id, limit),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            SELECT command_id, site_id, device_id, resource_type,
-                                   command_type, payload, reason, issued_by, ack_status, time
-                            FROM control_history
-                            ORDER BY time DESC LIMIT %s
-                            """,
-                            (limit,),
-                        )
+                    cur.execute(
+                        f"""
+                        SELECT command_id, site_id, device_id, resource_type,
+                               command_type, payload, reason, issued_by, ack_status, time
+                        FROM control_history
+                        {where_clause}
+                        ORDER BY time DESC
+                        LIMIT %s OFFSET %s
+                        """,
+                        (*params, limit, offset),
+                    )
                     rows = cur.fetchall()
             finally:
                 pool.putconn(conn)
