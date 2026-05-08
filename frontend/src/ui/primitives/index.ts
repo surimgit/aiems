@@ -5,23 +5,10 @@
  * 이 컴포넌트들은 로직을 포함하지 않고, presentation만 담당합니다.
  */
 
-// 단위 표시
-export { default as PowerDisplay } from './PowerDisplay.vue'
-export { default as SocGauge } from './SocGauge.vue'
-export { default as StatusBadge } from './StatusBadge.vue'
-
-// 버튼
-export { default as Button } from './Button.vue'
-
-// 카드
-export { default as Card } from './Card.vue'
-
-// 인디케이터
-export { default as LoadingSpinner } from './LoadingSpinner.vue'
+import type { ComputedRef, Ref } from 'vue'
+import { computed } from 'vue'
 
 // ============ Primitives ============
-
-import type { ComputedRef, Ref } from 'vue'
 
 export interface PrimitiveProps {
   class?: string
@@ -51,4 +38,3 @@ export const useLoadingState = <T>(
   hasData: computed(() => !!data.value)
 })
 
-import { computed } from 'vue'

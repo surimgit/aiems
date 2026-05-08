@@ -1,0 +1,196 @@
+{
+  "topbar": {
+    "title": "AI EMS Dashboard",
+    "subtitle": "Energy Management System",
+    "alarm": "알림",
+    "recent": "최근 명령",
+    "countryLanguage": "국가/언어",
+    "settings": "설정"
+  },
+  "rightPanel": {
+    "defaultTitle": "패널",
+    "alarmTop3": "알람 (Top 5)",
+    "recentCommand": "최근 명령 결과",
+    "countryLanguage": "국가 선택",
+    "selectedResource": "선택된 장비 정보",
+    "control": "설비 제어",
+    "loadUsage": "소비처별 전력 사용 현황"
+  },
+  "countryPanel": {
+    "searchPlaceholder": "국가 검색",
+    "languageTitle": "언어 설정",
+    "apply": "적용",
+    "applied": "적용됨"
+  },
+  "common": {
+    "thisMonth": "이번 달",
+    "noData": "정보 없음",
+    "save": "저장",
+    "cancel": "취소",
+    "apply": "적용",
+    "close": "닫기"
+  },
+  "topology": {
+    "legend": {
+      "title": "범례",
+      "items": {
+        "powerFlow": "전력 흐름",
+        "status": "정상 / 경고 / 비상",
+        "interlock": "인터록 차단"
+      }
+    },
+    "selectionOverlay": {
+      "selectedItem": "선택 항목"
+    }
+  },
+  "kpi": {
+    "title": "KPI 요약",
+    "units": {
+      "kwh": "kWh",
+      "won": "원",
+      "count": "건"
+    },
+    "subText": {
+      "vsLastMonth": "vs 지난 달",
+      "basedOnCurrentAlarm": "현재 알람 기준"
+    },
+    "items": {
+      "generation": {
+        "label": "총 발전량"
+      },
+      "consumption": {
+        "label": "총 소비량"
+      },
+      "selfSufficiency": {
+        "label": "자립률"
+      },
+      "saving": {
+        "label": "비용 절감"
+      }
+    }
+  },
+  "status": {
+    "normal": "정상",
+    "warning": "경고",
+    "critical": "심각",
+    "offline": "오프라인",
+    "idle": "대기",
+    "charging": "충전 중",
+    "discharging": "방전 중",
+    "fault": "이상"
+  },
+  "selectedResource": {
+    "sections": {
+      "summary": "선택 장비 요약",
+      "control": "설비 제어",
+      "loadUsage": "소비처 사용 현황"
+    },
+    "info": {
+      "equipmentId": "장비 ID",
+      "equipmentType": "장비 유형",
+      "status": "상태",
+      "commsStatus": "통신 상태",
+      "currentPower": "현재 전력",
+      "voltage": "전압",
+      "capacity": "용량",
+      "empty": "토폴로지에서 장비 노드를 선택하세요.",
+      "editName": "이름 편집",
+      "editNamePlaceholder": "표시할 설비 이름을 입력하세요"
+    },
+    "control": {
+      "target": "대상",
+      "noneSelected": "선택 없음",
+      "onlyEssSupported": "현재는 ESS 제어 명령만 지원됩니다. ESS 노드를 선택하면 제어가 활성화됩니다.",
+      "noEssSelected": "선택된 ESS가 없습니다.",
+      "commandSuccess": "명령 전송 완료",
+      "commandFailed": "명령 전송 실패",
+      "actions": {
+        "startCharge": "충전 시작",
+        "stopCharge": "충전 중지",
+        "startDischarge": "방전 시작",
+        "stopDischarge": "방전 중지"
+      }
+    },
+    "loadUsage": {
+      "title": "소비처별 전력 사용 현황",
+      "expand": "전체 보기",
+      "collapse": "간단히 보기",
+      "fallback": {
+        "loadCenter": "부하 센터 {index}"
+      }
+    },
+    "alias": {
+      "saveAll": "변경사항 저장"
+    }
+  },
+  "aiPerformance": {
+    "title": "AI 성과",
+    "target": "목표",
+    "achievementRate": "달성률",
+    "meta": {
+      "highPriority": "고우선 추천 {count}건",
+      "avgConfidence": "평균 신뢰도",
+      "modelStatus": "모델 상태"
+    }
+  },
+  "powerBalance": {
+    "title": "AI 예측",
+    "subTitle24h": "24시간",
+    "peakExpected": "피크 예상",
+    "legend": {
+      "generation": "발전 예측",
+      "demand": "소비 예측",
+      "net": "순 전력 예측"
+    },
+    "ariaLabel": "AI 예측 시계열 차트",
+    "loading": "AI 예측 데이터를 불러오는 중입니다.",
+    "emptyState": "AI 예측 데이터가 아직 없습니다.",
+    "note": "* 이상 발생 시 붉은색으로 구간 표시됩니다."
+  },
+  "recentPanel": {
+    "title": "최근 명령 결과",
+    "viewAll": "전체 보기",
+    "viewSummary": "요약 보기",
+    "loading": "제어 이력을 불러오는 중입니다.",
+    "error": "제어 이력을 불러오지 못했습니다.",
+    "empty": "표시할 제어 이력이 없습니다.",
+    "table": {
+      "time": "시간",
+      "status": "상태",
+      "command": "명령",
+      "target": "대상 설비"
+    },
+    "status": {
+      "success": "성공",
+      "fail": "실패",
+      "running": "진행 중",
+      "created": "생성",
+      "blocked": "차단",
+      "expired": "만료",
+      "timeout": "시간초과"
+    }
+  },
+  "alarmPanel": {
+    "ack": "확인",
+    "empty": "활성 알람이 없습니다.",
+    "viewAll": "전체 알람 보기",
+    "viewTop5": "요약 보기",
+    "level": {
+      "info": "정보",
+      "warning": "경고",
+      "critical": "심각"
+    }
+  },
+  "anomalyBanner": {
+    "simple": "이상 감지",
+    "detectedWithTarget": "{name} 이상 감지",
+    "level": {
+      "critical": "이상 감지 알림 · 심각",
+      "warning": "이상 감지 알림 · 경고",
+      "info": "이상 감지 알림"
+    },
+    "summary": "활성 알람 {total}건",
+    "summaryWithCritical": "심각 {critical}건 · 전체 {total}건",
+    "openAlarmPanel": "알람 패널 열기"
+  }
+}

@@ -38,6 +38,7 @@ interface DashboardState {
   loading: boolean
   error: string | null
   pollingInterval: number
+  selectedEssId: string | null
 }
 
 interface DashboardGetters {
@@ -47,6 +48,8 @@ interface DashboardGetters {
   gridPower: number
   loadPower: number
   essCount: number
+  selectedEss: ESSStatus | null
+  selectedResource: ResourceInfo | null
 }
 
 interface DashboardActions {
@@ -59,9 +62,10 @@ interface DashboardActions {
   fetchDashboardData(siteId?: string): Promise<void>
   startPolling(interval?: number): void
   stopPolling(): void
+  selectEss(essId: string | null): void
 }
 
-export const useDashboardStore = defineStore<'dashboard', DashboardState, DashboardGetters, DashboardActions>(
+export const useDashboardStore = defineStore(
   'dashboard',
   {
     state: (): DashboardState => ({
@@ -74,7 +78,8 @@ export const useDashboardStore = defineStore<'dashboard', DashboardState, Dashbo
       dashboardData: null,
       loading: false,
       error: null,
-      pollingInterval: 5000
+      pollingInterval: 5000,
+      selectedEssId: null
     }),
     
     getters: {
@@ -100,12 +105,61 @@ export const useDashboardStore = defineStore<'dashboard', DashboardState, Dashbo
       
       essCount(): number {
         return this.essList.length
+      },
+
+      selectedEss(): ESSStatus | null {
+        if (!this.selectedEssId) return null
+
+        const topologyMatchedResourceId = this.topology?.nodes.find(
+          (node) => node.node_id === this.selectedEssId || node.resource_id === this.selectedEssId
+        )?.resource_id
+
+        const candidateResourceIds = [this.selectedEssId, topologyMatchedResourceId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+
+        return this.essList.find((ess) => candidateResourceIds.includes(ess.ess_id)) ?? null
+      },
+
+      selectedResource(): ResourceInfo | null {
+        if (!this.selectedEssId) return null
+
+        const topologyMatchedResourceId = this.topology?.nodes.find(
+          (node) => node.node_id === this.selectedEssId || node.resource_id === this.selectedEssId
+        )?.resource_id
+
+        const candidateResourceIds = [this.selectedEssId, topologyMatchedResourceId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+
+        const fromResources = this.resources.find((resource) =>
+          candidateResourceIds.includes(resource.resource_id)
+        )
+        if (fromResources) return fromResources
+
+        const ess = this.essList.find((item) => candidateResourceIds.includes(item.ess_id))
+        if (!ess) return null
+
+        return {
+          resource_id: ess.ess_id,
+          resource_type: 'ESS',
+          name: ess.name,
+          status: ess.status,
+          telemetry: {
+            soc: ess.soc,
+            p_kw: ess.power_kw
+          }
+        }
       }
     },
     
     actions: {
       setSiteId(siteId: string): void {
         this.siteId = siteId
+      },
+
+      selectEss(essId: string | null): void {
+        this.selectedEssId = essId
       },
 
       async fetchPowerSummary(siteId?: string): Promise<void> {

@@ -14,7 +14,7 @@
  * ```
  */
 
-import { computed } from 'vue'
+import { computed, type ComputedRef } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
@@ -22,12 +22,13 @@ import { interpretNetPower } from '@/domain/sign'
 import { formatPower } from '@/domain/units'
 
 export interface UseOverviewFeature {
-  powerSummary: ReturnType<typeof useDashboardStore>['powerSummary']
-  essList: ReturnType<typeof useDashboardStore>['essList']
-  activeAlarms: ReturnType<typeof useAlarmStore>['activeAlarms']
-  isLoading: boolean
-  netPowerDisplay: string
-  powerStatus: ReturnType<typeof interpretNetPower>
+  powerSummary: ComputedRef<ReturnType<typeof useDashboardStore>['powerSummary']>
+  essList: ComputedRef<ReturnType<typeof useDashboardStore>['essList']>
+  activeAlarms: ComputedRef<ReturnType<typeof useAlarmStore>['activeAlarms']>
+  isLoading: ComputedRef<boolean>
+  netPowerDisplay: ComputedRef<string>
+  powerStatus: ComputedRef<ReturnType<typeof interpretNetPower>>
+  initialize: () => Promise<void>
 }
 
 export const useOverviewFeature = (): UseOverviewFeature => {
@@ -56,6 +57,7 @@ export const useOverviewFeature = (): UseOverviewFeature => {
     await Promise.all([
       dashboardStore.fetchPowerSummary(DEFAULT_SITE_ID),
       dashboardStore.fetchEssList(DEFAULT_SITE_ID),
+      dashboardStore.fetchResources(DEFAULT_SITE_ID),
       alarmStore.fetchAlarms(DEFAULT_SITE_ID)
     ])
   }

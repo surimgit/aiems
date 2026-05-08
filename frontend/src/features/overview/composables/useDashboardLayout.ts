@@ -4,6 +4,12 @@ import { resolveDashboardLayoutMode } from '../layoutPresets'
 export const useDashboardLayout = (viewportWidth: () => number, panelOpen: () => boolean) => {
   const mode = computed(() => resolveDashboardLayoutMode(viewportWidth()))
 
+  const panelPresentation = computed(() => {
+    if (!panelOpen()) return 'closed'
+    if (mode.value === 'tablet') return 'overlay'
+    return 'side'
+  })
+
   const layoutClass = computed(() => {
     if (panelOpen()) {
       return 'dashboard-layout--panel-open'
@@ -13,7 +19,8 @@ export const useDashboardLayout = (viewportWidth: () => number, panelOpen: () =>
 
   return {
     mode,
-    layoutClass
+    layoutClass,
+    panelPresentation
   }
 }
 

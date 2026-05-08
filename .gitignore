@@ -22,9 +22,9 @@ pg_data/
 mqtt_data/
 .vscode/
 .claude/
-
-# 테스트 파일
 tests/
 .pytest_cache/
 .coverage
 htmlcov/
+retrospective.md
+.opencode/opencode.json

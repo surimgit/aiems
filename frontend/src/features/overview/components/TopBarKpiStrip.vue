@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import type { PowerSummary } from '@/types/common'
 import type { RightPanelMode } from '../types'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   powerSummary: PowerSummary | null
   activeAlarmCount: number
+  currentMode: RightPanelMode | null
+  panelOpen: boolean
 }>()
 
 const emit = defineEmits<{
@@ -19,17 +24,47 @@ const toggleMode = (mode: RightPanelMode) => {
 <template>
   <section class="topbar-kpi-strip">
     <div class="left-area">
-      <h1 class="title">AI EMS Dashboard</h1>
-      <p class="subtitle">Energy Management System</p>
+      <h1 class="title">{{ t('topbar.title') }}</h1>
+      <p class="subtitle">{{ t('topbar.subtitle') }}</p>
     </div>
 
     <div class="right-area">
-      <button type="button" class="icon-btn" data-testid="icon-alarm" @click="toggleMode('alarm')">
-        알림 <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
+      <button
+        type="button"
+        class="icon-btn"
+        :class="{ active: panelOpen && currentMode === 'alarm' }"
+        data-testid="icon-alarm"
+        @click="toggleMode('alarm')"
+      >
+        {{ t('topbar.alarm') }} <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
       </button>
-      <button type="button" class="icon-btn" data-testid="icon-recent" @click="toggleMode('recent-command')">최근 명령</button>
-      <button type="button" class="icon-btn" data-testid="icon-country" @click="toggleMode('country-language')">국가/언어</button>
-      <button type="button" class="icon-btn" data-testid="icon-settings" @click="toggleMode('control')">설정</button>
+      <button
+        type="button"
+        class="icon-btn"
+        :class="{ active: panelOpen && currentMode === 'recent-command' }"
+        data-testid="icon-recent"
+        @click="toggleMode('recent-command')"
+      >
+        {{ t('topbar.recent') }}
+      </button>
+      <button
+        type="button"
+        class="icon-btn"
+        :class="{ active: panelOpen && currentMode === 'country-language' }"
+        data-testid="icon-country"
+        @click="toggleMode('country-language')"
+      >
+        {{ t('topbar.countryLanguage') }}
+      </button>
+      <button
+        type="button"
+        class="icon-btn"
+        :class="{ active: panelOpen && currentMode === 'control' }"
+        data-testid="icon-settings"
+        @click="toggleMode('control')"
+      >
+        {{ t('topbar.settings') }}
+      </button>
     </div>
   </section>
 </template>
@@ -56,7 +91,17 @@ const toggleMode = (mode: RightPanelMode) => {
 }
 
 .icon-btn {
-  @apply rounded border border-slate-600 px-3 py-1.5 text-sm text-slate-200;
+  @apply rounded border border-slate-600 px-3 py-1.5 text-sm text-slate-200 transition-colors outline-none;
+}
+
+.icon-btn.active {
+  @apply border-cyan-400 text-cyan-300;
+}
+
+.icon-btn:focus,
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .badge {

@@ -14,14 +14,15 @@
 
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 
 const alarmStore = useAlarmStore()
 const { hasActiveAlarm, criticalAlarmCount } = storeToRefs(alarmStore)
+const router = useRouter()
 
 // 알람 스트립 클릭 핸들러
 const handleAlarmStripClick = () => {
-  // TODO: 알람 페이지로 네비게이트
-  console.log('Navigate to alarm page')
+  void router.push('/alarm')
 }
 </script>
 
@@ -43,11 +44,6 @@ const handleAlarmStripClick = () => {
 
     <!-- 메인 레이아웃 -->
     <div class="app-layout">
-      <!-- 사이드바 (필요시) -->
-      <aside class="sidebar">
-        <!-- TODO: 네비게이션 메뉴 -->
-      </aside>
-
       <!-- 메인 콘텐츠 영역 -->
       <main class="main-content">
         <router-view />
@@ -58,7 +54,7 @@ const handleAlarmStripClick = () => {
 
 <style scoped>
 .app-shell {
-  @apply h-screen w-screen flex flex-col bg-gray-50;
+  @apply h-screen w-screen flex flex-col overflow-hidden bg-slate-950 text-slate-100;
 }
 
 .alarm-strip {
@@ -83,14 +79,10 @@ const handleAlarmStripClick = () => {
 }
 
 .app-layout {
-  @apply flex flex-1 overflow-hidden;
-}
-
-.sidebar {
-  @apply w-64 bg-white border-r border-gray-200;
+  @apply flex flex-1 min-h-0 overflow-hidden;
 }
 
 .main-content {
-  @apply flex-1 overflow-auto p-6;
+  @apply flex-1 min-h-0 overflow-hidden p-4 md:p-6;
 }
 </style>
