@@ -109,15 +109,35 @@ export const useDashboardStore = defineStore(
 
       selectedEss(): ESSStatus | null {
         if (!this.selectedEssId) return null
-        return this.essList.find((ess) => ess.ess_id === this.selectedEssId) ?? null
+
+        const topologyMatchedResourceId = this.topology?.nodes.find(
+          (node) => node.node_id === this.selectedEssId || node.resource_id === this.selectedEssId
+        )?.resource_id
+
+        const candidateResourceIds = [this.selectedEssId, topologyMatchedResourceId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+
+        return this.essList.find((ess) => candidateResourceIds.includes(ess.ess_id)) ?? null
       },
 
       selectedResource(): ResourceInfo | null {
         if (!this.selectedEssId) return null
-        const fromResources = this.resources.find((resource) => resource.resource_id === this.selectedEssId)
+
+        const topologyMatchedResourceId = this.topology?.nodes.find(
+          (node) => node.node_id === this.selectedEssId || node.resource_id === this.selectedEssId
+        )?.resource_id
+
+        const candidateResourceIds = [this.selectedEssId, topologyMatchedResourceId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+
+        const fromResources = this.resources.find((resource) =>
+          candidateResourceIds.includes(resource.resource_id)
+        )
         if (fromResources) return fromResources
 
-        const ess = this.essList.find((item) => item.ess_id === this.selectedEssId)
+        const ess = this.essList.find((item) => candidateResourceIds.includes(item.ess_id))
         if (!ess) return null
 
         return {

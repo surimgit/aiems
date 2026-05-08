@@ -206,17 +206,6 @@ const getNextEquipmentName = (type: MapEquipment['type']) => {
   return `${prefix} #${maxNumber + 1}`
 }
 
-const addEquipment = (type: MapEquipment['type'], lngLat: [number, number], status: MapEquipment['status'] = 'normal') => {
-  equipmentData.value.push({
-    id: `custom-${Date.now()}`,
-    name: getNextEquipmentName(type),
-    type,
-    status,
-    power: status === 'stopped' ? '0 kW' : '100 kW',
-    lngLat
-  })
-}
-
 const upsertConnection = () => {
   const { fromEquipmentId, toEquipmentId, direction, status } = connectForm.value
   if (!fromEquipmentId || !toEquipmentId || fromEquipmentId === toEquipmentId) return
@@ -289,12 +278,33 @@ const handleDelete = () => {
   modalConfig.value.show = false
 }
 
+const resolveResourceIdFromMapEquipment = (id: string): string => {
+  const directMatch = props.topology?.nodes.find((node) => node.node_id === id || node.resource_id === id)
+  if (directMatch) return directMatch.resource_id
+
+  if (!props.topology) return id
+
+  const mapEquipment = equipmentData.value.find((item) => item.id === id)
+  if (!mapEquipment) return id
+
+  const typeFilteredNodes = props.topology.nodes.filter((node) => {
+    if (mapEquipment.type === 'ESS') return node.node_type === 'STORAGE'
+    if (mapEquipment.type === 'LOAD') return node.node_type === 'LOAD'
+    return node.node_type === 'GENERATION' || node.node_type === 'GRID'
+  })
+
+  const seqMatch = id.match(/-(\d+)$/)
+  const index = seqMatch ? Number(seqMatch[1]) - 1 : 0
+  return typeFilteredNodes[index]?.resource_id ?? typeFilteredNodes[0]?.resource_id ?? id
+}
+
 const handleEquipClick = (id: string) => {
   if (isEditMode.value) {
     openEditModal(id)
     return
   }
-  emit('select-node', id)
+
+  emit('select-node', resolveResourceIdFromMapEquipment(id))
 }
 
 const handleLineClick = (lineId: string) => {

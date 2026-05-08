@@ -192,6 +192,26 @@ Bottom 3 Panels (AI 예측 | KPI 요약 | AI 성과)
   3) `resource_id`
 - 한 locale에서 alias는 1개만 유지하며, 재저장 시 최신값으로 덮어쓴다.
 
+### 11.6 Overview 주기 갱신(171) 운영 규칙
+- Overview 실시간 동기화는 페이지 생명주기 기반 polling으로 운영한다.
+  - 시작: `OverviewPage` 초기 데이터 로드 완료 후 시작
+  - 종료: `OverviewPage` unmount 시 즉시 중단
+- polling 대상 데이터:
+  1) AI 예측(`forecastFeature.fetchForecasts`)
+  2) 활성 알람(`alarmStore.fetchAlarms`)
+  3) 최근 명령 이력(`controlStore.fetchCommandHistory`)
+- 주기 표준: `30_000ms` (30초)
+- 중복 방지 표준:
+  - `isRunning`으로 중복 start 차단
+  - `isTickInFlight`로 tick 중복 실행 차단
+- 실패 내성 표준:
+  - tick 실행은 `Promise.allSettled`로 구성
+  - 일부 요청 실패 시 나머지 갱신은 유지
+  - 오류는 로그로 기록하고 다음 주기에서 재시도
+- 타이머 정책:
+  - `setInterval` 고정 루프보다 `setTimeout` 재예약 패턴을 우선 사용
+  - stop 시 `clearTimeout`으로 누수 방지
+
 ---
 
 ## 12. 컴포넌트 구조 표 (요약)
@@ -257,6 +277,7 @@ Bottom 3 Panels (AI 예측 | KPI 요약 | AI 성과)
 - v1.1: Jira 176 반영 (하단 3패널 3열 고정, 잘림 완화, 정보 밀도 축소 규칙 확정)
 - v1.2: i18n 확장 및 설비명 alias 저장 플로우 반영 (국가/알람/최근명령/KPI 문구 전환, alias draft->일괄저장 규칙, 쿠키 영속화 정책 추가)
 - v1.3: `/resources` 응답 형태 불일치 대응 규칙 추가 (배열/객체 envelope 동시 방어, `resources.map` 런타임 에러 재발 방지)
+- v1.4: Jira 171 반영 (Overview lifecycle polling, 30초 주기, 중복 tick 방지, `Promise.allSettled` 실패 내성 규칙 추가)
 
 ---
 

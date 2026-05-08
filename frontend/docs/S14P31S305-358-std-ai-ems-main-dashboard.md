@@ -167,6 +167,27 @@ API Client -> Pinia Store -> Feature Composable -> OverviewPage -> UI Component
 - Feature는 UI 조합/가공 책임
 - Store는 계약/상태/액션 책임
 
+### 10.1 Overview polling(171) 데이터 갱신 흐름
+```txt
+onMounted
+  -> initialize() + topology/forecast 초기 fetch
+  -> overviewPolling.start()
+    -> 30초마다 tick 실행
+      -> Promise.allSettled([
+           forecastFeature.fetchForecasts(siteId),
+           alarmStore.fetchAlarms(siteId),
+           controlStore.fetchCommandHistory()
+         ])
+onUnmounted
+  -> overviewPolling.stop()
+```
+
+운영 규칙:
+- 중복 start 금지: `isRunning` 가드
+- tick 중복 실행 금지: `isTickInFlight` 가드
+- 일부 API 실패 시 전체 polling 중단 금지 (`allSettled` 기반)
+- 타이머 누수 방지를 위해 stop 시 타이머 즉시 해제
+
 ## 11. 오류/예외 처리 규칙
 - 숫자 렌더링 시 `toFixed` 직호출 금지, 숫자 가드 후 포맷
 - 데이터 없음 상태는 공통 fallback (`데이터 없음`) 사용
@@ -186,6 +207,7 @@ API Client -> Pinia Store -> Feature Composable -> OverviewPage -> UI Component
 - v1.0: 초기 STD 작성
 - v1.1: Jira 176 반영 (하단 3열 고정, 잘림 완화, 밀도 축소 우선 정책)
 - v1.2: 우측 패널 i18n 확장 및 설비명 alias draft/일괄저장 UX 반영
+- v1.3: Jira 171 반영 (Overview lifecycle polling 추가, 알람/예측/최근명령 주기 갱신 규칙 확정)
 
 ## 13. 구현 우선순위
 1. Layout skeleton (`Header`, `Shell`, `Bottom 3-grid`)
