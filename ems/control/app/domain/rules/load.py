@@ -51,17 +51,19 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     soc_low = policy.get("SOC_LOW")
     fuel_critical = policy.get("DIESEL_FUEL_CRITICAL")
 
-    # 가용 ESS가 있으면 ESS가 먼저 처리 → 비동작
-    ess_devices = flow["ess_devices"]
-    if ess_devices:
-        any_can_discharge = any((e["SOC"] or 0) > soc_low for e in ess_devices)
+    # task_018 §4.4 와 동일한 버그를 load 룰에서도 수정.
+    # SOC 만 보지 말고 dispatchable 여부로 판단해야, 고립된 ESS 가
+    # "처리 가능"으로 잘못 인식돼 shedding 이 막히는 문제 방지.
+    dispatchable_ess = flow.get("dispatchable_ess_devices", [])
+    if dispatchable_ess:
+        any_can_discharge = any((e["SOC"] or 0) > soc_low for e in dispatchable_ess)
         if any_can_discharge:
             return []
 
-    # Diesel이 돌고 있거나 기동 가능하면 → 비동작
-    diesel_devices = flow["diesel_devices"]
-    for d in diesel_devices:
-        fuel = d["fuel_percent"]
+    # Diesel 도 dispatchable 한 것만 본다 (토폴로지 고립된 디젤은 못 도와줌).
+    dispatchable_diesel = flow.get("dispatchable_diesel_devices", [])
+    for d in dispatchable_diesel:
+        fuel = d.get("fuel_percent")
         has_fuel = fuel is None or fuel > fuel_critical
         if has_fuel:
             return []

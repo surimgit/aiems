@@ -13,9 +13,11 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     net_power = flow["net_power"]
     solar_p = flow["solar_p"]
     soc_high = policy.get("SOC_HIGH")
-    ess_devices = flow["ess_devices"]
+    # task_018 §4.4 와 동일한 패턴 보강: SOC 만 보지 말고 dispatchable 만 본다.
+    # isolated ESS 는 SOC 낮아도 실제로 충전 못 받으므로 "충전 가능" 으로 보면 안 됨.
+    dispatchable_ess = flow.get("dispatchable_ess_devices", [])
 
-    any_can_charge = any((e["SOC"] or 0) < soc_high for e in ess_devices) if ess_devices else False
+    any_can_charge = any((e["SOC"] or 0) < soc_high for e in dispatchable_ess) if dispatchable_ess else False
 
     commands = []
     solar_targets = [
