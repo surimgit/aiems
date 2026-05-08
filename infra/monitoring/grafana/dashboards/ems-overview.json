@@ -303,7 +303,7 @@
         "defaults": {
           "color": {"mode": "palette-classic"},
           "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never"},
-          "unit": "percent"
+          "unit": "Bps"
         }
       },
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 20},
@@ -313,9 +313,10 @@
         "tooltip": {"mode": "multi", "sort": "desc"}
       },
       "targets": [
-        {"expr": "sum by (instance) (rate(container_cpu_usage_seconds_total{id=~\".*:docker:.+\"}[5m])) * 100", "legendFormat": "{{instance}}", "refId": "A"}
+        {"expr": "sum by (instance) (rate(node_network_receive_bytes_total{device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[5m]))", "legendFormat": "{{instance}} RX", "refId": "A"},
+        {"expr": "sum by (instance) (rate(node_network_transmit_bytes_total{device!~\"lo|docker.*|veth.*|br-.*|tailscale.*\"}[5m]))", "legendFormat": "{{instance}} TX", "refId": "B"}
       ],
-      "title": "Container CPU by Host",
+      "title": "Network Throughput by Host",
       "type": "timeseries"
     }
   ],
