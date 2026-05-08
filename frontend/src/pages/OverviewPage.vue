@@ -27,7 +27,6 @@ import { useRightPanelState } from '@/features/overview/composables/useRightPane
 import { useDashboardLayout } from '@/features/overview/composables/useDashboardLayout'
 import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
 import type { RightPanelMode } from '@/features/overview/types'
-import type { AlarmData } from '@/types/common'
 
 const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
 const { t } = useI18n()
@@ -41,22 +40,6 @@ const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 19
 const rightPanel = useRightPanelState()
 const isMapExpanded = ref(false)
 const { mode } = useDashboardLayout(() => viewportWidth.value, () => rightPanel.isOpen.value)
-
-const previewAlarmForBanner = computed<AlarmData[]>(() => {
-  if (activeAlarms.value.length > 0) return activeAlarms.value
-  if (!import.meta.env.DEV) return []
-
-  return [
-    {
-      alarm_id: 'preview-alarm-175',
-      level: 'critical',
-      code: 'ANOMALY_PREVIEW',
-      message: '배너 UI 확인용 임시 이상 감지 알람입니다.',
-      timestamp: new Date().toISOString(),
-      acknowledged: false
-    }
-  ]
-})
 
 const onResize = () => {
   viewportWidth.value = window.innerWidth
@@ -137,7 +120,7 @@ onUnmounted(() => {
             @toggle-mode="handleTopbarMode"
           />
           <AnomalyAlertBanner
-            :active-alarms="previewAlarmForBanner"
+            :active-alarms="activeAlarms"
             @open-alarm-panel="handleOpenResourceFallbackFromBanner"
             @open-resource="handleOpenResourceFromBanner"
           />

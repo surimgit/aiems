@@ -186,8 +186,8 @@ export interface ControlCommand {
 
 export interface OperatorCommandRequest {
   site_id: string
-  edge_id: string
-  target_resource_id: string
+  device_id: string
+  resource_type: ResourceType
   action: CommandAction
   requested_by: string
   reason?: string
@@ -198,6 +198,7 @@ export interface ControlResult {
   command_id: string
   status: CommandStatus
   site_id: string
+  device_id?: string
   target_resource_id: string
   action: CommandAction
   created_at: string
