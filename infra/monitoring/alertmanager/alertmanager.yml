@@ -13,7 +13,6 @@ receivers:
   - name: mattermost
     slack_configs:
       - api_url: "https://meeting.ssafy.com/hooks/coo7q6s76fdi8f5kxdi1rf8bce"
-        channel: "#alerts"
         send_resolved: true
         username: "EMS Alertmanager"
         icon_emoji: ":rotating_light:"
