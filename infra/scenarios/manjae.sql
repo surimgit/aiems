@@ -95,6 +95,21 @@ ON CONFLICT (key) DO UPDATE SET
     updated_at = NOW(),
     updated_by = 'scenario:manjae';
 
+-- SoC 임계 단계 차단 (만재도 §5.2 부하 우선순위 정책).
+-- SOC 25% 이하 — 비필수 (Tier 4) 차단. 본 시나리오는 Tier 3 까지만 운영.
+-- SOC 15% 이하 — Tier 2 (주거) 30% shed.
+-- SOC 10% 이하 — Tier 1 만 유지.
+INSERT INTO control_policy (key, value, unit, description) VALUES
+    ('SHED_SOC_TIER4', 25, '%', '[manjae] Tier 4 차단 시작 SOC (현재 시나리오 미사용)'),
+    ('SHED_SOC_TIER3', 20, '%', '[manjae] Tier 3 (에어컨/온수기) 차단 시작 SOC'),
+    ('SHED_SOC_TIER2', 15, '%', '[manjae] Tier 2 (주거) 차단 시작 SOC')
+ON CONFLICT (key) DO UPDATE SET
+    value = EXCLUDED.value,
+    unit = EXCLUDED.unit,
+    description = EXCLUDED.description,
+    updated_at = NOW(),
+    updated_by = 'scenario:manjae';
+
 -- ------------------------------------------------------------
 -- 5. 통신/모니터링 정책 (세영 §5.3, §5.4)
 -- ------------------------------------------------------------
