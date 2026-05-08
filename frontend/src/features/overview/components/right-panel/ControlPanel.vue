@@ -24,8 +24,8 @@ const submit = async (action: CommandAction) => {
   try {
     const result = await controlStore.submitCommand({
       site_id: controlStore.siteId,
-      edge_id: controlStore.edgeId,
-      target_resource_id: selectedEss.value.ess_id,
+      device_id: selectedEss.value.ess_id,
+      resource_type: 'ESS',
       action
     })
     resultMessage.value = `${t('selectedResource.control.commandSuccess')}: ${result.status}`

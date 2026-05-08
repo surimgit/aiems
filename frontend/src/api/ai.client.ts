@@ -4,6 +4,7 @@
  */
 
 import { http } from './http'
+import axios from 'axios'
 import type {
   ForecastContract,
   ForecastData,
@@ -13,6 +14,28 @@ import type {
   Recommendation,
   SiteLatestAi
 } from '@/types/common'
+import type { ApiError } from '@/types/api'
+
+const isFeatureUnavailableError = (error: unknown): boolean => {
+  if (!axios.isAxiosError(error)) {
+    return false
+  }
+
+  const status = error.response?.status
+  const payload = error.response?.data as ApiError | undefined
+  return status === 503 || payload?.error_code === 'FEATURE_UNAVAILABLE'
+}
+
+const withAiFallback = async <T>(runner: () => Promise<T>, fallback: T): Promise<T> => {
+  try {
+    return await runner()
+  } catch (error) {
+    if (isFeatureUnavailableError(error)) {
+      return fallback
+    }
+    throw error
+  }
+}
 
 const pickForecastSeries = (
   forecasts: ForecastContract[] | undefined,
@@ -63,18 +86,24 @@ export const getLatestAiBySite = async (siteId: string): Promise<SiteLatestAi> =
 }
 
 export const getGenerationForecast = async (siteId: string): Promise<ForecastData[]> => {
-  const latest = await getLatestAiBySite(siteId)
-  return pickForecastSeries(latest.forecasts, 'generation_kw')
+  return withAiFallback(async () => {
+    const latest = await getLatestAiBySite(siteId)
+    return pickForecastSeries(latest.forecasts, 'generation_kw')
+  }, [])
 }
 
 export const getDemandForecast = async (siteId: string): Promise<ForecastData[]> => {
-  const latest = await getLatestAiBySite(siteId)
-  return pickForecastSeries(latest.forecasts, 'load_kw')
+  return withAiFallback(async () => {
+    const latest = await getLatestAiBySite(siteId)
+    return pickForecastSeries(latest.forecasts, 'load_kw')
+  }, [])
 }
 
 export const getRecommendations = async (siteId: string): Promise<Recommendation[]> => {
-  const latest = await getLatestAiBySite(siteId)
-  return latest.recommendations ?? []
+  return withAiFallback(async () => {
+    const latest = await getLatestAiBySite(siteId)
+    return latest.recommendations ?? []
+  }, [])
 }
 
 export const requestInference = async (
@@ -84,8 +113,10 @@ export const requestInference = async (
 }
 
 export const getAiModelStatus = async (siteId: string): Promise<InferenceResult | null> => {
-  const latest = await getLatestAiBySite(siteId)
-  return latest.inference ?? null
+  return withAiFallback(async () => {
+    const latest = await getLatestAiBySite(siteId)
+    return latest.inference ?? null
+  }, null)
 }
 
 export default {

@@ -67,6 +67,10 @@ export const http = {
     const response = await httpClient.put<ApiResponse<T>>(url, data, config)
     return unwrapPayload(response.data)
   },
+  patch: async <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> => {
+    const response = await httpClient.patch<ApiResponse<T>>(url, data, config)
+    return unwrapPayload(response.data)
+  },
   delete: async <T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> => {
     const response = await httpClient.delete<ApiResponse<T>>(url, config)
     return unwrapPayload(response.data)
