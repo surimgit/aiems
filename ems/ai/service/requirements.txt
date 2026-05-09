@@ -1,6 +1,7 @@
 flask==3.1.0
 flask-smorest==0.45.0
 marshmallow==3.26.1
+torch==2.5.1
 numpy==2.2.5
 pandas==2.2.3
 scikit-learn==1.6.1
