@@ -16,6 +16,7 @@ from astral import Observer
 from astral.sun import elevation
 
 from ..config import AI_ROOT, settings
+from ..runtime import clean_env_value, env_str
 from .runpod_client import RunpodClient
 
 try:
@@ -49,6 +50,19 @@ REGION_DONG_CODE = {
     "대전시": "3000000000",
     "울산시": "3100000000",
     "제주도": "5000000000",
+}
+
+REGION_ALIASES = {
+    "seoul": "서울시",
+    "서울": "서울시",
+    "busan": "부산시",
+    "부산": "부산시",
+    "daejeon": "대전시",
+    "대전": "대전시",
+    "ulsan": "울산시",
+    "울산": "울산시",
+    "jeju": "제주도",
+    "제주": "제주도",
 }
 
 # This is a model-side scale feature, not the user's PV capacity.
@@ -86,13 +100,15 @@ class LiveSatellitePredictionService:
         self.runpod_client = runpod_client or RunpodClient()
 
     def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(payload)
+        payload["region"] = self._normalize_region(payload.get("region"))
         if self.runpod_client.enabled:
             return self.runpod_client.run_sync("predict_live_satellite_capacity_factor", payload)
 
         key = self._auth_key()
         warnings: list[str] = []
 
-        region = str(payload.get("region") or "대전시")
+        region = str(payload["region"])
         if region not in REGION_CENTER:
             raise ValueError(f"Unsupported live satellite region: {region}")
 
@@ -221,7 +237,7 @@ class LiveSatellitePredictionService:
     def _auth_key(self) -> str:
         self._load_env_file(AI_ROOT / ".env")
         env_name = "KMA_AUTH_KEY"
-        value = os.getenv(env_name)
+        value = env_str(env_name)
         if not value:
             raise RuntimeError(f"Environment variable {env_name} is not set")
         return value
@@ -231,7 +247,7 @@ class LiveSatellitePredictionService:
         if value is None:
             return default
         if isinstance(value, str):
-            text = value.strip()
+            text = clean_env_value(value) or ""
             if not text or text in {"-", "강수없음", "없음"}:
                 return default
             if text.startswith("1mm 미만"):
@@ -258,6 +274,11 @@ class LiveSatellitePredictionService:
     def _value(values: dict[str, float | None], name: str, default: float) -> float:
         value = values.get(name)
         return default if value is None else float(value)
+
+    @staticmethod
+    def _normalize_region(value: Any) -> str:
+        text = str(value or "대전시").strip()
+        return REGION_ALIASES.get(text.lower(), text)
 
     @staticmethod
     def _site_lat_lon(payload: dict[str, Any], region: str) -> tuple[float, float]:

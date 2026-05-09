@@ -97,7 +97,6 @@ services:
     ports:
       - "5004:5004"
     env_file:
-      - .env
       - ./ems/ai/.env
     environment:
       - S305_SOLAR_MODEL_PATH=/app/ems/ai/models/solar_kpx_lightgbm/model.joblib

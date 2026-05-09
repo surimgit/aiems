@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 import requests
 
 from ..config import settings
 from ..domain.site_profile import normalize_profile, validate_profile
+from ..runtime import env_str
 
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -33,7 +33,7 @@ class SiteProfileService:
         return {"ok": True, "source": source, "profile": profile}
 
     def _call_openai(self, site: dict[str, Any], text: str, payload: dict[str, Any]) -> dict[str, Any]:
-        key = os.getenv(payload.get("auth_env") or settings.openai_api_key_env)
+        key = env_str(payload.get("auth_env") or settings.openai_api_key_env)
         if not key:
             raise RuntimeError(f"Environment variable {payload.get('auth_env') or settings.openai_api_key_env} is not set.")
         model = payload.get("model") or settings.openai_model

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import time
 from typing import Any
 
 import requests
 
 from ..config import settings
+from ..runtime import env_str
 
 
 class RunpodClient:
@@ -72,7 +72,5 @@ class RunpodClient:
 
     @staticmethod
     def _env_secret(name: str) -> str | None:
-        value = os.getenv(name)
-        if value is None:
-            return None
-        return value.strip().strip('"').strip("'")
+        value = env_str(name)
+        return value or None
