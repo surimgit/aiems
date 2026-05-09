@@ -27,7 +27,8 @@
     "noData": "정보 없음",
     "save": "저장",
     "cancel": "취소",
-    "apply": "적용"
+    "apply": "적용",
+    "close": "닫기"
   },
   "topology": {
     "legend": {
@@ -179,5 +180,17 @@
       "warning": "경고",
       "critical": "심각"
     }
+  },
+  "anomalyBanner": {
+    "simple": "이상 감지",
+    "detectedWithTarget": "{name} 이상 감지",
+    "level": {
+      "critical": "이상 감지 알림 · 심각",
+      "warning": "이상 감지 알림 · 경고",
+      "info": "이상 감지 알림"
+    },
+    "summary": "활성 알람 {total}건",
+    "summaryWithCritical": "심각 {critical}건 · 전체 {total}건",
+    "openAlarmPanel": "알람 패널 열기"
   }
 }
