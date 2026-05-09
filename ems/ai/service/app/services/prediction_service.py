@@ -112,19 +112,7 @@ class PredictionService:
     def predict_satellite_capacity_factor(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self.runpod_client.enabled:
             return self.runpod_client.run_sync("predict_satellite_capacity_factor", payload)
-
-        try:
-            from ems.ai.inference.satellite_wind_safe import predict_satellite_capacity_factor
-        except ImportError:
-            from inference.satellite_wind_safe import predict_satellite_capacity_factor
-
-        model_path = payload.get("model_path") or settings.default_satellite_model_path
-        return predict_satellite_capacity_factor(
-            payload,
-            model_path=model_path,
-            device=payload.get("device"),
-            image_normalization=payload.get("image_normalization"),
-        )
+        raise RuntimeError("RunPod is required for satellite capacity factor inference")
 
     @staticmethod
     def _feature_frame(features: list[dict[str, Any]], feature_columns: list[str]) -> pd.DataFrame:

@@ -104,6 +104,7 @@ class LiveSatellitePredictionService:
         payload["region"] = self._normalize_region(payload.get("region"))
         if self.runpod_client.enabled:
             return self.runpod_client.run_sync("predict_live_satellite_capacity_factor", payload)
+        raise RuntimeError("RunPod is required for live satellite capacity factor inference")
 
         key = self._auth_key()
         warnings: list[str] = []
