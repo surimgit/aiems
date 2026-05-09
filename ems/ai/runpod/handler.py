@@ -308,7 +308,15 @@ def _predict_live_satellite_capacity_factor(payload: dict[str, Any]) -> dict[str
         def predict_satellite_capacity_factor(self, prediction_payload: dict[str, Any]) -> dict[str, Any]:
             return _predict_satellite_capacity_factor(prediction_payload)
 
-    return LiveSatellitePredictionService(prediction_service=_PredictionServiceAdapter()).predict(payload)
+    class _DisabledRunpodClient:
+        @property
+        def enabled(self) -> bool:
+            return False
+
+    return LiveSatellitePredictionService(
+        prediction_service=_PredictionServiceAdapter(),
+        runpod_client=_DisabledRunpodClient(),
+    ).predict(payload)
 
 
 def _runtime_check() -> dict[str, Any]:

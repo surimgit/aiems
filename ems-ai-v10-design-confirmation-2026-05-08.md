@@ -1,791 +1,305 @@
-# EMS AI v10 설계 확인 문서
+# EMS 태양광 예측 AI 설계 요약
 
 작성일: 2026-05-08  
-대상: EMS 태양광 발전량 예측 AI 설계 검토/컨펌용  
-문서 목적: 사람이 빠르게 훑거나, 다른 AI가 이 파일 하나만 읽고 현재 AI 설계/학습/추론/배포 상태를 이해할 수 있도록 전체 맥락과 세부 구현을 같이 정리한다.
+대상: PM/기획/검토자 공유용  
+목적: 현재 태양광 예측 AI가 어떤 모델이고, 어떤 데이터와 피처로 학습했으며, 실제 추론이 어떻게 동작하고 결과가 어느 정도인지 설명한다.
 
 ---
 
-## 1. 최종 결론
+## 1. 현재 선택한 모델
 
 현재 운영 기준 모델은 `satellite_wind_safe_multihorizon_24h_v10`이다.
 
-내부 체크포인트의 실제 학습 모델명은 `satellite_wind_safe_multihorizon_24h_v10_solar_weather_cloud_weighted`이며, 위성 기반 CNN과 수치 피처 MLP를 결합한 1~24시간 다중 horizon 예측 모델이다.
+이 모델은 태양광 발전량을 바로 예측하기보다, 먼저 설비용량 대비 발전 비율인 `capacity factor`를 예측한다. 이후 사용자가 입력한 설비용량을 곱해서 예상 발전량 kW로 변환한다.
 
-프론트 예측 그래프는 기본적으로 이 v10 모델을 기준으로 1시간부터 24시간까지 값을 채우는 설계다. 과거 논의에서 v6는 1h, 2h, 3h, 6h 단기 제어용 강점 모델로 남겨두는 방향이었고, LightGBM은 현재 graph 기본 fallback이 아니라 legacy tabular baseline/challenger로 보는 것이 맞다.
+```text
+예상 발전량(kW) = 예측 capacity factor * 설비용량(kW)
+```
 
-운영 추론은 RunPod Serverless에서 Docker 이미지로 수행한다.
+예를 들어 100kW 설비에서 capacity factor가 0.86으로 나오면 예상 발전량은 약 86kW다.
 
-- Docker Hub 이미지: `tkatnsdl1996/s305-ems-ai-inference:satellite-v10-24h`
-- RunPod endpoint: `social_rose_sawfish / 2vpedud72bqd09`
-- 운영 체크포인트 경로: `/app/ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
-- 로컬 체크포인트 경로: `C:\Users\SSAFY\PycharmProjects\S14P31S305\ems\ai\checkpoints\satellite_wind_safe_multihorizon_24h_v10\best_model.pt`
+v10 모델은 1시간 뒤부터 24시간 뒤까지의 예측을 모두 지원한다. 프론트에서 하루 예측 그래프를 그릴 때는 1h, 2h, 3h ... 24h 값을 이 모델로 생성하는 방식이다.
 
 ---
 
-## 2. 모델이 예측하는 값
+## 2. 왜 이 모델을 선택했는가
 
-모델의 직접 출력은 태양광 설비용량 대비 발전 비율인 `capacity factor`다.
+초기에는 단기 예측 모델, 장기 예측 모델, LightGBM 기반 모델을 섞는 방식도 검토했다. 하지만 프론트 그래프 관점에서 시간 구간마다 다른 모델을 붙이면 예측 곡선이 튀거나 설명이 복잡해진다.
 
-서비스 응답에서는 이 값을 요청 설비용량에 곱해서 `predicted_generation_kw`도 같이 제공한다.
+그래서 최종 방향은 하나의 모델이 1~24시간 전체 구간을 예측하되, 모델 내부에서 단기와 장기를 다르게 처리하도록 설계했다.
+
+현재 모델 구조는 다음과 같다.
 
 ```text
-predicted_capacity_factor = model_output
-predicted_generation_kw = predicted_capacity_factor * installed_capacity_kw
+위성/구름 이미지 입력
+        +
+기상/태양/시간/지역/horizon 수치 피처
+        |
+        v
+CNN + MLP 결합 모델
+        |
+        v
+1~6시간 단기 head / 7~24시간 장기 head
+        |
+        v
+capacity factor 예측
 ```
 
-예를 들어 `installed_capacity_kw = 100`이고 모델 출력이 `0.8625`이면 예상 발전량은 약 `86.25 kW`다.
-
-주의할 점은 학습 target이 순수 물리 계측 발전량이 아니라 KPX 거래량/실적 기반 proxy라는 점이다. 그래서 일부 최악 오차 사례는 태양 위치나 구름만으로 설명되지 않고, 거래/정산/집계 구조에서 생기는 왜곡일 가능성이 크다.
+즉, 겉으로는 v10 단일 모델이지만 내부적으로는 짧은 구간과 긴 구간을 나누어 학습한다.
 
 ---
 
-## 3. 지원 범위
+## 3. 학습에 사용한 데이터
 
-### 3.1 지역
+학습 데이터는 2025년 기준의 지역별 태양광 실적 데이터와 기상/위성 데이터를 결합해서 만들었다.
 
-운영 모델은 다음 5개 지역을 지원한다.
+대상 지역은 다음 5개다.
 
-| 지역 | region id | 대표 좌표 | KMA dongCode |
-|---|---:|---|---|
-| 대전시 | 0 | 36.3504, 127.3845 | 3000000000 |
-| 부산시 | 1 | 35.1796, 129.0756 | 2600000000 |
-| 서울시 | 2 | 37.5665, 126.9780 | 1100000000 |
-| 울산시 | 3 | 35.5384, 129.3114 | 3100000000 |
-| 제주도 | 4 | 33.4996, 126.5312 | 5000000000 |
+- 서울시
+- 부산시
+- 대전시
+- 울산시
+- 제주도
 
-### 3.2 예측 horizon
+학습 target은 지역별 태양광 발전 실적을 설비용량 대비 비율로 바꾼 capacity factor다. 다만 이 값은 순수한 현장 인버터 계측값이 아니라 거래량/실적 기반 proxy에 가깝다. 그래서 일부 날짜에서는 날씨나 태양 위치로 설명하기 어려운 튀는 값이 있을 수 있다.
 
-지원 horizon은 1시간부터 24시간까지다.
+데이터는 크게 세 종류로 나눠 검증했다.
 
-```text
-horizon_hours: 1, 2, 3, ..., 24
-horizon_id: horizon_hours - 1
-```
-
-단일 요청으로 특정 horizon 하나를 예측할 수도 있고, 프론트/제어 서비스에서 1~24를 반복 호출해서 하루 그래프를 구성할 수도 있다.
-
----
-
-## 4. 모델 구조
-
-모델 클래스는 학습 노트북 기준 `SatelliteSolarModel`이다.
-
-전체 구조는 다음과 같다.
-
-```text
-입력
-  - 위성/구름 이미지 텐서: 12 x 64 x 64
-  - 수치 피처 벡터: 기상, 태양 위치, 시간, horizon context
-  - region id embedding
-  - horizon id embedding
-
-모델
-  - CNN image branch
-  - tabular MLP branch
-  - region/horizon embedding
-  - short head: 1h~6h
-  - long head: 7h~24h
-
-출력
-  - predicted_capacity_factor
-```
-
-### 4.1 CNN image branch
-
-위성/구름 입력은 12채널 이미지로 들어간다.
-
-```text
-Conv2d(12, 48, kernel=3, padding=1)
-BatchNorm2d(48)
-SiLU
-MaxPool2d(2)
-
-Conv2d(48, 96, kernel=3, padding=1)
-BatchNorm2d(96)
-SiLU
-MaxPool2d(2)
-
-Conv2d(96, 192, kernel=3, padding=1)
-BatchNorm2d(192)
-SiLU
-AdaptiveAvgPool2d(1)
-```
-
-CNN 결과는 192차원 image feature로 압축된다.
-
-### 4.2 Embedding
-
-```text
-region embedding: 5 regions -> 8 dimensions
-horizon embedding: 24 horizons -> 8 dimensions
-```
-
-### 4.3 Tabular branch
-
-수치 피처와 embedding을 합쳐 tabular branch에 넣는다.
-
-```text
-Linear(num_dim + 16, 128)
-SiLU
-Linear(128, 128)
-SiLU
-```
-
-### 4.4 Prediction heads
-
-최종 feature는 `image_feat(192) + tab_feat(128) = 320` 차원이다.
-
-short head:
-
-```text
-Linear(320, 128)
-SiLU
-Dropout(0.1)
-Linear(128, 1)
-```
-
-long head:
-
-```text
-Linear(320, 128)
-SiLU
-Dropout(0.15)
-Linear(128, 1)
-```
-
-head 선택 정책:
-
-```text
-1h~6h   -> short_head
-7h~24h  -> long_head
-```
-
-코드 내부에서는 horizon id가 0부터 시작하므로 `horizon >= 6`일 때 long head가 선택된다.
-
----
-
-## 5. 수치 피처 목록
-
-학습/추론에서 쓰는 수치 피처는 크게 기본 태양/시간 피처, 풍향/풍속 안전 피처, horizon context 피처로 나뉜다.
-
-### 5.1 기본 태양/시간 피처
-
-| 피처 | 의미 | 생성 방식 |
-|---|---|---|
-| `cap_scaled` | 모델 입력용 기준 설비용량 scale | `capacity_kw / 300000.0` |
-| `solar_elev_scaled` | 태양 고도 scale | `solar_elevation / 90.0` |
-| `is_daylight` | 주간 여부 | 태양 고도 기준 daylight flag |
-| `hour_scaled` | 대상 시각의 hour scale | `hour / 23.0` |
-| `doy_scaled` | day-of-year scale | `day_of_year / 366.0` |
-| `month_scaled` | month scale | `month / 12.0` |
-| `hour_of_day_sin` | hour 주기 sin | `sin(2*pi*hour/24)` |
-| `hour_of_day_cos` | hour 주기 cos | `cos(2*pi*hour/24)` |
-| `day_of_year_sin` | 연중 일자 주기 sin | `sin(2*pi*doy/366)` |
-| `day_of_year_cos` | 연중 일자 주기 cos | `cos(2*pi*doy/366)` |
-
-태양 고도 계산에는 Python `astral` 계열 계산을 사용한다. 이 피처가 들어가면서 단순 거래량 proxy의 한계를 줄이고, 같은 시간대라도 계절/입사각 차이를 모델이 구분할 수 있게 했다.
-
-### 5.2 풍향/풍속/기상 안전 피처
-
-| 피처 | 의미 | 생성 방식 또는 원천 |
-|---|---|---|
-| `wind_u_scaled` | 풍속 U 성분 | `wind_speed * sin(wind_dir) / 15.0` |
-| `wind_v_scaled` | 풍속 V 성분 | `wind_speed * cos(wind_dir) / 15.0` |
-| `wind_speed_scaled` | 풍속 scale | `wind_speed_ms / 15.0` |
-| `wind_dir_sin` | 풍향 sin | 풍향 degree -> radian -> sin |
-| `wind_dir_cos` | 풍향 cos | 풍향 degree -> radian -> cos |
-| `asos_ta_scaled` | 기온 scale | `(temperature_c + 30.0) / 70.0` |
-| `asos_hm_scaled` | 습도 scale | `humidity_pct / 100.0` |
-| `asos_rn_log1p` | 강수량 log scale | `log1p(max(0, rainfall_mm))` |
-
-운영 추론에서는 기상청 초단기 예보/실황에서 다음 값을 사용한다.
-
-| 원천 category | 사용 의미 |
+| 구분 | 의미 |
 |---|---|
-| `T1H` 또는 `TMP` | 기온 |
-| `RN1` 또는 `PCP` | 강수량 |
-| `VEC` | 풍향 |
-| `WSD` | 풍속 |
-| `REH` | 습도 |
-| `SKY` | 하늘 상태, 구름 proxy 보정 |
-| `PTY` | 강수 형태 |
-
-### 5.3 Horizon context 피처
-
-| 피처 | 의미 | 생성 방식 |
-|---|---|---|
-| `horizon_hours_scaled` | horizon scale | `(horizon_hours - 1) / 23.0` |
-| `horizon_hours_sin` | horizon 주기 sin | `sin(2*pi*horizon_hours/24)` |
-| `horizon_hours_cos` | horizon 주기 cos | `cos(2*pi*horizon_hours/24)` |
-| `anchor_hour_sin` | 요청 기준 시각 hour sin | anchor time 기준 |
-| `anchor_hour_cos` | 요청 기준 시각 hour cos | anchor time 기준 |
-| `anchor_day_of_year_sin` | 요청 기준 시각 day-of-year sin | anchor time 기준 |
-| `anchor_day_of_year_cos` | 요청 기준 시각 day-of-year cos | anchor time 기준 |
-
-`anchor_time`은 요청에 `anchor_time`, `anchor_timestamp_kst`, `base_time`, `forecast_time`, `prediction_time` 중 하나가 있으면 그 값을 사용하고, 없으면 `target_time - horizon_hours`로 계산한다.
+| clean validation | 비교적 정상 조건만 남긴 검증 데이터 |
+| real no-filter validation | 실제 운영에 가까운, 필터를 강하게 걸지 않은 검증 데이터 |
+| fair validation | 1~24시간 horizon이 모두 있는 샘플만 모은 공정 비교용 검증 데이터 |
 
 ---
 
-## 6. 위성/구름 이미지 피처
+## 4. 모델에 넣은 주요 피처
 
-이미지 입력 shape은 학습/추론에서 다음 두 형태를 처리한다.
+v10 모델은 단순히 과거 발전량만 보는 모델이 아니다. 태양 위치, 시간, 지역, 기상, 구름 정보를 함께 사용한다.
 
-```text
-(3, 4, 64, 64)
-또는
-(12, 64, 64)
-```
+### 4.1 태양/시간 피처
 
-`(3, 4, 64, 64)` 형태는 3개 시점, 4개 채널을 의미하고 모델 입력 전 12채널로 reshape한다.
+태양광 발전은 시간과 계절의 영향을 크게 받기 때문에, 다음 피처를 넣었다.
 
-채널은 다음 4종이다.
-
-| 채널 | 의미 |
+| 피처 그룹 | 설명 |
 |---|---|
-| `CA` | cloud amount |
-| `CF` | cloud flag/proxy |
-| `CT` | cloud type/proxy |
-| `CLD` | cloud detection |
+| 태양 고도 | 해당 시각에 태양이 얼마나 높이 떠 있는지 |
+| 주간 여부 | 발전이 가능한 낮 시간인지 |
+| 시간대 | 0~23시 정보 |
+| 연중 날짜 | 계절 변화를 반영하기 위한 day-of-year |
+| 월 정보 | 월별 계절성 |
+| 주기형 시간값 | 23시와 0시가 멀리 떨어진 값으로 보이지 않도록 sin/cos 변환 |
 
-정규화 정책:
+이 피처를 넣은 이유는 같은 정오라도 여름과 겨울의 일사 조건이 다르고, 같은 구름 상태라도 태양 고도에 따라 발전량이 다르기 때문이다.
 
-| 채널 | 정규화 |
+### 4.2 기상 피처
+
+기상청 기반 데이터에서 다음 정보를 사용했다.
+
+| 피처 그룹 | 설명 |
 |---|---|
-| missing value `255` | 0으로 치환 |
-| `CA` | binary mode에서 0~1 clip |
-| `CF` | binary mode에서 0~1 clip |
-| `CT` | `/ 9.0` |
-| `CLD` | `/ 3.0` |
+| 기온 | 태양광 효율과 날씨 상태를 반영 |
+| 습도 | 흐림/대기 상태의 간접 지표 |
+| 강수량 | 비/눈 등 발전 저하 조건 반영 |
+| 풍속 | 기상 상태와 패널 온도 변화에 간접 영향 |
+| 풍향 | 풍속과 함께 방향성 정보를 보존 |
+| 하늘 상태 | 구름 여부를 보정하는 데 사용 |
 
-현재 live 운영 입력은 실제 NetCDF crop이 아니라 KMA APIHub의 GK2A area 값을 지역 64x64 proxy 이미지로 확장하는 방식이다.
+풍향은 단순 각도값으로 넣지 않고 sin/cos로 변환했다. 예를 들어 359도와 1도는 실제로 가까운 방향인데 숫자로는 멀어 보이기 때문이다.
 
-사용 API:
+### 4.3 위성/구름 피처
 
-| API | 용도 |
+구름은 태양광 예측에서 가장 중요한 변수 중 하나라서, 위성 기반 구름 정보를 이미지 형태로 모델에 넣었다.
+
+사용한 구름 정보는 다음과 같다.
+
+| 피처 그룹 | 설명 |
 |---|---|
-| `getGk2aclaArea` | GK2A cloud amount area |
-| `getGk2acldArea` | GK2A cloud detection area |
+| 구름량 | 해당 지역 주변에 구름이 얼마나 있는지 |
+| 구름 탐지 | 구름 존재 여부 |
+| 구름 proxy 이미지 | 지역별 구름 정보를 모델 입력용 64x64 이미지 형태로 구성 |
+| 최근 프레임 | 현재 시점 근처의 여러 프레임을 사용해 구름 상태를 반영 |
 
-KMA `SKY` 값도 cloud amount가 비어 있을 때 hint로 사용한다.
+실제 운영에서는 고해상도 위성 원본 영상을 직접 crop하는 방식이 아니라, 기상청에서 제공하는 지역 단위 위성/구름 값을 모델 입력 형태에 맞는 proxy 이미지로 변환한다. 이 방식은 완전한 영상 분석은 아니지만, 운영 안정성과 API 접근성을 고려하면 현재 단계에서 현실적인 구조다.
 
-proxy 생성 정책:
+### 4.4 Horizon 피처
 
-| proxy 채널 | 생성 방식 |
+1시간 뒤 예측과 24시간 뒤 예측은 난이도와 정보 특성이 다르다. 그래서 모델에 “몇 시간 뒤를 예측하는지”를 명시적으로 넣었다.
+
+| 피처 그룹 | 설명 |
 |---|---|
-| `CA` | API 값이 있으면 cloud amount 기반, 없으면 `SKY >= 3`일 때 cloud로 간주 |
-| `CLD` | cloud detection을 0~3 범위로 반올림, 없으면 255 |
-| `CF_PROXY` | cloud hint가 있으면 1, 아니면 0 |
-| `CT_PROXY` | cloud hint가 있으면 3, 아니면 0 |
+| horizon hours | 1~24시간 중 몇 시간 뒤인지 |
+| horizon 주기값 | 하루 주기를 반영한 sin/cos 변환 |
+| 기준 시각 정보 | 예측 요청 시점의 시간/날짜 정보 |
 
-운영에서는 3개 프레임을 사용한다. 프레임이 부족하면 최신 프레임을 복제하고 warning을 붙인다.
+이 덕분에 같은 목표 시각이라도 언제 예측을 요청했는지, 몇 시간 앞을 보는지 구분할 수 있다.
 
 ---
 
-## 7. 기상청/KMA 실시간 데이터 수집
+## 5. 학습 방식
 
-운영 추론 서비스의 live 데이터 수집 구현 위치는 다음이다.
+모델은 PyTorch 기반으로 학습했다.
+
+구조적으로는 두 가지 입력을 함께 사용한다.
 
 ```text
-C:\Users\SSAFY\PycharmProjects\S14P31S305\ems\ai\service\app\services\live_satellite_service.py
+1. 위성/구름 이미지
+   -> CNN으로 특징 추출
+
+2. 기상/태양/시간/지역/horizon 수치 피처
+   -> MLP로 특징 추출
+
+두 특징을 합친 뒤 capacity factor를 예측
 ```
 
-사용하는 KMA endpoint는 다음과 같다.
+손실 함수는 일반 MSE 대신 `Smooth L1 Loss` 계열을 사용했다. 이유는 실제 거래량 기반 데이터에 튀는 값이 있기 때문에, 큰 이상치가 모델 전체를 과하게 흔들지 않도록 하기 위해서다.
 
-| endpoint | 용도 |
+또한 v10에서는 단순히 모든 샘플을 동일하게 학습하지 않았다.
+
+적용한 학습 가중치 방향은 다음과 같다.
+
+| 학습 전략 | 목적 |
 |---|---|
-| `nph-dfs_xy_lonlat` | 위경도 -> 기상청 격자 x/y 변환 |
-| `nph-dfs_vsrt_grd` | 초단기예보 |
-| `nph-dfs_odam_grd` | 관측/실황 fallback |
-| `getGk2aclaArea` | GK2A cloud amount area |
-| `getGk2acldArea` | GK2A cloud detection area |
+| horizon balance | 특정 시간대/horizon에만 학습이 쏠리지 않게 함 |
+| solar consistency weight | 태양 고도와 발전량 관계가 물리적으로 더 자연스러운 샘플을 더 중요하게 봄 |
+| weather/cloud weight | 구름/날씨와 발전량의 관계가 맞는 샘플을 더 중요하게 봄 |
+| strong sample weight | 품질이 좋은 샘플을 더 강하게 학습 |
 
-인증키는 `KMA_AUTH_KEY` 환경변수로 주입한다. 문서에는 키 값을 기록하지 않는다.
-
-RunPod secret도 같은 이름의 환경변수로 매핑되어 있어야 한다.
-
-```text
-KMA_AUTH_KEY = {{ RUNPOD_SECRET_KMA_AUTH_KEY }}
-```
-
-RunPod API 호출에 쓰는 `RUNPOD_KEY`는 worker 내부 추론에는 필요하지 않고, 로컬 또는 호출 클라이언트에서 RunPod job을 넣을 때만 필요하다.
+이 접근은 “거래량 기반 target의 한계”를 줄이기 위한 것이다. 즉, 단순히 거래량 숫자만 외우는 모델이 아니라 태양 위치와 구름, 날씨 조건에 맞는 패턴을 더 신뢰하도록 학습했다.
 
 ---
 
-## 8. GK2A 시간 결측 처리
+## 6. 학습 환경
 
-기상청 GK2A area API는 정시 데이터가 비어 있거나 2분 차이 데이터만 있는 경우가 있었다.
+학습은 GPU 서버에서 Jupyter Notebook 기반으로 진행했다.
 
-예를 들어 다음처럼 정시 주변 데이터가 실제로 존재하는 케이스를 확인했다.
+주요 환경은 다음과 같다.
 
-```text
-202605081000 -> 202605080958
-202605081100 -> 202605081058
-202605081200 -> 202605081200
-```
-
-그래서 운영 로직은 정시 exact만 보지 않고 다음 순서로 nearest-time 탐색을 한다.
-
-```text
-0, -2, +2, -4, +4, -6, +6, -8, +8, -10, +10 minutes
-```
-
-이 방식은 정지궤도 위성 자체의 공전/관측 공백 문제가 아니라, API 제공 시각/처리 완료 시각/상품 생성 지연 문제에 대응하기 위한 운영 보정이다.
-
----
-
-## 9. 학습 데이터
-
-학습 번들:
-
-```text
-satellite_wind_safe_multihorizon_24h_regions_2025_20260508_095509
-```
-
-로컬 zip 위치:
-
-```text
-C:\Users\SSAFY\Project_Minsu\S305\server_upload\satellite_wind_safe_multihorizon_24h_regions_2025_20260508_095509.zip
-```
-
-GPU 서버 작업 위치:
-
-```text
-/home/j-k14s305/s305-work
-```
-
-GPU 서버 학습 output:
-
-```text
-/home/j-k14s305/s305-work/runs/satellite_wind_safe_multihorizon_24h_v10_solar_weather_cloud_weighted
-```
-
-학습 노트북:
-
-```text
-C:\Users\SSAFY\PycharmProjects\S14P31S305\ems\ai\test.ipynb
-```
-
-데이터 split:
-
-| 파일 | 용도 |
+| 항목 | 내용 |
 |---|---|
-| `samples_daylight_strong_filter_train.parquet` | train |
-| `samples_daylight_strong_filter_val.parquet` | clean strong validation |
-| `samples_daylight_no_filter_val.parquet` | real no-filter validation |
+| 학습 프레임워크 | PyTorch |
+| 학습 방식 | Jupyter Notebook 실행 |
+| 주요 데이터 처리 | pandas, numpy |
+| 검증/전처리 | scikit-learn 계열 사용 |
+| GPU 학습 | CUDA 환경 |
+| 추론 배포 | Docker 이미지 기반 RunPod Serverless |
 
-`real_no_filter_fair_val`은 no-filter validation에서 `(region, target_timestamp_kst)`별로 1~24 전체 horizon이 다 있는 subset이다. horizon별 비교가 더 공정하도록 따로 만든 검증셋이다.
-
----
-
-## 10. 학습 설정
-
-v10 학습 노트북의 주요 설정은 다음과 같다.
-
-| 항목 | 값 |
-|---|---|
-| `SEED` | 42 |
-| `BATCH_SIZE` | 4096 |
-| `EPOCHS` | 55 |
-| `PATIENCE` | 10 |
-| `MIN_DELTA` | 5e-5 |
-| `LR` | 2e-4 |
-| `NUM_WORKERS` | 8 |
-| `FORCE_RETRAIN` | False |
-| optimizer | `AdamW(lr=2e-4, weight_decay=1e-4)` |
-| scheduler | `CosineAnnealingLR(T_max=EPOCHS)` |
-| base loss | `SmoothL1Loss(beta=0.05, reduction="none")` |
-
-v10의 핵심 변경점은 horizon-balanced loss와 solar/weather/cloud consistency weight를 같이 사용한 것이다.
-
-최종 train weight:
-
-```text
-train_weight =
-  sample_weight_strong
-  * horizon_balance_weight
-  * solar_weather_cloud_weight
-```
-
-이 값은 과도한 가중치 폭주를 막기 위해 `0.05 ~ 5.0` 범위로 clip한다.
-
-checkpoint metadata에는 다음 정책이 들어간다.
-
-```text
-head_policy: short_head_for_1_6h_long_head_for_7_24h
-loss: SmoothL1Loss(beta=0.05) weighted by sample_weight_strong * horizon_balance_weight * solar_weather_cloud_weight
-image_normalization: binary
-```
-
----
-
-## 11. 학습/런타임 버전
-
-### 11.1 RunPod inference Docker
-
-Dockerfile:
-
-```text
-C:\Users\SSAFY\PycharmProjects\S14P31S305\ems\ai\runpod\Dockerfile.inference
-```
-
-base image:
-
-```text
-pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
-```
-
-RunPod runtime check 결과:
-
-```text
-torch: 2.5.1+cu124
-cuda available: true
-gpu: RTX 4090
-```
-
-Docker image에는 `.env` 파일을 포함하지 않는 것으로 확인했다.
-
-### 11.2 RunPod inference requirements
-
-```text
-numpy==2.2.5
-pandas==2.2.3
-scikit-learn==1.6.1
-lightgbm==4.6.0
-joblib==1.4.2
-pyyaml==6.0.2
-runpod==1.7.9
-astral==3.2
-requests==2.32.3
-python-dotenv==1.1.0
-xarray==2025.1.2
-pyproj==3.7.0
-netCDF4==1.7.2
-h5netcdf==1.4.1
-```
-
-### 11.3 Training requirements
-
-학습 서버에서는 PyTorch를 CUDA 환경에 맞게 별도 설치한다. 나머지 주요 requirements는 다음과 같다.
-
-```text
-numpy==2.2.5
-pandas==2.2.3
-scikit-learn==1.6.1
-lightgbm==4.6.0
-joblib==1.4.2
-pyyaml==6.0.2
-tqdm==4.67.1
-matplotlib==3.10.1
-jupyterlab==4.4.1
-ipykernel==6.29.5
-psycopg2-binary==2.9.10
-pg8000==1.31.5
-SQLAlchemy==2.0.40
-python-dotenv==1.1.0
-requests==2.32.3
-astral==3.2
-xarray==2025.1.2
-pyproj==3.7.0
-netCDF4==1.7.2
-h5netcdf==1.4.1
-```
-
-### 11.4 Flask AI service requirements
-
-```text
-flask==3.1.0
-prometheus-flask-exporter==0.23.1
-flask-smorest==0.45.0
-marshmallow==3.26.1
-redis==5.0.4
-psycopg2-binary==2.9.10
-typing_extensions>=4.0.0
-gunicorn==21.2.0
-python-dotenv==1.0.1
-```
-
----
-
-## 12. 검증 결과
-
-v10 최종 검증 summary:
-
-| eval set | rows | MAE | RMSE |
-|---|---:|---:|---:|
-| clean_strong_val | 48,957 | 0.079356 | 0.100202 |
-| real_no_filter_fair_val | 11,880 | 0.109242 | 0.140547 |
-| real_no_filter_val | 54,989 | 0.094894 | 0.124597 |
-
-best epoch:
+주요 학습 설정은 다음과 같다.
 
 | 항목 | 값 |
 |---|---:|
-| epoch | 11 |
-| train_loss | 0.061294 |
-| train_mae | 0.087955 |
-| train_rmse | 0.116089 |
-| val_mae | 0.079356 |
-| val_rmse | 0.100202 |
-| lr | 0.000181 |
+| batch size | 4096 |
+| epoch 최대값 | 55 |
+| early stopping patience | 10 |
+| learning rate | 0.0002 |
+| optimizer | AdamW |
+| scheduler | cosine annealing |
+| loss | Smooth L1 Loss |
 
-운영 해석:
+최종 best epoch는 11epoch였다.
+
+---
+
+## 7. 추론 방식
+
+운영 추론은 다음 순서로 진행된다.
 
 ```text
-real_no_filter_val MAE ~= 0.0949 capacity factor
-100 kW 설비 기준 단순 환산 MAE ~= 9.49 kW
+1. 사용자가 지역, 목표 시각, horizon, 설비용량을 요청
+2. 서비스가 해당 지역의 기상 데이터를 조회
+3. 서비스가 해당 지역의 구름/위성 proxy 데이터를 조회
+4. 태양 고도, 시간, 계절, horizon 피처를 계산
+5. 위성/구름 proxy 이미지를 모델 입력 형태로 변환
+6. v10 모델이 capacity factor 예측
+7. capacity factor * 설비용량으로 예상 발전량 계산
+8. 프론트 또는 제어 서비스에 결과 반환
 ```
 
-v8, v9 대비 v10은 real no-filter와 fair validation에서 모두 개선됐다.
+프론트에서 24시간 예측 그래프가 필요하면 1시간 뒤부터 24시간 뒤까지 각각 예측값을 받아서 그래프로 그리면 된다.
 
-| 모델 | clean RMSE | fair RMSE | real RMSE | 해석 |
+---
+
+## 8. 검증 결과
+
+v10 모델의 주요 검증 결과는 다음과 같다.
+
+| 검증셋 | 데이터 수 | MAE | RMSE |
+|---|---:|---:|---:|
+| clean validation | 48,957 | 0.0794 | 0.1002 |
+| fair validation | 11,880 | 0.1092 | 0.1405 |
+| real no-filter validation | 54,989 | 0.0949 | 0.1246 |
+
+해석하면, 실제 운영에 가까운 no-filter 기준에서 capacity factor MAE가 약 0.095 수준이다.
+
+100kW 설비로 단순 환산하면 평균 절대 오차는 약 9.5kW 정도로 볼 수 있다.
+
+```text
+100kW * 0.0949 ~= 9.49kW
+```
+
+v8, v9와 비교했을 때 v10은 전반적으로 성능이 개선됐다.
+
+| 모델 | clean RMSE | fair RMSE | real RMSE | 의미 |
 |---|---:|---:|---:|---|
-| v8 | 0.126161 | 0.180198 | 0.152508 | 24h 최초 안정화 |
-| v9 | 0.111122 | 0.178220 | 0.141633 | horizon balance 개선 |
-| v10 | 0.100202 | 0.140547 | 0.124597 | solar/weather/cloud weighting 개선 |
+| v8 | 0.1262 | 0.1802 | 0.1525 | 24시간 예측 최초 안정화 |
+| v9 | 0.1111 | 0.1782 | 0.1416 | horizon balance 적용 |
+| v10 | 0.1002 | 0.1405 | 0.1246 | 태양/날씨/구름 가중 학습 적용 |
 
 ---
 
-## 13. 지역별/시간별 관찰
+## 9. 결과 해석
 
-v10 real_no_filter_val 기준 지역별 성능:
+v10에서 가장 의미 있는 변화는 단순히 RMSE가 낮아진 것이 아니라, 모델이 태양광 발전의 물리적 조건을 더 반영하도록 학습됐다는 점이다.
 
-| region | rows | MAE | RMSE | target_mean | pred_mean |
-|---|---:|---:|---:|---:|---:|
-| 서울시 | 10,872 | 0.110992 | 0.147183 | 0.363290 | 0.448802 |
-| 대전시 | 10,925 | 0.099789 | 0.126225 | 0.411107 | 0.440119 |
-| 울산시 | 11,105 | 0.093718 | 0.120523 | 0.450366 | 0.463044 |
-| 부산시 | 11,105 | 0.090852 | 0.118268 | 0.453023 | 0.472043 |
-| 제주도 | 10,982 | 0.079364 | 0.107725 | 0.341085 | 0.374230 |
+이전 모델은 일부 구간에서 전반적으로 과대 예측하는 경향이 있었다. v10은 태양 고도, 구름, 기상 조건을 더 강하게 반영하면서 real validation 성능이 개선됐다.
 
-서울시는 worst case가 크게 남아 있다. 예를 들어 2025-12-05 11~12시 서울시에서 target capacity factor가 매우 낮은데 모델은 상대적으로 높은 발전 비율을 예측하는 사례가 반복됐다. 이 문제는 단순 구름/태양 조건보다는 KPX 거래량 label의 proxy 한계 또는 정산/집계 특성에서 온 왜곡일 가능성이 있다.
+다만 모든 worst case가 해결된 것은 아니다. 특히 특정 날짜/지역에서 실제 target이 매우 낮게 찍히는 경우에는 모델이 날씨 조건상 발전이 가능하다고 판단해도 label과 크게 어긋날 수 있다.
+
+이 부분은 모델 자체 문제라기보다 거래량 기반 target의 한계일 가능성이 있다. 실제 사이트의 인버터 발전량 데이터가 들어오면 이 문제를 더 정확히 분리할 수 있다.
 
 ---
 
-## 14. 운영 추론 검증
+## 10. 현재 한계
 
-RunPod에서 v10 Docker 이미지와 checkpoint를 사용해 live 추론을 수행했다.
+현재 모델의 주요 한계는 다음과 같다.
 
-검증 요청:
-
-```json
-{
-  "region": "대전시",
-  "horizon_hours": 24,
-  "target_timestamp_kst": "2026-05-09T12:00:00+09:00",
-  "installed_capacity_kw": 100
-}
-```
-
-검증 응답 핵심:
-
-```text
-status: completed
-device: cuda
-predicted_capacity_factor: 0.8625134825706482
-predicted_generation_kw: 86.25134825706482
-model_version: satellite_wind_safe_multihorizon_24h_v10_solar_weather_cloud_weighted
-```
-
-이 검증으로 확인한 사항:
-
-- RunPod worker에서 CUDA 사용 가능
-- checkpoint 로딩 가능
-- KMA secret 주입 가능
-- GK2A nearest-time 보정 후 live satellite proxy 생성 가능
-- v10 모델로 24h horizon 추론 가능
-
----
-
-## 15. API 목록
-
-AI 서비스 base URL 예시:
-
-```text
-http://localhost:5004
-```
-
-문서 endpoint:
-
-```text
-Swagger UI: /docs
-OpenAPI JSON: /openapi.json
-Health: /health
-```
-
-현재 AI 서비스의 주요 API는 다음이다.
-
-| Method | Path | 용도 |
-|---|---|---|
-| GET | `/api/ai/models` | 사용 가능한 AI 모델/메타 정보 조회 |
-| POST | `/api/ai/site-profile/structure` | 사이트 구조 기반 프로필 생성/추정 |
-| POST | `/api/ai/predict-solar` | 기존 태양광 발전량 예측 API |
-| POST | `/api/ai/predict-capacity-factor` | tabular capacity factor 예측 |
-| POST | `/api/ai/predict-satellite-capacity-factor` | 위성 feature를 직접 넣는 capacity factor 예측 |
-| POST | `/api/ai/predict-live-satellite-capacity-factor` | KMA live 기상/위성 proxy를 수집해 v10 예측 |
-| POST | `/api/ai/predict-load` | 부하 예측 |
-| POST | `/api/ai/forecast` | 발전/부하 통합 forecast |
-
-중요한 운영 판단:
-
-현재 프론트에서 1~24시간 태양광 예측 그래프를 그릴 때 가장 직접적인 API는 `/api/ai/predict-live-satellite-capacity-factor`다. 이 API를 horizon별로 호출해서 그래프를 채우는 방식이 현재 v10 설계와 가장 맞다.
-
-`/api/ai/forecast`는 기존 통합 forecast 서비스 흐름을 타며, 현재 문맥에서는 v10 live satellite 1~24h 그래프 생성 전용 API로 보는 것은 부정확하다.
-
----
-
-## 16. 대표 요청/응답 예시
-
-### 16.1 Live satellite capacity factor 요청
-
-```json
-{
-  "region": "대전시",
-  "horizon_hours": 24,
-  "target_timestamp_kst": "2026-05-09T12:00:00+09:00",
-  "installed_capacity_kw": 100
-}
-```
-
-### 16.2 응답 의미
-
-```json
-{
-  "predicted_capacity_factor": 0.8625,
-  "predicted_generation_kw": 86.25,
-  "model_version": "satellite_wind_safe_multihorizon_24h_v10_solar_weather_cloud_weighted",
-  "device": "cuda",
-  "warnings": []
-}
-```
-
-필드 의미:
-
-| 필드 | 의미 |
+| 한계 | 설명 |
 |---|---|
-| `predicted_capacity_factor` | 설비용량 대비 발전 비율 |
-| `predicted_generation_kw` | 요청 설비용량 기준 예상 발전 kW |
-| `model_version` | 실제 사용된 checkpoint model name |
-| `device` | CPU/CUDA 사용 여부 |
-| `warnings` | KMA/GK2A fallback, frame 복제 등 운영 경고 |
+| target이 거래량 기반 | 실제 현장 발전량과 완전히 같지 않을 수 있음 |
+| 지역 단위 예측 | 개별 건물/설비의 그림자, 각도, 설치 방향까지 반영하지 못함 |
+| 위성 proxy 사용 | 원본 위성 영상을 직접 분석하는 수준은 아님 |
+| 실시간 API 결측 가능 | 기상/위성 API가 특정 시각에 비어 있을 수 있음 |
+| 사이트별 보정 미적용 | 아직 실제 설치 현장의 발전 패턴으로 fine-tuning하지 않음 |
 
 ---
 
-## 17. 왜 v10 방향이 됐는가
+## 11. 앞으로의 개선 방향
 
-초기에는 하루치 예측을 LightGBM 또는 별도 fallback으로 길게 채우는 논의가 있었다. 하지만 프론트 그래프 관점에서는 1~24시간을 서로 다른 모델로 섞어 채우면 특정 구간에서 예측 곡선의 모양이 튀고, 운영 설명도 복잡해진다.
+가장 중요한 개선 방향은 실제 사이트 발전량 데이터를 쌓는 것이다.
 
-그래서 최종 방향은 다음처럼 정리됐다.
+권장 방향은 다음과 같다.
 
 ```text
-프론트/운영 그래프 기본값:
-  v10 단일 모델로 1h~24h 예측
-
-단기 제어/비교:
-  v6는 1h, 2h, 3h, 6h short-control champion으로 보관
-
-legacy baseline/challenger:
-  LightGBM은 긴 구간 기본 그래프 모델이 아니라 비교군으로 보관
+1. v10 모델로 예측 수행
+2. 실제 사이트 발전량을 저장
+3. 예측값, 실제값, 날씨, 구름, 시간, horizon을 함께 로그로 남김
+4. 일정 기간 누적 후 사이트별 보정 모델 또는 fine-tuning 적용
 ```
 
-v10은 내부적으로 short head와 long head를 분리하므로, 단일 checkpoint 안에서도 단기/장기 horizon의 특성을 다르게 학습한다.
+이렇게 하면 현재의 거래량 기반 label 한계를 줄이고, 실제 운영 현장에 더 맞는 예측으로 개선할 수 있다.
 
 ---
 
-## 18. 한계와 리스크
+## 12. 최종 요약
 
-### 18.1 label 한계
+현재 EMS 태양광 AI는 `satellite_wind_safe_multihorizon_24h_v10`을 기준으로 운영한다.
 
-학습 target은 실제 현장 인버터 발전량이 아니라 KPX 거래량/실적 기반 proxy다. 따라서 다음 상황에서는 모델이 물리적으로 맞는 예측을 해도 label과 어긋날 수 있다.
+이 모델은 위성/구름 정보, 기상 정보, 태양 고도, 시간/계절 정보, 지역 정보, 예측 horizon 정보를 함께 사용해 1~24시간 태양광 capacity factor를 예측한다.
 
-- 거래량 집계 지연 또는 정산 보정
-- 지역 단위 집계의 혼합 효과
-- 설비 구성 변화
-- curtailment 또는 계통 제약
-- 실제 발전량과 거래량의 시간 정렬 차이
+학습은 PyTorch 기반 GPU 학습으로 진행했고, Smooth L1 Loss와 horizon balance, 태양/날씨/구름 기반 가중 학습을 적용했다.
 
-### 18.2 live 위성 proxy 한계
+운영 추론은 RunPod Serverless에서 Docker 기반으로 실행되며, 실시간 기상/구름 데이터를 가져와 피처를 만든 뒤 v10 모델로 예측한다.
 
-현재 운영 입력은 KMA GK2A area API를 64x64 proxy 이미지로 확장한다. 즉 실제 위성 영상을 crop해서 넣는 고해상도 spatial 입력은 아니다.
+검증 결과 real no-filter 기준 MAE는 약 0.0949, RMSE는 약 0.1246이며, 100kW 설비 기준 평균 절대 오차는 약 9.5kW 수준으로 해석할 수 있다.
 
-다만 구름량/구름탐지/하늘상태를 모델 입력 형태에 맞춰 일관되게 제공하기 때문에, 운영 안정성과 데이터 접근성 면에서는 현재 구조가 더 현실적이다.
-
-### 18.3 API 결측
-
-KMA GK2A API는 정시 exact 데이터가 없고 ±2분 데이터만 있는 경우가 있다. nearest-time fallback으로 완화했지만, API 자체의 일시 결측은 여전히 warning으로 남을 수 있다.
-
----
-
-## 19. 추후 개선 방향
-
-가장 큰 개선 여지는 실제 사이트 telemetry를 붙이는 것이다.
-
-권장 흐름:
-
-```text
-1. v10으로 1~24h 예측 수행
-2. 실제 사이트 발전량/인버터 계측값 저장
-3. 예측 시점, horizon, region, 설비용량, 기상/위성 snapshot, 실제값을 함께 로그화
-4. 일정 기간 누적 후 site calibration 또는 fine-tuning
-5. KPX proxy label의 왜곡을 실제 현장 데이터로 보정
-```
-
-특히 서울시 worst case처럼 target이 비정상적으로 낮은 구간은 실제 현장 발전량이 있으면 거래량 proxy 문제인지 모델 문제인지 분리할 수 있다.
-
----
-
-## 20. 관련 파일 위치
-
-로컬 프로젝트:
-
-```text
-C:\Users\SSAFY\PycharmProjects\S14P31S305
-```
-
-주요 파일:
-
-| 파일 | 설명 |
-|---|---|
-| `ems\ai\test.ipynb` | v10 학습 노트북 |
-| `ems\ai\inference\satellite_wind_safe.py` | satellite/wind-safe 모델 로딩 및 feature 생성 |
-| `ems\ai\service\app\services\live_satellite_service.py` | KMA live weather/GK2A 수집 |
-| `ems\ai\runpod\Dockerfile.inference` | RunPod inference Dockerfile |
-| `ems\ai\runpod\handler.py` | RunPod serverless handler |
-| `ems\ai\requirements-runpod-inference.txt` | RunPod inference Python dependencies |
-| `ems\ai\requirements-train.txt` | GPU training Python dependencies |
-| `ems\ai\checkpoints\satellite_wind_safe_multihorizon_24h_v10\best_model.pt` | v10 checkpoint |
-
-외부 공유/설명 문서 repo:
-
-```text
-C:\Users\SSAFY\IdeaProjects\S305
-```
-
-관련 문서:
-
-| 파일 | 설명 |
-|---|---|
-| `AI_DEVELOPMENT_GUIDE.md` | AI 개발 전체 가이드 |
-| `10-ai-contracts\README.md` | AI 계약/설계 문서 index |
-| `10-ai-contracts\ems-ai-current-design.md` | 현재 AI 설계 |
-| `10-ai-contracts\ai-current-runpod-satellite-status.md` | RunPod/v10 운영 상태 |
-| `10-ai-contracts\ai-training-inference-strategy.md` | 학습/추론 전략 |
-| `10-ai-contracts\prediction-logging-retraining.md` | 예측 로그/재학습 전략 |
-| `11-api\README.md` | API 문서 index |
-| `11-api\ai-api.md` | AI API 목록 및 사용 설명 |
-
----
-
-## 21. 컨펌 대상자가 확인해야 할 핵심 질문
-
-1. 프론트 예측 그래프를 v10 단일 모델 1~24h로 채우는 정책에 동의하는가?
-2. v6를 운영 기본이 아니라 short-control 비교/보조 모델로 남기는 정책에 동의하는가?
-3. KPX 거래량 proxy label의 한계를 인정하고, 이후 실제 사이트 telemetry 기반 보정을 추가하는 방향에 동의하는가?
-4. KMA GK2A area API를 proxy 이미지로 쓰는 운영 설계가 현재 단계에서 충분한가?
-5. `/api/ai/predict-live-satellite-capacity-factor`를 프론트/제어 서비스의 1~24h 그래프 생성용 API로 쓰는 방향에 동의하는가?
-
----
-
-## 22. 한 줄 요약
-
-현재 EMS AI는 `satellite_wind_safe_multihorizon_24h_v10`을 기준으로 KMA live 기상, GK2A 구름 proxy, 태양 고도/시간/horizon feature를 결합해 1~24시간 태양광 capacity factor를 예측하고, RunPod CUDA 환경에서 Docker 이미지와 v10 checkpoint로 운영 추론 가능한 상태다.
+남은 핵심 개선 과제는 실제 사이트 발전량 데이터를 축적해서 거래량 기반 target의 한계를 줄이고, 사이트별 보정 또는 재학습으로 운영 정확도를 높이는 것이다.
