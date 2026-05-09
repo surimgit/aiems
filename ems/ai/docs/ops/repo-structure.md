@@ -20,10 +20,40 @@ README.md
 - `data/`: 로컬 작업용 폴더
 - `docs/`: 문서
 - `logs/`: 학습 로그
+- `models/`: Flask/RunPod 추론에서 사용하는 운영 model artifact
 - `notebooks/`: 실험성 노트북
 - `outputs/`: 샘플 출력물
+- `service/`: Flask 기반 AI MSA 런타임
 - `scripts/`: 수집/전처리/데이터셋 생성 스크립트
 - `train/`: 모델 코드
+
+## Runtime vs Offline Workspace
+
+`ems/ai/service`는 메인 EMS MSA가 호출하는 런타임 경계다.
+
+```text
+ems/ai/service
+  -> HTTP API
+  -> model artifact load
+  -> solar/load forecast
+  -> site_profile.v1 structuring
+  -> recommendation response
+```
+
+아래 폴더는 오프라인 작업 경계다.
+
+```text
+configs/   data source and training configs
+scripts/   collection, preprocessing, retry, batch jobs
+train/     training and validation code
+notebooks/ experiments
+data/      local sample data only
+outputs/   generated results, not source of truth
+logs/      generated logs
+```
+
+즉, 배포 대상은 `service/`이고 학습/수집 대상은 `scripts/`, `train/`,
+`configs/`이다.
 
 ## Cleanup Direction
 

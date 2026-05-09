@@ -19,7 +19,9 @@ External source
 현재 브랜치의 태양광 파이프라인은 두 갈래다.
 
 - 기존 hourly kW baseline: KMA ASOS + KPX hourly 발전량
-- 최신 운영 후보: KPX 5분 capacity factor + 시간/태양고도 feature + LightGBM
+- legacy tabular comparison: KPX 5분 capacity factor + 시간/태양고도 feature + LightGBM
+- 단기 제어 champion: GK2A image sequence + safe weather/time tabular feature + `satellite_wind_safe_v6`
+- RunPod/프런트 그래프 기본 모델: GK2A image sequence + solar/weather/cloud feature + `satellite_wind_safe_multihorizon_24h_v10`
 - 운영 예측 확장 방향: KMA 초단기/단기예보 기반 forecast-compatible weather feature
 
 ### 1. KMA 수집
@@ -67,7 +69,7 @@ KPX 태양광은 연간 CSV 외에 일별 API 수집 경로도 둔다.
 
 ## KPX 5-Min Capacity Factor Pipeline
 
-운영 예측 후보는 발전량 kW를 직접 예측하기보다 capacity factor를 예측하고,
+이 경로는 legacy tabular comparison이다. 발전량 kW를 직접 예측하기보다 capacity factor를 예측하고,
 site별 `installed_capacity_kw`를 곱해 kW로 변환한다.
 
 ```text
@@ -88,7 +90,7 @@ KPX solar generation
 - `validate_solar_model.py`
 - `run_operational_solar_forecast.py`
 
-현재 모델:
+legacy 모델:
 
 - artifact: `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
 - train rows: `16,969`
@@ -103,6 +105,33 @@ KPX solar generation
 - `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
 - RunPod endpoint id 예시: `bmmyj6f7xh82wa`
 - model version: `kpx_5min_capacity_factor_lightgbm`
+
+## Satellite v10 Runtime Pipeline
+
+현재 RunPod/프런트 그래프 기본 모델은 `satellite_wind_safe_multihorizon_24h_v10`이다. `satellite_wind_safe_v6`는 단기 제어용 `1h`, `2h`, `3h`, `6h` champion으로 보관한다.
+
+```text
+KMA APIHub live weather
+  + GK2A area scalar proxy today
+  + target time/site/capacity/time features
+    -> satellite image tensor proxy
+    -> satellite_wind_safe_multihorizon_24h_v10
+    -> capacity factor
+    -> predicted_generation_kw
+```
+
+현재 한계:
+
+- live input은 아직 실제 NetCDF 64x64 crop이 아니라 `gk2a_area_proxy`이다.
+- KMA APIHub GK2A area API가 정각 `NO_DATA`를 반환하면 같은 nominal frame에서 `±10`분, 2분 간격의 가까운 product를 찾는다.
+- 다음 작업은 KMA APIHub live GK2A NetCDF를 받아 `xarray`/`pyproj`로 site 주변 64x64 patch를 crop하는 것이다.
+
+운영 후보 artifact:
+
+- `ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
+- `ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt`
+- Flask endpoint: `POST /api/ai/predict-live-satellite-capacity-factor`
+- RunPod task: `predict_live_satellite_capacity_factor`
 
 ## GK2A Cloud Archive Pipeline
 
@@ -140,6 +169,61 @@ KMA APIHub GK2A LE2
 2. 성공하면 `run_gk2a_le2_archive_monthly.py`를 1~2병렬로 재개한다.
 3. 안정화되면 4병렬로 늘린다.
 4. `overwrite: false`라 기존 `.nc` 파일은 skip된다.
+
+### GK2A 1-Year Completion And Retry Flow
+
+GK2A archive는 중간 학습을 반복하지 않고 2025년 1년치 수집을 먼저 끝낸 뒤
+offline cloud feature 실험에 연결한다.
+
+기본 흐름:
+
+```text
+monthly download/resume
+  -> build retry index
+  -> retry missing/failed/rejected list
+  -> rebuild retry index
+  -> only then extract cloud features and train
+```
+
+실패/거절 목록 생성:
+
+```bash
+python ems/ai/scripts/build_gk2a_failure_index.py \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml
+```
+
+Google Drive가 다른 경로로 마운트된 PC에서는 `--raw-root`로 실제 `.nc` 루트를 지정한다.
+
+```bash
+python ems/ai/scripts/build_gk2a_failure_index.py \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml \
+  --raw-root "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2"
+```
+
+결과:
+
+- `raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.json`
+- `raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.csv`
+
+분류 기준:
+
+- `MISSING`: 기대 경로에 파일이 없고 manifest 실패 기록도 없음
+- `FAILED`: 다운로드 시도는 있었지만 최종 실패
+- `REJECTED_OR_NO_DATA`: 401/403/404/429, no data, limit, denied 계열 응답
+- `SUSPICIOUS_SMALL_FILE`: `.nc` 파일은 있으나 크기가 너무 작아 정상 NetCDF로 보기 어려움
+
+재시도:
+
+```bash
+python ems/ai/scripts/retry_gk2a_failure_index.py \
+  --index "G:/내 드라이브/s305-ai-data/raw/weather/gk2a_le2/manifests/gk2a_le2_retry_index.json" \
+  --config ems/ai/configs/data_sources/gk2a_le2_cloud_archive_hourly_2025.yaml \
+  --limit 50
+```
+
+재시도 후에는 `build_gk2a_failure_index.py`를 다시 실행해서 남은 목록을 갱신한다.
+기상청이 실제로 데이터를 제공하지 않는 시간대는 계속 `REJECTED_OR_NO_DATA`로 남을 수 있으므로,
+최종 학습 전에는 해당 목록을 결측 구간으로 별도 보관한다.
 
 ### Forecast-Compatible Weather Feature Pipeline
 

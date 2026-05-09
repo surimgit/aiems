@@ -24,6 +24,10 @@ SITE_ID = os.getenv("SITE_ID", "PLANT-ALPHA")
 CONTROL_INTERVAL_SECONDS = 1.0
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul")
 
+# ── 외부 서비스 ───────────────────────────────────────────────────────────
+# state-processor 토폴로지 API (control 이 매 iteration HTTP 호출)
+STATE_PROCESSOR_URL = os.getenv("STATE_PROCESSOR_URL", "http://state-processor:5002")
+
 # ── DB (PostgreSQL control_db) ────────────────────────────────────────────
 # control_policy / control_policy_history 등 운영 데이터.
 DB_HOST = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST", "localhost")

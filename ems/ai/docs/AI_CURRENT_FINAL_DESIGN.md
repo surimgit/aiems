@@ -1,6 +1,8 @@
 # EMS AI Current Design
 
-This document is the current baseline design after the first GPU training run.
+This document is the current AI runtime design. The initial LightGBM baseline is
+kept as a historical tabular baseline, while the current solar runtime candidate
+is the satellite image model `satellite_wind_safe_multihorizon_24h_v10`.
 
 ## Core Position
 
@@ -17,15 +19,16 @@ AI is prediction-only.
 ```text
 Training
 SSAFY shared GPU
-→ stage 1 MLP
-→ stage 2 LightGBM
-→ baseline model artifact
+→ legacy tabular baseline: MLP / LightGBM
+→ short-control satellite champion: satellite_wind_safe_v6
+→ graph/runtime satellite default: satellite_wind_safe_multihorizon_24h_v10
+→ model artifacts
 
 Operation
 EC2 Forecast-AI
 → KMA forecast collection
 → telemetry/history lookup
-→ feature engineering
+→ feature engineering / live satellite input assembly
 → RunPod predict call
 → forecast_result DB save
 → EMS response or stream publish
@@ -38,6 +41,61 @@ EMS Rule Engine
 
 RunPod is used for inference. Initial training is performed on the SSAFY shared
 GPU.
+
+## Current Solar Runtime Models
+
+Solar runtime is split by use case.
+
+```text
+short control champion: satellite_wind_safe_v6
+short checkpoint: ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt
+supported short horizons: 1h, 2h, 3h, 6h
+
+graph/runtime default: satellite_wind_safe_multihorizon_24h_v10
+graph checkpoint: ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt
+supported graph horizons: 1h through 24h
+runtime inference: RunPod Serverless
+runtime image: rebuild from ems/ai/runpod/Dockerfile.inference with v10 checkpoint
+RunPod endpoint: social_rose_sawfish / 2vpedud72bqd09
+```
+
+v6 validation result:
+
+```text
+clean_strong_val RMSE 0.106228 / MAE 0.085128
+real_no_filter_fair_val RMSE 0.118638 / MAE 0.092938
+real_no_filter_val RMSE 0.123338 / MAE 0.096450
+```
+
+v10 validation result:
+
+```text
+clean_strong_val RMSE 0.100202 / MAE 0.079356
+real_no_filter_fair_val RMSE 0.140547 / MAE 0.109242
+real_no_filter_val RMSE 0.124597 / MAE 0.094894
+```
+
+RunPod live inference with real KMA APIHub data succeeded after rebuilding the
+`satellite-v10-24h` image and restarting the worker.
+
+```text
+input_mode: gk2a_area_proxy
+target: Daejeon
+forecast target: 2026-05-09T12:00:00+09:00
+capacity_factor: 0.8625134826
+100 kW generation estimate: 86.2513482571 kW
+worker: er46y1jtx71iud
+```
+
+The live GK2A area API can return `NO_DATA` at exact hourly timestamps even when
+nearby products exist. Runtime now searches the same nominal frame within
+`±10` minutes in 2-minute steps. The verified RunPod response used
+`202605080958` for nominal `202605081000` and `202605081058` for nominal
+`202605081100`.
+
+Current caveat: `gk2a_area_proxy` expands GK2A area scalar data into an image
+tensor. Full production alignment still needs live GK2A NetCDF 64x64 crop
+extraction using `xarray` and `pyproj`.
 
 ## Forecast Cycle
 
@@ -52,15 +110,16 @@ The current operational target is:
 This is not a sub-second control loop. RunPod Serverless can use `workersMin=0`
 to avoid idle GPU cost. Cold start is acceptable for this forecast cycle.
 
-## Solar Forecast Model
+## Legacy Solar Forecast Baseline
 
-The current baseline model is LightGBM, a Microsoft open-source Gradient
-Boosting Decision Tree framework.
+The first tabular baseline model is LightGBM, a Microsoft open-source Gradient
+Boosting Decision Tree framework. It remains useful as a legacy comparison
+baseline, but it is not the current satellite runtime candidate.
 
 Stage layout:
 
 - Stage 1: MLP baseline, used to verify end-to-end neural training.
-- Stage 2: LightGBM baseline, current main solar baseline.
+- Stage 2: LightGBM baseline, legacy tabular solar baseline.
 - Stage 3: site correction LightGBM, activated after actual site logs exist.
 
 Input features:
@@ -313,6 +372,10 @@ history exists.
 Key code:
 
 ```text
+ems/ai/inference/satellite_wind_safe.py
+ems/ai/service/app/services/live_satellite_service.py
+ems/ai/service/app/controllers/prediction_controller.py
+ems/ai/service/app/schemas/prediction_schema.py
 ems/ai/train/lightgbm_train.py
 ems/ai/train/solar_postprocess.py
 ems/ai/train/site_correction_train.py
@@ -323,12 +386,22 @@ ems/ai/scripts/runpod_client.py
 Key configs:
 
 ```text
+ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt
+ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt
 ems/ai/configs/solar_kpx_lightgbm_gpu.yaml
 ems/ai/configs/solar_site_correction_lightgbm_gpu.yaml
 ems/ai/configs/runpod/training_job_example.yaml
 ```
 
-GPU result path:
+Current runtime artifact:
+
+```text
+short control: ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt
+graph 1~24h: ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt
+RunPod image: rebuild from ems/ai/runpod/Dockerfile.inference with v10 checkpoint
+```
+
+Legacy tabular baseline GPU result path:
 
 ```text
 /home/j-k14s305/s305-work/runs/artifacts/solar_kpx_lightgbm/model.joblib

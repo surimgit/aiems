@@ -13,9 +13,26 @@ from .config import (
     CONTROL_DB_HOST, CONTROL_DB_PORT, CONTROL_DB_NAME,
     CONTROL_DB_USER, CONTROL_DB_PASSWORD,
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
+    SIMULATOR_TOPOLOGY_URL,
 )
 
 _KNOWN_SITES = [SITE_ID]
+
+
+def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
+    """simulator/topology 의 GET /api/topology 를 호출. 실패 시 None.
+
+    설계문서 §3 기준 토폴로지 master 는 simulator/topology 서비스다.
+    EMS 가 응답을 만들 때 control_db (메타데이터) 와 이 응답 (런타임 라인) 을 합친다.
+    """
+    try:
+        import requests
+        resp = requests.get(f"{SIMULATOR_TOPOLOGY_URL}/api/topology", timeout=timeout_sec)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"[state-processor][topology] simulator 응답 실패 (DB 만 사용): {e}")
+        return None
 
 # ── DTO 변환 헬퍼 (module-level) ──────────────────────────────────────────────
 # 시뮬레이터의 DIESEL → 프론트 enum DIESEL_GENERATOR 로 변환.
@@ -160,9 +177,60 @@ def create_app() -> Flask:
     app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
     app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
 
+    _register_error_handlers(app)
     _register_routes(app)
     _start_worker()
     return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """S305 표준 에러 응답 형식으로 통일.
+
+    모든 HTTP 에러를 아래 형식으로 직렬화한다:
+      { error_code, message, trace_id, details }
+    Flask-Smorest 422 validation 에러도 동일 형식으로 래핑.
+    """
+    import uuid as _uuid
+
+    def _err(code: str, msg: str, details: dict | None = None, status: int = 500):
+        return jsonify({
+            "error_code": code,
+            "message": msg,
+            "trace_id": str(_uuid.uuid4()),
+            "details": details or {},
+        }), status
+
+    @app.errorhandler(400)
+    def _h400(e):
+        # S305 §3: INVALID_REQUEST — 요청 형식 또는 필수 필드 오류
+        return _err("INVALID_REQUEST", getattr(e, "description", str(e)), status=400)
+
+    @app.errorhandler(404)
+    def _h404(e):
+        return _err("NOT_FOUND", getattr(e, "description", str(e)), status=404)
+
+    @app.errorhandler(405)
+    def _h405(e):
+        # S305 §3: METHOD_NOT_ALLOWED (§4: 405 추가됨)
+        return _err("METHOD_NOT_ALLOWED", getattr(e, "description", str(e)), status=405)
+
+    @app.errorhandler(409)
+    def _h409(e):
+        # S305 §3: CONFLICT — 현재 상태와 요청 충돌 (TimescaleDB 압축 chunk ack 거부 포함)
+        return _err("CONFLICT", getattr(e, "description", str(e)), status=409)
+
+    @app.errorhandler(422)
+    def _h422(e):
+        # S305 §3: INVALID_REQUEST — 의미상 처리 불가 (validation 실패)
+        # Flask-Smorest validation 에러: e.data['messages'] 에 필드별 오류 포함.
+        details: dict = {}
+        if hasattr(e, "data") and isinstance(e.data, dict):
+            details = e.data.get("messages", {})
+        return _err("INVALID_REQUEST", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
+
+    @app.errorhandler(500)
+    def _h500(e):
+        return _err("INTERNAL_ERROR", "서버 내부 오류가 발생했습니다.", status=500)
 
 
 def _start_worker() -> None:
@@ -346,7 +414,7 @@ def _register_routes(app: Flask) -> None:
         acked_by = fields.String(allow_none=True)
 
     class AlarmAckRequestSchema(Schema):
-        acked_by = fields.String(required=True)
+        acked_by = fields.String(load_default="operator")
 
     class SensorDataSchema(Schema):
         time = fields.DateTime()
@@ -395,6 +463,67 @@ def _register_routes(app: Flask) -> None:
     # ── Blueprint & Routes ────────────────────────────────────────────────────
 
     blp = Blueprint("state", "state", url_prefix="/api")
+
+    def _alarm_level(severity: str) -> str:
+        s = (severity or "").upper()
+        if s in ("CRITICAL", "EMERGENCY"):
+            return "critical"
+        if s == "WARNING":
+            return "warning"
+        return "info"
+
+    def _alarm_row_to_dto(row: tuple) -> dict:
+        return {
+            "alarm_id": str(row[0]) if row[0] else None,
+            "level": _alarm_level(row[6]),
+            "code": row[5],
+            "message": row[7],
+            # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
+            "ess_id": row[3] if (row[4] or "").upper() == "ESS" else None,
+            "timestamp": row[1].isoformat() if row[1] else None,
+            "acknowledged": row[8],
+            # 호환 추가 필드 (프론트 type 무시 가능):
+            "site_id": row[2],
+            "resource_type": row[4],
+            "acked_at": row[9].isoformat() if row[9] else None,
+            "acked_by": row[10],
+        }
+
+    def _ack_alarm(site_id: str, alarm_id: str, acked_by: str) -> dict:
+        """알람 확인 처리 공통 로직. PATCH와 POST /ack가 같은 DTO를 반환한다."""
+        pool = get_db_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE event_log
+                        SET acknowledged = true, acked_at = NOW(), acked_by = %s
+                        WHERE alarm_id = %s::uuid AND site_id = %s
+                        RETURNING alarm_id, time, site_id, device_id, resource_type,
+                                  event_type, severity, message, acknowledged, acked_at, acked_by
+                        """,
+                        (acked_by, alarm_id, site_id),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    # TimescaleDB 압축 chunk UPDATE 실패 케이스 캐치
+                    msg = str(e).lower()
+                    if "compress" in msg or "chunk" in msg or "cannot update" in msg:
+                        from flask import abort
+                        abort(409, "압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
+                    raise
+        finally:
+            pool.putconn(conn)
+
+        if not row:
+            from flask import abort
+            abort(404)
+
+        return _alarm_row_to_dto(row)
 
     # ── Plant 목록 ─────────────────────────────────────────────────────────────
 
@@ -627,6 +756,80 @@ def _register_routes(app: Flask) -> None:
                     "interlock_blocked": bool(reported.get("interlock_blocked", False)),
                 })
 
+            # ── simulator topology 융합 (설계문서 §3 master) ─────────────────
+            # 운영자가 simulator UI 또는 API 로 추가한 라인/스위치/노드를 흡수.
+            # control_db 에 없는 자원이 있으면 추가, 있는 자원은 EMS DB 메타데이터 우선 유지.
+            sim_topo = _fetch_simulator_topology()
+            if sim_topo:
+                existing_node_ids = {n["node_id"] for n in nodes}
+                existing_line_ids = {l["line_id"] for l in lines}
+                existing_switch_ids = {s["switch_id"] for s in switches}
+
+                # simulator-only 노드 추가 (좌표는 simulator 응답에 없으면 0,0)
+                for n in sim_topo.get("nodes", []) or []:
+                    nid = n.get("node_id")
+                    if not nid or nid in existing_node_ids:
+                        continue
+                    pos = n.get("position") or {}
+                    nodes.append({
+                        "node_id": nid,
+                        "node_type": (n.get("node_type") or "BUS"),
+                        "resource_id": n.get("resource_id"),
+                        "position": {
+                            "x": float(pos.get("x") or 0.0),
+                            "y": float(pos.get("y") or 0.0),
+                        },
+                        "status": _node_status(n.get("resource_id")),
+                    })
+                    existing_node_ids.add(nid)
+
+                # simulator-only 라인 + 그 안의 스위치 추가
+                for l in sim_topo.get("lines", []) or []:
+                    lid = l.get("line_id")
+                    if not lid:
+                        continue
+                    sw = l.get("switch") or {}
+                    sw_id = sw.get("switch_id")
+                    if lid not in existing_line_ids:
+                        flow = _line_flow_kw(l.get("from_node_id"))
+                        # status 산출 시 우리 _line_status 는 sw_by_line 만 보니까,
+                        # simulator-only 라인은 simulator 의 switch position 으로 직접 판정.
+                        if sw_id:
+                            live_state = state_by_switch.get(sw_id, {})
+                            live_pos = (live_state.get("reported_state") or {}).get("switch_state")
+                            sim_pos = (sw.get("position") or "").upper()
+                            pos_for_status = live_pos or sim_pos
+                            line_status = "OPEN" if pos_for_status == "OPEN" else (
+                                "NORMAL" if pos_for_status == "CLOSED" else "UNKNOWN"
+                            )
+                        else:
+                            line_status = (l.get("status") or "NORMAL").upper()
+                        lines.append({
+                            "line_id": lid,
+                            "from_node_id": l.get("from_node_id"),
+                            "to_node_id": l.get("to_node_id"),
+                            "direction": _direction(flow),
+                            "flow_kw": round(flow, 2),
+                            "status": line_status,
+                        })
+                        existing_line_ids.add(lid)
+                    # 스위치도 — simulator-only 라인이 아니어도 스위치는 추가될 수 있음
+                    if sw_id and sw_id not in existing_switch_ids:
+                        live_state = state_by_switch.get(sw_id, {})
+                        reported = live_state.get("reported_state") or {}
+                        sim_pos = (sw.get("position") or "").upper()
+                        position = reported.get("switch_state") or sim_pos or "UNKNOWN"
+                        switches.append({
+                            "switch_id": sw_id,
+                            "line_id": lid,
+                            "position": position,
+                            "controllable": bool(sw.get("controllable", True)),
+                            "interlock_blocked": bool(
+                                reported.get("interlock_blocked", sw.get("interlock_blocked", False))
+                            ),
+                        })
+                        existing_switch_ids.add(sw_id)
+
             return {
                 "site_id": site_id,
                 "nodes": nodes,
@@ -734,85 +937,60 @@ def _register_routes(app: Flask) -> None:
             finally:
                 pool.putconn(conn)
 
-            # DB severity → 프론트 level 매핑: WARNING/CRITICAL/EMERGENCY → warning/critical/critical 소문자.
-            # 프론트 enum 은 'info' | 'warning' | 'critical' 만 — EMERGENCY 도 critical 로 합쳐 표시.
-            def _to_level(sev: str) -> str:
-                s = (sev or "").upper()
-                if s in ("CRITICAL", "EMERGENCY"):
-                    return "critical"
-                if s == "WARNING":
-                    return "warning"
-                return "info"
+            return [_alarm_row_to_dto(r) for r in rows]
 
-            return [
-                {
-                    "alarm_id": str(r[0]) if r[0] else None,
-                    "level": _to_level(r[6]),
-                    "code": r[5],
-                    "message": r[7],
-                    # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
-                    "ess_id": r[3] if (r[4] or "").upper() == "ESS" else None,
-                    "timestamp": r[1].isoformat() if r[1] else None,
-                    "acknowledged": r[8],
-                    # 호환 추가 필드 (프론트 type 무시 가능):
-                    "site_id": r[2],
-                    "resource_type": r[4],
-                    "acked_at": r[9].isoformat() if r[9] else None,
-                    "acked_by": r[10],
-                }
-                for r in rows
-            ]
-
-    @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>")
-    class PlantAlarmDetailResource(MethodView):
+    @blp.route("/plants/<string:site_id>/alarms/<string:alarm_id>/ack")
+    class PlantAlarmAckResource(MethodView):
         @blp.arguments(AlarmAckRequestSchema)
         @blp.response(200, AlarmSchema)
-        def patch(self, body, site_id, alarm_id):
-            """알람 확인 처리 (acknowledged = true).
+        def post(self, body, site_id, alarm_id):
+            """알람 확인 처리 (S305 표준 경로).
 
-            주의 (A안 정책): event_log 는 TimescaleDB hypertable 이며 30일 이후 chunk 가 압축됨.
-                          압축 chunk 는 UPDATE 가 거부되므로 30일 지난 알람은 ack 불가.
-                          압축 거부 에러 발생 시 410 Gone 으로 응답.
+            event_log 는 TimescaleDB hypertable 이며 30일 이후 chunk 가 압축됨.
+            압축 chunk 는 UPDATE 가 거부되므로 30일 지난 알람은 ack 불가 → 409 Conflict.
             """
-            pool = get_db_pool()
-            conn = pool.getconn()
-            try:
-                with conn.cursor() as cur:
-                    try:
-                        cur.execute(
-                            """
-                            UPDATE event_log
-                            SET acknowledged = true, acked_at = NOW(), acked_by = %s
-                            WHERE alarm_id = %s::uuid AND site_id = %s
-                            RETURNING alarm_id, time, site_id, device_id, resource_type,
-                                      event_type, severity, message, acknowledged, acked_at, acked_by
-                            """,
-                            (body["acked_by"], alarm_id, site_id),
-                        )
-                        r = cur.fetchone()
-                        conn.commit()
-                    except Exception as e:
-                        conn.rollback()
-                        # TimescaleDB 압축 chunk UPDATE 실패 케이스 캐치
-                        msg = str(e).lower()
-                        if "compress" in msg or "chunk" in msg or "cannot update" in msg:
-                            from flask import abort
-                            abort(410, message="압축된 오래된 알람(30일 이상)은 ack 할 수 없습니다.")
-                        raise
-            finally:
-                pool.putconn(conn)
+            return _ack_alarm(site_id, alarm_id, body.get("acked_by") or "operator")
 
-            if not r:
-                from flask import abort
-                abort(404)
+    # ── AI 관련 미구현 엔드포인트 (→ 503) ───────────────────────────────────
+    # 아래 3개 엔드포인트는 AI 서비스 활성화 전까지 503 FEATURE_UNAVAILABLE 로 응답.
+    # 기술 부채: 향후 ai-service 구현 시 state-processor에서 제거 후 ai-service로 이관.
+    # 참조: S305 dashboard-api.md §7, ai-api.md §3
 
-            return {
-                "alarm_id": str(r[0]) if r[0] else None,
-                "time": r[1], "site_id": r[2], "device_id": r[3],
-                "resource_type": r[4], "event_type": r[5], "severity": r[6],
-                "message": r[7], "acknowledged": r[8],
-                "acked_at": r[9], "acked_by": r[10],
-            }
+    def _ai_unavailable():
+        import uuid as _uuid
+        return jsonify({
+            "error_code": "FEATURE_UNAVAILABLE",
+            "message": "AI 서비스가 아직 활성화되지 않았습니다.",
+            "trace_id": str(_uuid.uuid4()),
+            "details": {},
+        }), 503
+
+    @blp.route("/plants/<string:site_id>/ai/latest")
+    class PlantAiLatestResource(MethodView):
+        def get(self, site_id):
+            """Plant AI 최신 결과 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/ai/latest
+            """
+            return _ai_unavailable()
+
+    @blp.route("/plants/<string:site_id>/forecasts")
+    class PlantForecastResource(MethodView):
+        def get(self, site_id):
+            """예측 목록 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/forecasts
+            """
+            return _ai_unavailable()
+
+    @blp.route("/plants/<string:site_id>/recommendations")
+    class PlantRecommendationResource(MethodView):
+        def get(self, site_id):
+            """권고 목록 — 미구현 (AI 서비스 비활성화 상태).
+
+            프론트엔드: GET /api/plants/{siteId}/recommendations
+            """
+            return _ai_unavailable()
 
     # ── 센서 시계열 (차트용) ──────────────────────────────────────────────────
 

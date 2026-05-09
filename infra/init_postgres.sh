@@ -187,7 +187,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         ('GRID_FREQ_MAX',              62,    'Hz',   '계통 주파수 상한'),
         ('LOAD_SHED_DEFAULT_PRIORITY', 3,     '',     '부하 등급 기본값 (1=필수/2=중요/3=일반/4=지연가능)'),
         ('ESS_POWER_LIMIT_KW',         50,    'kW',   'ESS 1대당 충방전 출력 상한'),
-        ('LOAD_OVERLOAD_KW',           200,   'kW',   '부하 과부하 판단 절대값 기준')
+        ('LOAD_OVERLOAD_KW',           200,   'kW',   '부하 과부하 판단 절대값 기준'),
+        -- SoC 임계 기반 단계적 부하 차단 (현업 정석 — 선제 보호).
+        -- ESS 평균 SOC 가 임계 이하일 때 해당 등급 이상 부하 차단 권고 EVT-N-006 발행.
+        ('SHED_SOC_TIER4',             25,    '%',    'Tier 4 (비필수/지연가능) 차단 시작 SOC'),
+        ('SHED_SOC_TIER3',             20,    '%',    'Tier 3 (일반) 차단 시작 SOC'),
+        ('SHED_SOC_TIER2',             15,    '%',    'Tier 2 (중요) 차단 시작 SOC. 이 이하면 Tier 1 만 유지.')
     ON CONFLICT (key) DO NOTHING;
 EOSQL
 

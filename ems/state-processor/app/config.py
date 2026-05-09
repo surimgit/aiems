@@ -38,3 +38,9 @@ CONTROL_DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
 CONTROL_DB_NAME = os.getenv("CONTROL_DB", "control_db")
 CONTROL_DB_USER = os.getenv("CONTROL_USER", "control_user")
 CONTROL_DB_PASSWORD = os.getenv("CONTROL_PASSWORD", "")
+
+# ── Simulator Topology API ────────────────────────────────────────────────
+# 설계문서 §3 기준 토폴로지 master = simulator/topology 서비스.
+# state-processor 는 control_db (EMS 메타데이터) 와 이 API (런타임 토폴로지) 를
+# 합쳐서 응답한다. 운영자가 simulator UI 에서 라인을 추가하면 자동 반영.
+SIMULATOR_TOPOLOGY_URL = os.getenv("SIMULATOR_TOPOLOGY_URL", "http://host.docker.internal:8081")
