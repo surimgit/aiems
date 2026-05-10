@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useOverviewFeature } from '@/features/overview'
 import { useTopologyFeature } from '@/features/topology'
-import { useForecastFeature } from '@/features/forecast'
 import { buildKpiSummary } from '@/features/kpi'
 import TopBarKpiStrip from '@/features/overview/components/TopBarKpiStrip.vue'
 import AnomalyAlertBanner from '@/features/overview/components/AnomalyAlertBanner.vue'
@@ -28,13 +28,13 @@ import { useDashboardLayout } from '@/features/overview/composables/useDashboard
 import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
 import type { RightPanelMode } from '@/features/overview/types'
 
-const { powerSummary, activeAlarms, initialize } = useOverviewFeature()
+const { powerSummary, activeAlarms, resources, initialize } = useOverviewFeature()
 const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
-const forecastFeature = useForecastFeature()
 const overviewPolling = useOverviewPolling()
 const dashboardStore = useDashboardStore()
-const kpiItems = computed(() => buildKpiSummary(powerSummary.value, activeAlarms.value.length))
+const route = useRoute()
+const kpiItems = computed(() => buildKpiSummary(powerSummary.value, resources.value, activeAlarms.value.length))
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
 const rightPanel = useRightPanelState()
@@ -100,6 +100,9 @@ onMounted(async () => {
     topologyFeature.initialize(),
     forecastFeature.fetchForecasts()
   ])
+  if (route.query.panel === 'alarm') {
+    rightPanel.open('alarm')
+  }
   overviewPolling.start()
 })
 
@@ -132,7 +135,15 @@ onUnmounted(() => {
 
       <template #topology>
         <div class="topology-wrap">
-          <TopologyStage :topology="topologyFeature.topology.value" @select-node="handleSelectNode">
+          <TopologyStage
+            :topology="topologyFeature.topology.value"
+            :resources="resources"
+            :resources-last-fetched-at="dashboardStore.resourcesLastFetchedAt"
+            :topology-last-fetched-at="dashboardStore.topologyLastFetchedAt"
+            :resources-fetch-fail-streak="dashboardStore.resourcesFetchFailStreak"
+            :topology-fetch-fail-streak="dashboardStore.topologyFetchFailStreak"
+            @select-node="handleSelectNode"
+          >
             <template #svg>
               <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
               <TopologyNodeLayer :nodes="topologyFeature.topology.value?.nodes ?? []" @select-node="handleSelectNode" />
@@ -180,7 +191,7 @@ onUnmounted(() => {
 
 <style scoped>
 .overview-page {
-  @apply h-full min-h-0 overflow-y-auto overflow-x-hidden bg-slate-950;
+  @apply h-full min-h-0 overflow-y-scroll overflow-x-hidden bg-slate-950;
 }
 
 .topology-wrap {

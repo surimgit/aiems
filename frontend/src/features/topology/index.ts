@@ -85,16 +85,16 @@ export const useTopologyFeature = (): UseTopologyFeature => {
   })
   
   const initialize = async (): Promise<void> => {
-    await Promise.all([
-      dashboardStore.fetchTopology(),
-      dashboardStore.fetchPowerSummary()
-    ])
+    await dashboardStore.fetchTopology()
   }
 
   const topology = computed(() => dashboardStore.topology)
 
   const selectNode = (nodeId: string) => {
-    dashboardStore.selectEss(nodeId)
+    const topology = dashboardStore.topology
+    const matchedNode = topology?.nodes.find((node) => node.node_id === nodeId)
+    const selectedResourceId = matchedNode?.resource_id ?? nodeId
+    dashboardStore.selectEss(selectedResourceId)
   }
 
   return {

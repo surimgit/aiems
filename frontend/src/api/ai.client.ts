@@ -141,6 +141,10 @@ const requestIntegratedForecast = async (): Promise<ForecastResponse> => {
   return response.data
 }
 
+const LATEST_AI_CACHE_TTL_MS = 1500
+const latestAiCache = new Map<string, { fetchedAt: number; data: SiteLatestAi }>()
+const latestAiInFlight = new Map<string, Promise<SiteLatestAi>>()
+
 const isFeatureUnavailableError = (error: unknown): boolean => {
   if (!axios.isAxiosError(error)) {
     return false
@@ -148,7 +152,11 @@ const isFeatureUnavailableError = (error: unknown): boolean => {
 
   const status = error.response?.status
   const payload = error.response?.data as ApiError | undefined
-  return status === 503 || payload?.error_code === 'FEATURE_UNAVAILABLE'
+  if (status === 404 || status === 503 || payload?.error_code === 'FEATURE_UNAVAILABLE') return true
+  if (!error.response && (error.code === 'ECONNABORTED' || error.code === 'ECONNRESET' || error.code === 'ERR_NETWORK')) {
+    return true
+  }
+  return false
 }
 
 // AI 서비스는 선택적 기능 — 어떤 에러도 fallback 으로 처리
@@ -181,7 +189,28 @@ export const getRecommendationById = async (recommendationId: string): Promise<R
 }
 
 export const getLatestAiBySite = async (siteId: string): Promise<SiteLatestAi> => {
-  return http.get<SiteLatestAi>(`/api/plants/${siteId}/ai/latest`)
+  const key = siteId.toUpperCase()
+  const cached = latestAiCache.get(key)
+  const now = Date.now()
+  if (cached && now - cached.fetchedAt < LATEST_AI_CACHE_TTL_MS) {
+    return cached.data
+  }
+
+  const inFlight = latestAiInFlight.get(key)
+  if (inFlight) return inFlight
+
+  const request = http
+    .get<SiteLatestAi>(`/api/plants/${siteId}/ai/latest`)
+    .then((data) => {
+      latestAiCache.set(key, { fetchedAt: Date.now(), data })
+      return data
+    })
+    .finally(() => {
+      latestAiInFlight.delete(key)
+    })
+
+  latestAiInFlight.set(key, request)
+  return request
 }
 
 // 동시 요청 수를 제한해서 AI 서비스/브라우저 연결 풀 과부하 방지
