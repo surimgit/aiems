@@ -18,15 +18,17 @@
         }"
       >
         <span>{{ equip.name }}</span>
-        <span v-if="isEditMode" class="text-[10px]">✏️</span>
+        <div class="flex items-center gap-1.5">
+          <span class="status-dot" :class="equip.status" />
+          <span v-if="isEditMode" class="text-[10px]">✏️</span>
+        </div>
       </div>
       <div class="px-3 py-2 text-[12px] opacity-80">
         <p>전력: {{ equip.power }}</p>
-        <p>상태: {{ statusLabel[equip.status] }}</p>
         <p v-if="props.visibleMetrics.voltage && equip.metrics?.voltage !== undefined">전압: {{ equip.metrics.voltage.toFixed(1) }} V</p>
+        <p v-if="equip.metrics?.frequency !== undefined">주파수: {{ equip.metrics.frequency.toFixed(2) }} Hz</p>
         <p v-if="props.visibleMetrics.current && equip.metrics?.current !== undefined">전류: {{ equip.metrics.current.toFixed(1) }} A</p>
         <p v-if="props.visibleMetrics.soc && equip.metrics?.soc !== undefined">SOC: {{ equip.metrics.soc.toFixed(1) }} %</p>
-        <p v-if="props.visibleMetrics.frequency && equip.metrics?.frequency !== undefined">주파수: {{ equip.metrics.frequency.toFixed(2) }} Hz</p>
         <p v-if="props.visibleMetrics.pf && equip.metrics?.pf !== undefined">역률: {{ equip.metrics.pf.toFixed(2) }}</p>
         <p v-if="props.visibleMetrics.mode && equip.metrics?.mode">모드: {{ equip.metrics.mode }}</p>
       </div>
@@ -56,12 +58,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'edit-equip', id: string): void
 }>()
-
-const statusLabel = {
-  normal: '정상',
-  stopped: '중지',
-  error: '이상'
-}
 
 const dragOffsets = ref<Record<string, { x: number; y: number }>>({})
 const draggingId = ref<string | null>(null)
@@ -196,3 +192,21 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', onMouseUp)
 })
 </script>
+
+<style scoped>
+.status-dot {
+  @apply inline-block h-2.5 w-2.5 rounded-full;
+}
+
+.status-dot.normal {
+  @apply bg-emerald-400;
+}
+
+.status-dot.stopped {
+  @apply bg-amber-400;
+}
+
+.status-dot.error {
+  @apply bg-red-400;
+}
+</style>

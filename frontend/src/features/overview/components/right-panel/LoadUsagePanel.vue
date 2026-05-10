@@ -111,7 +111,7 @@ const usageClass = (usagePercent: number) => {
 }
 
 .bar-wrap {
-  @apply h-2 rounded bg-slate-800;
+  @apply h-2 overflow-hidden rounded bg-slate-800;
 }
 
 .bar {
@@ -119,7 +119,7 @@ const usageClass = (usagePercent: number) => {
 }
 
 .percent {
-  @apply text-xs;
+  @apply min-w-[44px] text-right text-xs;
 }
 
 .normal {
