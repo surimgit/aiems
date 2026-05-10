@@ -106,6 +106,10 @@
       @edit-equip="openEditModal"
     />
 
+    <div class="absolute bottom-3 left-3 z-30">
+      <slot name="overlay" />
+    </div>
+
     <EquipFormModal
       v-if="modalConfig.show"
       :mode="modalConfig.mode"
@@ -115,7 +119,7 @@
       @delete="handleDelete"
     />
 
-    <div class="absolute bottom-3 left-3 z-30 rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-[11px] text-slate-200 backdrop-blur">
+    <div class="absolute right-3 top-3 z-30 rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-[11px] text-slate-200 backdrop-blur">
       <p>site: {{ props.topology?.site_id ?? 'n/a' }}</p>
       <p>topology nodes/lines: {{ props.topology?.nodes.length ?? 0 }} / {{ props.topology?.lines.length ?? 0 }}</p>
       <p>resources: {{ props.resources?.length ?? 0 }}</p>
@@ -132,22 +136,93 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import Map3DViewer from '@/features/map-dashboard/components/Map3DViewer.vue'
 import MapStatusOverlay from '@/features/map-dashboard/components/MapStatusOverlay.vue'
 import EquipFormModal from '@/features/map-dashboard/components/EquipFormModal.vue'
 import type { ResourceInfo, TopologyData } from '@/types/common'
 import type { ConnectionDirection, EquipmentFormData, MapConnection, MapEquipment } from '@/features/map-dashboard/types'
+import { useControlStore } from '@/stores/control/control.store'
 
 const props = defineProps<{
   topology: TopologyData | null
   resources?: ResourceInfo[]
+  resourcesLastFetchedAt?: number | null
+  topologyLastFetchedAt?: number | null
+  resourcesFetchFailStreak?: number
+  topologyFetchFailStreak?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'select-node', nodeId: string): void
   (e: 'select-line', lineId: string): void
 }>()
+
+const controlStore = useControlStore()
+const { pendingCommands, commandHistory } = storeToRefs(controlStore)
+
+const commandStatusPriority: Record<string, number> = {
+  CREATED: 1,
+  ACCEPTED: 2,
+  IN_PROGRESS: 3,
+  RUNNING: 4,
+  COMPLETED: 5,
+  REJECTED: 6,
+  FAILED: 7,
+  TIMED_OUT: 8,
+  BLOCKED: 9,
+  EXPIRED: 10,
+  IGNORED: 11
+}
+
+const sortedControlSignals = computed(() => {
+  const all = [...pendingCommands.value, ...commandHistory.value]
+  return all.sort((a, b) => {
+    const ts = (Date.parse(b.created_at ?? '') || 0) - (Date.parse(a.created_at ?? '') || 0)
+    if (ts !== 0) return ts
+    return (commandStatusPriority[b.status] ?? 0) - (commandStatusPriority[a.status] ?? 0)
+  })
+})
+
+const CONTROL_SIGNAL_TTL_MS = 30_000
+
+const isSignalFresh = (createdAt?: string): boolean => {
+  const ts = Date.parse(createdAt ?? '')
+  if (!Number.isFinite(ts)) return false
+  return Date.now() - ts <= CONTROL_SIGNAL_TTL_MS
+}
+
+const latestSignalByResource = computed(() => {
+  const byResource = new Map<string, (typeof sortedControlSignals.value)[number]>()
+  for (const command of sortedControlSignals.value) {
+    if (!isSignalFresh(command.created_at)) continue
+    const key = (command.target_resource_id ?? '').toLowerCase()
+    if (!key || byResource.has(key)) continue
+    byResource.set(key, command)
+  }
+  return byResource
+})
+
+const COMM_FAILURE_THRESHOLD = 3
+const COMM_STALE_TTL_MS = 8_000
+const nowTs = ref(Date.now())
+const nowTicker = setInterval(() => {
+  nowTs.value = Date.now()
+}, 1_000)
+onUnmounted(() => {
+  clearInterval(nowTicker)
+})
+
+const hasUnintendedCommDisconnect = computed(() => {
+  const resourcesFail = props.resourcesFetchFailStreak ?? 0
+  const topologyFail = props.topologyFetchFailStreak ?? 0
+  if (resourcesFail >= COMM_FAILURE_THRESHOLD || topologyFail >= COMM_FAILURE_THRESHOLD) return true
+
+  const latestFetchedAt = Math.max(props.resourcesLastFetchedAt ?? 0, props.topologyLastFetchedAt ?? 0)
+  if (latestFetchedAt <= 0) return false
+  return nowTs.value - latestFetchedAt > COMM_STALE_TTL_MS
+})
 
 const isEditMode = ref(false)
 const isControlCollapsed = ref(true)
@@ -216,9 +291,72 @@ const resourceTypeToEquipmentType = (resourceType?: string): MapEquipment['type'
 
 const resourceStatusToEquipmentStatus = (status?: string): MapEquipment['status'] => {
   const upper = (status ?? '').toUpperCase()
-  if (upper.includes('EMERGENCY') || upper.includes('FAULT') || upper.includes('ERROR')) return 'error'
-  if (upper.includes('OFFLINE') || upper.includes('WARNING') || upper.includes('OPEN') || upper.includes('BLOCKED')) return 'stopped'
+  if (upper.includes('EMERGENCY') || upper.includes('FAULT') || upper.includes('ERROR') || upper.includes('OFFLINE')) return 'error'
+  if (upper.includes('WARNING') || upper.includes('OPEN') || upper.includes('BLOCKED')) return 'stopped'
   return 'normal'
+}
+
+const applyUnintendedDisconnectStatus = <T extends MapEquipment['status'] | MapConnection['status']>(status: T): T => {
+  if (!hasUnintendedCommDisconnect.value) return status
+  return 'error' as T
+}
+
+const applyCommandToEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
+  const signal = latestSignalByResource.value.get(resourceId.toLowerCase())
+  if (!signal) return applyUnintendedDisconnectStatus(baseStatus)
+
+  if (signal.status === 'FAILED' || signal.status === 'TIMED_OUT' || signal.status === 'BLOCKED' || signal.status === 'REJECTED') {
+    return applyUnintendedDisconnectStatus('error')
+  }
+
+  if (signal.status !== 'COMPLETED' && signal.status !== 'RUNNING' && signal.status !== 'IN_PROGRESS' && signal.status !== 'ACCEPTED') {
+    return applyUnintendedDisconnectStatus(baseStatus)
+  }
+
+  if (
+    signal.action === 'STOP_CHARGE' ||
+    signal.action === 'STOP_DISCHARGE' ||
+    signal.action === 'STOP_GENERATOR' ||
+    signal.action === 'SHED_LOAD' ||
+    signal.action === 'OPEN_SWITCH' ||
+    signal.action === 'STANDBY'
+  ) {
+    return hasUnintendedCommDisconnect.value ? 'error' : 'stopped'
+  }
+
+  if (
+    signal.action === 'START_CHARGE' ||
+    signal.action === 'START_DISCHARGE' ||
+    signal.action === 'START_GENERATOR' ||
+    signal.action === 'RESTORE_LOAD' ||
+    signal.action === 'CLOSE_SWITCH'
+  ) {
+    return applyUnintendedDisconnectStatus(baseStatus === 'error' ? 'error' : 'normal')
+  }
+
+  return applyUnintendedDisconnectStatus(baseStatus)
+}
+
+const applyCommandToLineStatus = (lineId: string, fromResourceId: string, toResourceId: string, baseStatus: MapConnection['status']): MapConnection['status'] => {
+  const fromSignal = latestSignalByResource.value.get(fromResourceId.toLowerCase())
+  const toSignal = latestSignalByResource.value.get(toResourceId.toLowerCase())
+  const lineSignal = latestSignalByResource.value.get(lineId.toLowerCase())
+  const signal = lineSignal ?? fromSignal ?? toSignal
+  if (!signal) return applyUnintendedDisconnectStatus(baseStatus)
+
+  if (signal.status === 'FAILED' || signal.status === 'TIMED_OUT' || signal.status === 'BLOCKED' || signal.status === 'REJECTED') {
+    return applyUnintendedDisconnectStatus('error')
+  }
+  if (signal.status !== 'COMPLETED' && signal.status !== 'RUNNING' && signal.status !== 'IN_PROGRESS' && signal.status !== 'ACCEPTED') {
+    return applyUnintendedDisconnectStatus(baseStatus)
+  }
+  if (signal.action === 'OPEN_SWITCH' || signal.action === 'SHED_LOAD' || signal.action === 'STOP_GENERATOR' || signal.action === 'STANDBY') {
+    return hasUnintendedCommDisconnect.value ? 'error' : 'stopped'
+  }
+  if (signal.action === 'CLOSE_SWITCH' || signal.action === 'RESTORE_LOAD' || signal.action === 'START_GENERATOR') {
+    return applyUnintendedDisconnectStatus(baseStatus === 'error' ? 'error' : 'normal')
+  }
+  return applyUnintendedDisconnectStatus(baseStatus)
 }
 
 const BASE_LNG = 129.0755
@@ -321,11 +459,16 @@ const applyTopologyData = () => {
       const lng = mappedPosition?.[0] ?? fallback[0]
       const lat = mappedPosition?.[1] ?? fallback[1]
 
+      const equipmentStatus = applyCommandToEquipmentStatus(
+        node.resource_id,
+        linkedResource ? resourceStatusToEquipmentStatus(linkedResource.status) : nodeToStatus(node.status)
+      )
+
       topologyEquipments.push({
         id: node.node_id,
         name: linkedResource?.name ?? node.resource_id,
         type,
-        status: linkedResource ? resourceStatusToEquipmentStatus(linkedResource.status) : nodeToStatus(node.status),
+        status: equipmentStatus,
         power: `${Math.round(Math.abs(powerKw))} kW`,
         lngLat: [lng, lat],
         metrics: {
@@ -339,13 +482,18 @@ const applyTopologyData = () => {
       })
     })
 
-    const topologyLines: MapConnection[] = props.topology.lines.map((line) => ({
-      id: line.line_id,
-      fromEquipmentId: line.from_node_id,
-      toEquipmentId: line.to_node_id,
-      direction: line.direction,
-      status: lineToStatus(line.status)
-    }))
+    const nodeToResourceId = new Map(props.topology.nodes.map((node) => [node.node_id, node.resource_id]))
+    const topologyLines: MapConnection[] = props.topology.lines.map((line) => {
+      const fromResourceId = nodeToResourceId.get(line.from_node_id) ?? line.from_node_id
+      const toResourceId = nodeToResourceId.get(line.to_node_id) ?? line.to_node_id
+      return {
+        id: line.line_id,
+        fromEquipmentId: line.from_node_id,
+        toEquipmentId: line.to_node_id,
+        direction: line.direction,
+        status: applyCommandToLineStatus(line.line_id, fromResourceId, toResourceId, lineToStatus(line.status))
+      }
+    })
 
     equipmentData.value = [...topologyEquipments, ...customEquipments]
     connections.value = [...topologyLines, ...customLines]
@@ -374,7 +522,7 @@ const applyTopologyData = () => {
       id: resource.resource_id,
       name: resource.name ?? resource.resource_id,
       type,
-      status: resourceStatusToEquipmentStatus(resource.status),
+      status: applyCommandToEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
       power: `${Math.round(powerKw)} kW`,
       lngLat: fallback,
       metrics: {
@@ -555,6 +703,12 @@ watch(
 
 watch(
   () => props.resources,
+  () => applyTopologyData(),
+  { deep: true }
+)
+
+watch(
+  () => sortedControlSignals.value,
   () => applyTopologyData(),
   { deep: true }
 )
