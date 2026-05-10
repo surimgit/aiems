@@ -156,7 +156,8 @@ const isFeatureUnavailableError = (error: unknown): boolean => {
 const withAiFallback = async <T>(runner: () => Promise<T>, fallback: T): Promise<T> => {
   try {
     return await runner()
-  } catch {
+  } catch (error) {
+    console.warn('[AI] 요청 실패 (fallback 반환):', error)
     return fallback
   }
 }
