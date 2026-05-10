@@ -15,15 +15,31 @@
 
 - 지금 날씨와 최근 발전량으로 다음 1시간 발전량 예측
 
-현재 운영 후보:
+현재 태양광 runtime 모델:
+
+- short-control champion: `satellite_wind_safe_v6`
+  - artifact: `ems/ai/checkpoints/satellite_wind_safe_v6/best_model.pt`
+  - supported horizon: `1h`, `2h`, `3h`, `6h`
+- graph/runtime default: `satellite_wind_safe_multihorizon_24h_v10`
+  - artifact: `ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt`
+  - supported horizon: `1h` through `24h`
+  - RunPod default `S305_SATELLITE_MODEL_PATH`
+- local Flask endpoint: `POST /api/ai/predict-live-satellite-capacity-factor`
+- RunPod task: `predict_live_satellite_capacity_factor`
+- prediction unit:
+  - model raw output: capacity factor
+  - operational output: `predicted_generation_kw`
+- current caveat:
+  - live satellite input is still `gk2a_area_proxy`
+  - production alignment requires replacing it with live GK2A NetCDF 64x64 crop input
+
+Legacy tabular fallback/comparison:
 
 - model: `kpx_5min_capacity_factor_lightgbm`
 - artifact: `ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib`
 - endpoint config: `ems/ai/configs/ops/operational_solar_forecast_example.yaml`
 - runner: `ems/ai/scripts/run_operational_solar_forecast.py`
-- prediction unit:
-  - model raw output: capacity factor
-  - operational output: `predicted_solar_kw`
+- note: this runner is the older capacity-factor path and is not the current v6 satellite champion path.
 
 운영 추론 feature 원칙:
 
@@ -94,7 +110,7 @@ Current validation note:
 - `target_hour/is_daylight` postprocessing keeps overall validation error close to the raw model.
 - `solar_elevation` support is implemented, but should be enabled as the default only after confirming timestamp and timezone alignment between telemetry, weather forecast, and target horizon.
 
-### Current Capacity Factor Model Metrics
+### Legacy Capacity Factor Baseline Metrics
 
 `kpx_5min_capacity_factor_lightgbm` validation:
 
@@ -107,8 +123,9 @@ Current validation note:
 - postprocessed MAE: `0.0177028470`
 - postprocessed RMSE: `0.0405369167`
 
-This is the current operational candidate because capacity factor is easier to
-reuse across sites with different installed capacities than direct kW output.
+This is kept as a legacy tabular fallback/comparison point. The current short
+control champion is `satellite_wind_safe_v6`, and the 1~24h graph/runtime
+default is `satellite_wind_safe_multihorizon_24h_v10`.
 
 ### Retraining
 

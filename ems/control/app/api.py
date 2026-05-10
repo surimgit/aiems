@@ -55,9 +55,55 @@ def create_app() -> Flask:
     app.config["OPENAPI_SWAGGER_UI_PATH"] = "/docs"
     app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
 
+    _register_error_handlers(app)
     _register_routes(app)
     _start_worker()
     return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """S305 표준 에러 응답 형식으로 통일.
+
+    모든 HTTP 에러를 아래 형식으로 직렬화한다:
+      { error_code, message, trace_id, details }
+    Flask-Smorest 422 validation 에러도 동일 형식으로 래핑.
+    """
+    import uuid as _uuid
+
+    def _err(code: str, msg: str, details: dict | None = None, status: int = 500):
+        return jsonify({
+            "error_code": code,
+            "message": msg,
+            "trace_id": str(_uuid.uuid4()),
+            "details": details or {},
+        }), status
+
+    @app.errorhandler(400)
+    def _h400(e):
+        # S305 §3: INVALID_REQUEST — 요청 형식 또는 필수 필드 오류
+        return _err("INVALID_REQUEST", getattr(e, "description", str(e)), status=400)
+
+    @app.errorhandler(404)
+    def _h404(e):
+        return _err("NOT_FOUND", getattr(e, "description", str(e)), status=404)
+
+    @app.errorhandler(405)
+    def _h405(e):
+        # S305 §3: METHOD_NOT_ALLOWED (§4: 405 추가됨)
+        return _err("METHOD_NOT_ALLOWED", getattr(e, "description", str(e)), status=405)
+
+    @app.errorhandler(422)
+    def _h422(e):
+        # S305 §3: INVALID_REQUEST — 의미상 처리 불가 (validation 실패)
+        # Flask-Smorest validation 에러: e.data['messages'] 에 필드별 오류 포함.
+        details: dict = {}
+        if hasattr(e, "data") and isinstance(e.data, dict):
+            details = e.data.get("messages", {})
+        return _err("INVALID_REQUEST", "요청 데이터가 올바르지 않습니다.", details=details, status=422)
+
+    @app.errorhandler(500)
+    def _h500(e):
+        return _err("INTERNAL_ERROR", "서버 내부 오류가 발생했습니다.", status=500)
 
 
 def _start_worker() -> None:
@@ -66,8 +112,9 @@ def _start_worker() -> None:
     from .adapters.db_writer import ControlDBWriter
     from .adapters.event_publisher import EventPublisher
     from .adapters.policy_reader import PolicyReader
+    from .adapters.topology_reader import TopologyReader
     from .domain.rule_engine import run
-    from .config import CONTROL_INTERVAL_SECONDS
+    from .config import CONTROL_INTERVAL_SECONDS, STATE_PROCESSOR_URL, SITE_ID
 
     _POLICY_REFRESH_INTERVAL = 10
 
@@ -93,20 +140,25 @@ def _start_worker() -> None:
         state = states.get(device_id, {})
         reported = state.get("reported_state") or {}
         current_mode = reported.get("operating_mode", "standby")
+        current_mode_lower = (current_mode or "").lower()
+
+        if current_mode_lower in ("fault", "error") and cmd["command_type"] != "reset":
+            print(f"[control] skip {device_id}: device is in FAULT state")
+            return False
 
         if cmd["command_type"] == "ess_mode":
             requested_mode = cmd["payload"].get("mode", "standby")
             return current_mode != requested_mode
 
         if cmd["command_type"] == "start":
-            return current_mode.lower() not in ("running", "starting")
+            return current_mode_lower not in ("running", "starting")
 
         if cmd["command_type"] == "stop":
-            return current_mode.lower() not in ("off", "stopped", "stopping", "idle")
+            return current_mode_lower not in ("off", "stopped", "stopping", "idle")
 
         if cmd["command_type"] == "load_control":
             # 운전 중일 때만 부하조정 의미 있음
-            return current_mode.lower() == "running"
+            return current_mode_lower == "running"
 
         return True
 
@@ -123,6 +175,7 @@ def _start_worker() -> None:
         db = ControlDBWriter()
         event_pub = EventPublisher()
         policy = PolicyReader()
+        topology = TopologyReader(STATE_PROCESSOR_URL, SITE_ID)
         await db.connect()
         await event_pub.connect()
         await policy.connect()
@@ -136,7 +189,8 @@ def _start_worker() -> None:
                     try:
                         states = await reader.get_all()
                         if states:
-                            commands, events = await run(states, policy, event_pub)
+                            graph = await topology.fetch()
+                            commands, events = await run(states, policy, event_pub, topology_graph=graph)
                             sent = 0
                             for cmd in commands:
                                 if not _should_send(cmd, states):
@@ -154,6 +208,7 @@ def _start_worker() -> None:
                     await asyncio.sleep(CONTROL_INTERVAL_SECONDS)
         finally:
             refresh_task.cancel()
+            await topology.close()
             await db.close()
             await event_pub.close()
             await policy.close()
@@ -356,7 +411,7 @@ def _register_routes(app: Flask) -> None:
                     "payload": translated["payload"],
                     "reason": payload.get("reason", ""),
                     "issued_by": payload["requested_by"],
-                    "ack_status": "pending",
+                    "ack_status": "PENDING",
                     "timestamp": now.isoformat(),
                 }
                 _r.xadd("mg:db:write", {"data": json.dumps(_envelope, ensure_ascii=False)})
@@ -420,34 +475,47 @@ def _register_routes(app: Flask) -> None:
     class CommandListResource(MethodView):
         @blp.response(200, CommandHistorySchema(many=True))
         def get(self):
+            """명령 이력 조회.
+
+            쿼리 파라미터 (모두 옵션):
+              - site_id: 특정 plant 필터 (멀티 plant 지원)
+              - device_id: 특정 디바이스 필터
+              - limit: 기본 100, 최대 1000
+              - offset: 기본 0 (페이지네이션)
+
+            정렬: time DESC.
+            """
+            site_id = request.args.get("site_id")
             device_id = request.args.get("device_id")
             limit = min(int(request.args.get("limit", 100)), 1000)
+            offset = max(int(request.args.get("offset", 0)), 0)
+
+            filters: list[str] = []
+            params: list = []
+            if site_id:
+                filters.append("site_id = %s")
+                params.append(site_id)
+            if device_id:
+                filters.append("device_id = %s")
+                params.append(device_id)
+            where_clause = ("WHERE " + " AND ".join(filters)) if filters else ""
+
             # control_history 는 TimescaleDB 시계열 — TS pool 사용.
             pool = get_ts_pool()
             conn = pool.getconn()
             try:
                 with conn.cursor() as cur:
-                    if device_id:
-                        cur.execute(
-                            """
-                            SELECT command_id, site_id, device_id, resource_type,
-                                   command_type, payload, reason, issued_by, ack_status, time
-                            FROM control_history
-                            WHERE device_id = %s
-                            ORDER BY time DESC LIMIT %s
-                            """,
-                            (device_id, limit),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            SELECT command_id, site_id, device_id, resource_type,
-                                   command_type, payload, reason, issued_by, ack_status, time
-                            FROM control_history
-                            ORDER BY time DESC LIMIT %s
-                            """,
-                            (limit,),
-                        )
+                    cur.execute(
+                        f"""
+                        SELECT command_id, site_id, device_id, resource_type,
+                               command_type, payload, reason, issued_by, ack_status, time
+                        FROM control_history
+                        {where_clause}
+                        ORDER BY time DESC
+                        LIMIT %s OFFSET %s
+                        """,
+                        (*params, limit, offset),
+                    )
                     rows = cur.fetchall()
             finally:
                 pool.putconn(conn)

@@ -24,8 +24,12 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     fuel_critical = policy.get("DIESEL_FUEL_CRITICAL")
     min_run_sec = policy.get("DIESEL_MIN_RUN_SECONDS") or _DIESEL_MIN_RUN_SECONDS_DEFAULT
 
+    # Phase D (PLAN_TOPOLOGY_AWARE_CONTROL.md):
+    # SOC 만 보지 않고 dispatchable_ess_devices 사용.
+    # → wire_fault / 토폴로지 고립 / fault 인 ESS 가 디젤 기동을 막지 않는다.
     ess_can_discharge = any(
-        (e["SOC"] or 0) > diesel_start_soc for e in flow["ess_devices"]
+        (e["SOC"] or 0) > diesel_start_soc
+        for e in flow.get("dispatchable_ess_devices", [])
     )
 
     net_power = flow["net_power"]
@@ -35,6 +39,10 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     for diesel in diesel_devices:
         device_id = diesel["device_id"]
         operating_mode = (diesel.get("operating_mode") or "").lower()
+        if operating_mode in ("fault", "error"):
+            print(f"[diesel] {device_id} 제어 보류: FAULT 상태")
+            continue
+
         running = operating_mode == "running" or (operating_mode == "" and (diesel["P"] or 0) > 0)
         fuel = diesel["fuel_percent"]
         redis_key = f"{_REDIS_PREFIX}{device_id}"

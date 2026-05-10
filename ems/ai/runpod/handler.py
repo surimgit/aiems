@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import importlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -30,6 +32,7 @@ WORKSPACE = Path(os.getenv("S305_RUNPOD_WORKSPACE", "/workspace"))
 DEFAULT_DATA_ROOT = WORKSPACE / "s305-ai-data"
 DEFAULT_OUTPUT_ROOT = WORKSPACE / "runs"
 DEFAULT_CAPACITY_FACTOR_MODEL = "/app/ems/ai/models/kpx_5min_capacity_factor_lightgbm/model.joblib"
+DEFAULT_SATELLITE_MODEL = "/app/ems/ai/checkpoints/satellite_wind_safe_multihorizon_24h_v10/best_model.pt"
 
 
 def _download(url: str, destination: Path) -> None:
@@ -283,6 +286,74 @@ def _predict_capacity_factor(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _predict_satellite_capacity_factor(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from ems.ai.inference.satellite_wind_safe import predict_satellite_capacity_factor
+    except ImportError:
+        from inference.satellite_wind_safe import predict_satellite_capacity_factor
+
+    model_path = payload.get("model_path") or os.getenv("S305_SATELLITE_MODEL_PATH", DEFAULT_SATELLITE_MODEL)
+    return predict_satellite_capacity_factor(
+        payload,
+        model_path=model_path,
+        device=payload.get("device"),
+        image_normalization=payload.get("image_normalization"),
+    )
+
+
+def _predict_live_satellite_capacity_factor(payload: dict[str, Any]) -> dict[str, Any]:
+    from ems.ai.service.app.services.live_satellite_service import LiveSatellitePredictionService
+
+    class _PredictionServiceAdapter:
+        def predict_satellite_capacity_factor(self, prediction_payload: dict[str, Any]) -> dict[str, Any]:
+            return _predict_satellite_capacity_factor(prediction_payload)
+
+    class _DisabledRunpodClient:
+        @property
+        def enabled(self) -> bool:
+            return False
+
+    return LiveSatellitePredictionService(
+        prediction_service=_PredictionServiceAdapter(),
+        runpod_client=_DisabledRunpodClient(),
+    ).predict(payload)
+
+
+def _runtime_check() -> dict[str, Any]:
+    modules = ["torch", "numpy", "pandas", "xarray", "pyproj", "netCDF4", "h5netcdf", "requests", "runpod"]
+    imports: dict[str, dict[str, Any]] = {}
+    for name in modules:
+        try:
+            importlib.import_module(name)
+            try:
+                version = importlib.metadata.version(name)
+            except importlib.metadata.PackageNotFoundError:
+                version = None
+            imports[name] = {"ok": True, "version": version}
+        except Exception as exc:
+            imports[name] = {"ok": False, "error": str(exc)}
+
+    cuda: dict[str, Any] = {"available": False}
+    try:
+        import torch
+
+        cuda = {
+            "available": bool(torch.cuda.is_available()),
+            "device_count": int(torch.cuda.device_count()),
+            "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        }
+    except Exception as exc:
+        cuda = {"available": False, "error": str(exc)}
+
+    return {
+        "ok": all(item["ok"] for item in imports.values()),
+        "task": "runtime_check",
+        "imports": imports,
+        "cuda": cuda,
+        "satellite_model_exists": Path(os.getenv("S305_SATELLITE_MODEL_PATH", DEFAULT_SATELLITE_MODEL)).exists(),
+    }
+
+
 def _train(payload: dict[str, Any]) -> dict[str, Any]:
     repo_root = Path(payload.get("repo_root", "/app"))
     data_root = Path(payload.get("data_root", DEFAULT_DATA_ROOT))
@@ -362,6 +433,12 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
         return _predict(payload)
     if task == "predict_capacity_factor":
         return _predict_capacity_factor(payload)
+    if task == "predict_satellite_capacity_factor":
+        return _predict_satellite_capacity_factor(payload)
+    if task == "predict_live_satellite_capacity_factor":
+        return _predict_live_satellite_capacity_factor(payload)
+    if task == "runtime_check":
+        return _runtime_check()
     if task == "train":
         return _train(payload)
     raise ValueError(f"Unknown task: {task}")

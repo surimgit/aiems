@@ -96,7 +96,10 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
 
   await initialize()
-  await topologyFeature.initialize()
+  await Promise.all([
+    topologyFeature.initialize(),
+    forecastFeature.fetchForecasts()
+  ])
   if (route.query.panel === 'alarm') {
     rightPanel.open('alarm')
   }
