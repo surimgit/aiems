@@ -1,15 +1,13 @@
 import { ref, type Ref } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
-import { useForecastFeature } from '@/features/forecast'
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
 import { useControlStore } from '@/stores/control/control.store'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 
-const POLLING_INTERVAL_MS = 1_000
+const POLLING_INTERVAL_MS = 100
 const TOPOLOGY_REFRESH_TICKS = 10
-const ALARM_REFRESH_TICKS = 5
-const FORECAST_REFRESH_TICKS = 30
-const COMMAND_REFRESH_TICKS = 5
+const ALARM_REFRESH_TICKS = 20
+const COMMAND_REFRESH_TICKS = 20
 
 export interface UseOverviewPolling {
   isRunning: Ref<boolean>
@@ -18,7 +16,6 @@ export interface UseOverviewPolling {
 }
 
 export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOverviewPolling => {
-  const forecastFeature = useForecastFeature()
   const alarmStore = useAlarmStore()
   const controlStore = useControlStore()
   const dashboardStore = useDashboardStore()
@@ -46,14 +43,12 @@ export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOvervie
       tickCount.value += 1
       const shouldRefreshTopology = tickCount.value % TOPOLOGY_REFRESH_TICKS === 0
       const shouldRefreshAlarms = tickCount.value % ALARM_REFRESH_TICKS === 0
-      const shouldRefreshForecasts = tickCount.value % FORECAST_REFRESH_TICKS === 0
       const shouldRefreshCommands = tickCount.value % COMMAND_REFRESH_TICKS === 0
 
       await Promise.allSettled([
         dashboardStore.fetchPowerSummary(siteId),
         dashboardStore.fetchResources(siteId),
         ...(shouldRefreshTopology ? [dashboardStore.fetchTopology(siteId)] : []),
-        ...(shouldRefreshForecasts ? [forecastFeature.fetchForecasts(siteId)] : []),
         ...(shouldRefreshAlarms ? [alarmStore.fetchAlarms(siteId)] : []),
         ...(shouldRefreshCommands ? [controlStore.fetchCommandHistory()] : [])
       ])
