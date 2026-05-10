@@ -1,27 +1,24 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
+import { useI18n } from "vue-i18n";
 
-const { t } = useI18n()
+const { t } = useI18n();
 </script>
 
 <template>
   <aside class="topology-legend">
-    <h3 class="font-semibold mb-2">{{ t('topology.legend.title') }}</h3>
-    <div class="space-y-2 text-xs">
-      <div>
-        <p class="mb-1 font-semibold text-slate-200">상태 색상</p>
-        <div class="space-y-1">
-          <p class="flex items-center gap-2"><span class="dot normal" />정상</p>
-          <p class="flex items-center gap-2"><span class="dot stopped" />중지/대기</p>
-          <p class="flex items-center gap-2"><span class="dot error" />이상</p>
-        </div>
+    <p class="mb-1 text-[12px] font-semibold">범례</p>
+    <div class="space-y-1 text-[11px]">
+      <p class="font-semibold text-slate-200">상태</p>
+      <div class="legend-row">
+        <span class="legend-item"><span class="dot normal" />정상</span>
+        <span class="legend-item"><span class="dot stopped" />중지/대기</span>
+        <span class="legend-item"><span class="dot error" />이상</span>
       </div>
-      <div>
-        <p class="mb-1 font-semibold text-slate-200">선 스타일</p>
-        <div class="space-y-1">
-          <p class="flex items-center gap-2"><span class="line solid" />실선: 현재 유효 연결</p>
-          <p class="flex items-center gap-2"><span class="line dashed" />점선: 예비/제어 경계</p>
-        </div>
+      <p class="font-semibold text-slate-200">연결</p>
+      <div class="legend-row">
+        <span class="legend-item"><span class="line valid" />유효</span>
+        <span class="legend-item"><span class="line stopped" />차단</span>
+        <span class="legend-item"><span class="line error" />장애</span>
       </div>
     </div>
   </aside>
@@ -29,7 +26,15 @@ const { t } = useI18n()
 
 <style scoped>
 .topology-legend {
-  @apply w-[220px] max-w-[45vw] rounded border border-slate-700 bg-slate-900/80 p-2 text-slate-100;
+  @apply inline-block w-auto max-w-[78vw] rounded border border-slate-700 bg-slate-900/80 p-2 text-slate-100;
+}
+
+.legend-row {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.legend-item {
+  @apply inline-flex items-center gap-1.5;
 }
 
 .dot {
@@ -49,14 +54,21 @@ const { t } = useI18n()
 }
 
 .line {
-  @apply inline-block h-0 w-7 border-t-2 border-slate-200;
+  @apply inline-block h-0 w-4 border-t-2 border-slate-200;
 }
 
-.line.dashed {
+.line.valid {
   border-top-style: dashed;
+  border-top-color: #e2e8f0;
 }
 
-.line.solid {
+.line.stopped {
   border-top-style: solid;
+  border-top-color: #94a3b8;
+}
+
+.line.error {
+  border-top-style: dashed;
+  border-top-color: #f87171;
 }
 </style>
