@@ -14,6 +14,7 @@ const { loading, error, pendingCommands, commandHistory } = storeToRefs(controlS
 const { t } = useI18n()
 
 const resultMessage = ref('')
+const localActionStatus = ref<Record<string, { status: string; updatedAt: number }>>({})
 
 interface ActionItem {
   action: CommandAction
@@ -117,27 +118,12 @@ const latestCommandByAction = computed(() => {
   return byAction
 })
 
-const latestCommandOverall = computed(() => {
-  if (!selectedResource.value) return null
-  const resourceId = selectedResource.value.resource_id.toLowerCase()
-  const all = [...pendingCommands.value, ...commandHistory.value]
-    .filter((item) => (item.target_resource_id ?? '').toLowerCase() === resourceId)
-    .filter((item) => isFreshCommand(item.created_at))
-    .sort((a, b) => {
-      const ts = (Date.parse(b.created_at ?? '') || 0) - (Date.parse(a.created_at ?? '') || 0)
-      if (ts !== 0) return ts
-      return (commandStatusOrder[b.status] ?? 0) - (commandStatusOrder[a.status] ?? 0)
-    })
-  return all[0] ?? null
-})
-
-const isInFlightStatus = (status: string) =>
-  status === 'CREATED' || status === 'ACCEPTED' || status === 'IN_PROGRESS' || status === 'RUNNING'
+const isInFlightStatus = (status: string) => status === 'CREATED' || status === 'ACCEPTED' || status === 'IN_PROGRESS' || status === 'RUNNING'
 
 const actionStatusLabel = (action: CommandAction): string => {
-  const overall = latestCommandOverall.value
-  if (overall && isInFlightStatus(overall.status)) {
-    return overall.action === action ? overall.status : 'IDLE'
+  const local = localActionStatus.value[action]
+  if (local && Date.now() - local.updatedAt <= COMMAND_STATUS_TTL_MS) {
+    return local.status
   }
 
   const command = latestCommandByAction.value.get(action)
@@ -149,7 +135,7 @@ const actionStatusLabel = (action: CommandAction): string => {
 const actionStatusClass = (action: CommandAction): string => {
   const status = actionStatusLabel(action)
   if (status === 'FAILED' || status === 'TIMED_OUT' || status === 'BLOCKED' || status === 'REJECTED') return 'error'
-  if (status === 'RUNNING' || status === 'IN_PROGRESS' || status === 'ACCEPTED' || status === 'CREATED') return 'pending'
+  if (status === 'PENDING' || status === 'RUNNING' || status === 'IN_PROGRESS' || status === 'ACCEPTED' || status === 'CREATED') return 'pending'
   if (status === 'COMPLETED') return 'ok'
   return 'idle'
 }
@@ -188,14 +174,17 @@ const submit = async (action: CommandAction) => {
   }
 
   try {
+    localActionStatus.value[action] = { status: 'PENDING', updatedAt: Date.now() }
     const result = await controlStore.submitCommand({
       site_id: controlStore.siteId,
       device_id: selectedResource.value.resource_id,
       resource_type: toControlResourceType(selectedResource.value.resource_type) as any,
       action
     })
+    localActionStatus.value[action] = { status: result.status, updatedAt: Date.now() }
     resultMessage.value = `명령 성공: ${result.status}`
   } catch {
+    localActionStatus.value[action] = { status: 'FAILED', updatedAt: Date.now() }
     resultMessage.value = '명령 전달 실패'
   }
 }
