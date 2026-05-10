@@ -96,7 +96,10 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
 
   await initialize()
-  await Promise.all([topologyFeature.initialize(), forecastFeature.fetchForecasts()])
+  await Promise.all([
+    topologyFeature.initialize(),
+    forecastFeature.fetchForecasts()
+  ])
   overviewPolling.start()
 })
 

@@ -56,7 +56,6 @@ export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOvervie
 
     alarmStore.setSiteId(siteId)
     controlStore.setContext({ siteId })
-
     isRunning.value = true
     scheduleNextTick()
   }
