@@ -1,7 +1,7 @@
 <template>
   <div class="relative h-full w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950">
     <div
-      class="absolute left-3 top-3 z-30 rounded-lg border border-white/10 bg-slate-950/85 p-2 text-xs text-white backdrop-blur"
+      class="absolute left-3 top-3 z-30 rounded-lg border border-slate-700 bg-slate-900/80 p-2 text-xs text-slate-100 backdrop-blur"
       :class="isControlCollapsed ? 'w-[96px]' : 'w-[208px]'"
     >
       <div v-if="isControlCollapsed" class="flex justify-center">
@@ -119,7 +119,7 @@
       @delete="handleDelete"
     />
 
-    <div class="absolute right-3 top-3 z-30 rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1.5 text-[11px] text-slate-200 backdrop-blur">
+    <div class="absolute right-3 top-3 z-30 rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-[11px] text-slate-100 backdrop-blur">
       <p>site: {{ props.topology?.site_id ?? 'n/a' }}</p>
       <p>topology nodes/lines: {{ props.topology?.nodes.length ?? 0 }} / {{ props.topology?.lines.length ?? 0 }}</p>
       <p>resources: {{ props.resources?.length ?? 0 }}</p>
