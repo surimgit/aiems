@@ -21,4 +21,4 @@ WORKDIR /app/ems/ai/service
 
 EXPOSE 5004
 
-CMD ["sh", "-c", "gunicorn --timeout ${GUNICORN_TIMEOUT:-300} -b 0.0.0.0:5004 app.main:app"]
+CMD ["sh", "-c", "gunicorn --timeout ${GUNICORN_TIMEOUT:-300} --access-logfile - --error-logfile - --log-level info -b 0.0.0.0:5004 app.main:app"]
