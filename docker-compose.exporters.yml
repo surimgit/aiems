@@ -90,3 +90,25 @@ services:
       MQTT_PASS: ${MQTT_PASSWORD}
     ports:
       - "9234:9234"
+
+  # Promtail: 호스트의 모든 docker 컨테이너 로그를 Loki(CI/CD EC2)로 푸시
+  # 실행: HOSTNAME_LABEL=<gateway|ingestion|state|control|db|cicd> \
+  #        docker compose -f docker-compose.exporters.yml --profile common --profile loki up -d
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: promtail
+    restart: always
+    profiles: [loki]
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+      - -config.expand-env=true
+    environment:
+      HOSTNAME_LABEL: ${HOSTNAME_LABEL:-unknown}
+    volumes:
+      - ./infra/monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail_positions:/tmp
+
+volumes:
+  promtail_positions:
