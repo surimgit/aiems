@@ -96,8 +96,8 @@ export const extractSignFromPower = (data: PowerData): {
   sign: EssSign
   display: string
 } => ({
-  sign: interpretPowerSign(data.net_power),
-  display: getPowerSignDisplay(data.net_power)
+  sign: interpretPowerSign(data.net_power_kw),
+  display: getPowerSignDisplay(data.net_power_kw)
 })
 
 export default {

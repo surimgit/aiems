@@ -8,12 +8,15 @@
 
 import { computed } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
+import type { ComputedRef } from 'vue'
+import type { ESSStatus } from '@/types/common'
 
 export interface UseDetailFeature {
-  essList: ReturnType<typeof useDashboardStore>['essList']
-  selectedEssId: string | null
-  selectedEss: ReturnType<typeof useDashboardStore>['essList'][number] | null
-  isLoading: boolean
+  essList: ComputedRef<ESSStatus[]>
+  selectedEssId: ComputedRef<string | null>
+  selectedEss: ComputedRef<ESSStatus | null>
+  isLoading: ComputedRef<boolean>
+  selectEss: (essId: string) => void
 }
 
 export const useDetailFeature = (): UseDetailFeature => {
@@ -22,12 +25,11 @@ export const useDetailFeature = (): UseDetailFeature => {
   const essList = computed(() => dashboardStore.essList)
   const isLoading = computed(() => dashboardStore.loading)
   
-  const selectedEssId = computed(() => null)
-  const selectedEss = computed(() => null)
+  const selectedEssId = computed(() => dashboardStore.selectedEssId)
+  const selectedEss = computed(() => dashboardStore.selectedEss)
   
   const selectEss = (essId: string) => {
-    // TODO: ESS 선택 로직
-    console.log('Select ESS:', essId)
+    dashboardStore.selectEss(essId)
   }
   
   return {

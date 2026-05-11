@@ -2,9 +2,10 @@
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "baseUrl": ".",
+    // 1. "baseUrl": "." 줄을 완전히 삭제하세요.
+    // 2. ignoreDeprecations 줄도 완전히 삭제하세요.
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"] // 3. 기존 "src/*" 에서 앞에 "./"를 붙여주세요.
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]

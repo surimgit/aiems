@@ -6,7 +6,9 @@
  * - 기간별 필터링
  */
 
-// TODO:History API 구현 후 연결
+import { computed } from 'vue'
+import { useControlStore } from '@/stores/control/control.store'
+import type { ComputedRef } from 'vue'
 
 export interface HistoryRecord {
   timestamp: string
@@ -15,17 +17,32 @@ export interface HistoryRecord {
 }
 
 export interface UseHistoryFeature {
-  records: HistoryRecord[]
-  isLoading: boolean
+  records: ComputedRef<HistoryRecord[]>
+  isLoading: ComputedRef<boolean>
+  fetchHistory: (startDate: string, endDate: string) => Promise<void>
 }
 
 export const useHistoryFeature = (): UseHistoryFeature => {
-  const records: HistoryRecord[] = []
-  const isLoading = false
+  const controlStore = useControlStore()
+  const records = computed<HistoryRecord[]>(() =>
+    controlStore.pendingCommands.map((command) => ({
+      timestamp: command.created_at,
+      type: 'control',
+      data: {
+        command_id: command.command_id,
+        action: command.action,
+        status: command.status,
+        target_resource_id: command.target_resource_id
+      }
+    }))
+  )
+
+  const isLoading = computed(() => controlStore.loading)
   
   const fetchHistory = async (startDate: string, endDate: string) => {
-    // TODO: API 호출
-    console.log('Fetch history:', startDate, endDate)
+    void startDate
+    void endDate
+    await controlStore.fetchCommandHistory()
   }
   
   return {

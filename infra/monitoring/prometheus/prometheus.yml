@@ -61,6 +61,16 @@ scrape_configs:
     static_configs:
       - targets: ["100.126.227.114:9121"]
 
+  # ===== Nginx (gateway EC2) =====
+  - job_name: nginx
+    static_configs:
+      - targets: ["100.95.93.41:9113"]
+
+  # ===== MQTT (ingestion EC2에 mosquitto 위치) =====
+  - job_name: mqtt
+    static_configs:
+      - targets: ["100.126.227.114:9234"]
+
   # ===== EMS 앱 메트릭 (/metrics) =====
   - job_name: ems-ingestion
     metrics_path: /metrics

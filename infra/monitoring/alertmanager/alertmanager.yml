@@ -13,19 +13,12 @@ receivers:
   - name: mattermost
     slack_configs:
       - api_url: "https://meeting.ssafy.com/hooks/coo7q6s76fdi8f5kxdi1rf8bce"
-        channel: "#alerts"
         send_resolved: true
-        username: "EMS Alertmanager"
-        icon_emoji: ":rotating_light:"
-        title: |-
-          [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
         text: |-
-          {{ range .Alerts }}
-          *{{ .Annotations.summary }}*
+          {{ range .Alerts }}*{{ .Annotations.summary }}*
           {{ .Annotations.description }}
-          - severity: `{{ .Labels.severity }}`
-          - instance: `{{ .Labels.instance }}`
-          - started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          severity=`{{ .Labels.severity }}` instance=`{{ .Labels.instance }}`
           {{ end }}
 
 inhibit_rules:

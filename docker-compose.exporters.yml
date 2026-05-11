@@ -66,3 +66,27 @@ services:
       DATA_SOURCE_NAME: ${POSTGRES_DSN}
     ports:
       - "9187:9187"
+
+  # nginx-exporter: gateway EC2에서 nginx stub_status를 Prometheus 메트릭으로 변환
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.0
+    container_name: nginx-exporter
+    restart: always
+    profiles: [nginx]
+    network_mode: host
+    command:
+      - --nginx.scrape-uri=http://127.0.0.1:${NGINX_STATUS_PORT:-8080}/nginx_status
+      - --web.listen-address=:9113
+
+  # mqtt-exporter: mosquitto $SYS 토픽을 구독해 메트릭 노출
+  mqtt-exporter:
+    image: sapcc/mosquitto-exporter:0.8.0
+    container_name: mqtt-exporter
+    restart: always
+    profiles: [mqtt]
+    environment:
+      BROKER_ENDPOINT: ${MQTT_BROKER_ENDPOINT}
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASS: ${MQTT_PASSWORD}
+    ports:
+      - "9234:9234"
