@@ -1,6 +1,6 @@
 /**
  * AI API Client (조회/요청)
- * - ProjectDocs/11-api/ai-api.md 기준
+ * - ProjectDocs/11-api/ai-api.md 기준.
  */
 
 import { http } from './http'
