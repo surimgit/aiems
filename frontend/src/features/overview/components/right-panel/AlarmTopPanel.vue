@@ -22,9 +22,20 @@ const sortedActiveAlarms = computed(() => {
   })
 })
 
+const dedupedActiveAlarms = computed(() => {
+  const bySignature = new Map<string, (typeof sortedActiveAlarms.value)[number]>()
+  for (const alarm of sortedActiveAlarms.value) {
+    const signature = `${alarm.level}|${alarm.code}|${alarm.message}`
+    if (!bySignature.has(signature)) {
+      bySignature.set(signature, alarm)
+    }
+  }
+  return Array.from(bySignature.values())
+})
+
 const visibleAlarms = computed(() => {
-  if (isFullView.value) return sortedActiveAlarms.value
-  return sortedActiveAlarms.value.slice(0, 5)
+  if (isFullView.value) return dedupedActiveAlarms.value
+  return dedupedActiveAlarms.value.slice(0, 5)
 })
 
 const toLevelLabel = (value: string): string => {

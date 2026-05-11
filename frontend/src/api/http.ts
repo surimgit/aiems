@@ -39,6 +39,12 @@ const createHttpClient = (): AxiosInstance => {
       return response
     },
     (error) => {
+      const requestUrl = String(error.config?.url ?? '')
+      const isAiLatest = requestUrl.includes('/api/plants/') && requestUrl.includes('/ai/latest')
+      const status = error.response?.status
+      if (isAiLatest && (status === 404 || status === 503 || !status)) {
+        return Promise.reject(error)
+      }
       // TODO:グローバルエラー処理
       // 401: unauthorized -> ログイン画面にリダイレクト
       // 403: forbidden -> 権限エラー表示
@@ -65,6 +71,10 @@ export const http = {
   },
   put: async <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> => {
     const response = await httpClient.put<ApiResponse<T>>(url, data, config)
+    return unwrapPayload(response.data)
+  },
+  patch: async <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> => {
+    const response = await httpClient.patch<ApiResponse<T>>(url, data, config)
     return unwrapPayload(response.data)
   },
   delete: async <T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> => {

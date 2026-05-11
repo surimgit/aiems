@@ -1,7 +1,7 @@
 <template>
   <div class="relative h-full w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950">
     <div
-      class="absolute left-3 top-3 z-30 rounded-lg border border-white/10 bg-slate-950/85 p-2 text-xs text-white backdrop-blur"
+      class="absolute left-3 top-3 z-30 rounded-lg border border-slate-700 bg-slate-900/80 p-2 text-xs text-slate-100 backdrop-blur"
       :class="isControlCollapsed ? 'w-[96px]' : 'w-[208px]'"
     >
       <div v-if="isControlCollapsed" class="flex justify-center">
@@ -68,6 +68,18 @@
             <button type="button" class="w-full rounded bg-rose-700 px-2 py-1 font-semibold" @click="removeSelectedLine">선 삭제</button>
           </div>
         </div>
+
+        <div class="mt-2 rounded border border-white/10 p-2">
+          <p class="mb-1 text-slate-300">상태창 표시</p>
+          <div class="grid grid-cols-2 gap-1 text-[11px]">
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.voltage" type="checkbox" />전압</label>
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.current" type="checkbox" />전류</label>
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.soc" type="checkbox" />SOC</label>
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.frequency" type="checkbox" />주파수</label>
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.pf" type="checkbox" />역률</label>
+            <label class="flex items-center gap-1"><input v-model="visibleMetrics.mode" type="checkbox" />모드</label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -89,9 +101,14 @@
       :equipment-data="equipmentData"
       :ui-positions="uiPositions"
       :map-zoom="mapZoom"
+      :visible-metrics="visibleMetrics"
       :is-edit-mode="isEditMode"
       @edit-equip="openEditModal"
     />
+
+    <div class="absolute bottom-3 left-3 z-30">
+      <slot name="overlay" />
+    </div>
 
     <EquipFormModal
       v-if="modalConfig.show"
@@ -101,19 +118,40 @@
       @save="handleSave"
       @delete="handleDelete"
     />
+
+    <div class="absolute right-3 top-3 z-30 rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-[11px] text-slate-100 backdrop-blur">
+      <p>site: {{ props.topology?.site_id ?? 'n/a' }}</p>
+      <p>topology nodes/lines: {{ props.topology?.nodes.length ?? 0 }} / {{ props.topology?.lines.length ?? 0 }}</p>
+      <p>resources: {{ props.resources?.length ?? 0 }}</p>
+      <p>rendered equipments/lines: {{ equipmentData.length }} / {{ connections.length }}</p>
+    </div>
+
+    <div
+      v-if="equipmentData.length === 0"
+      class="absolute inset-x-0 bottom-16 z-20 mx-auto w-fit rounded border border-amber-300/30 bg-amber-900/20 px-3 py-2 text-xs text-amber-100"
+    >
+      표시 가능한 장비 데이터가 없습니다. site_id와 API 응답을 확인하세요.
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import Map3DViewer from '@/features/map-dashboard/components/Map3DViewer.vue'
 import MapStatusOverlay from '@/features/map-dashboard/components/MapStatusOverlay.vue'
 import EquipFormModal from '@/features/map-dashboard/components/EquipFormModal.vue'
-import type { TopologyData } from '@/types/common'
+import type { ResourceInfo, TopologyData } from '@/types/common'
 import type { ConnectionDirection, EquipmentFormData, MapConnection, MapEquipment } from '@/features/map-dashboard/types'
+import { useControlStore } from '@/stores/control/control.store'
 
 const props = defineProps<{
   topology: TopologyData | null
+  resources?: ResourceInfo[]
+  resourcesLastFetchedAt?: number | null
+  topologyLastFetchedAt?: number | null
+  resourcesFetchFailStreak?: number
+  topologyFetchFailStreak?: number
 }>()
 
 const emit = defineEmits<{
@@ -121,31 +159,94 @@ const emit = defineEmits<{
   (e: 'select-line', lineId: string): void
 }>()
 
+const controlStore = useControlStore()
+const { pendingCommands, commandHistory } = storeToRefs(controlStore)
+
+const commandStatusPriority: Record<string, number> = {
+  CREATED: 1,
+  ACCEPTED: 2,
+  IN_PROGRESS: 3,
+  RUNNING: 4,
+  COMPLETED: 5,
+  REJECTED: 6,
+  FAILED: 7,
+  TIMED_OUT: 8,
+  BLOCKED: 9,
+  EXPIRED: 10,
+  IGNORED: 11
+}
+
+const sortedControlSignals = computed(() => {
+  const all = [...pendingCommands.value, ...commandHistory.value]
+  return all.sort((a, b) => {
+    const ts = (Date.parse(b.created_at ?? '') || 0) - (Date.parse(a.created_at ?? '') || 0)
+    if (ts !== 0) return ts
+    return (commandStatusPriority[b.status] ?? 0) - (commandStatusPriority[a.status] ?? 0)
+  })
+})
+
+const CONTROL_SIGNAL_TTL_MS = 30_000
+
+const isSignalFresh = (createdAt?: string): boolean => {
+  const ts = Date.parse(createdAt ?? '')
+  if (!Number.isFinite(ts)) return false
+  return Date.now() - ts <= CONTROL_SIGNAL_TTL_MS
+}
+
+const latestSignalByResource = computed(() => {
+  const byResource = new Map<string, (typeof sortedControlSignals.value)[number]>()
+  for (const command of sortedControlSignals.value) {
+    if (!isSignalFresh(command.created_at)) continue
+    const key = (command.target_resource_id ?? '').toLowerCase()
+    if (!key || byResource.has(key)) continue
+    byResource.set(key, command)
+  }
+  return byResource
+})
+
+const COMM_FAILURE_THRESHOLD = 3
+const COMM_STALE_TTL_MS = 8_000
+const nowTs = ref(Date.now())
+const nowTicker = setInterval(() => {
+  nowTs.value = Date.now()
+}, 1_000)
+onUnmounted(() => {
+  clearInterval(nowTicker)
+})
+
+const hasUnintendedCommDisconnect = computed(() => {
+  const resourcesFail = props.resourcesFetchFailStreak ?? 0
+  const topologyFail = props.topologyFetchFailStreak ?? 0
+  if (resourcesFail >= COMM_FAILURE_THRESHOLD || topologyFail >= COMM_FAILURE_THRESHOLD) return true
+
+  const latestFetchedAt = Math.max(props.resourcesLastFetchedAt ?? 0, props.topologyLastFetchedAt ?? 0)
+  if (latestFetchedAt <= 0) return false
+  return nowTs.value - latestFetchedAt > COMM_STALE_TTL_MS
+})
+
 const isEditMode = ref(false)
-const isControlCollapsed = ref(false)
+const isControlCollapsed = ref(true)
 const defaultAddType = ref<MapEquipment['type']>('LOAD')
 const isAddArmed = ref(false)
 const selectedLineId = ref<string | null>(null)
 const isUiVisible = ref(true)
 const mapZoom = ref(16)
+const visibleMetrics = ref({
+  voltage: true,
+  current: true,
+  soc: true,
+  frequency: false,
+  pf: false,
+  mode: false
+})
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 
-const equipmentData = ref<MapEquipment[]>([
-  { id: 'solar-1', name: 'SOLAR #1', type: 'GENERATOR', status: 'normal', power: '640 kW', lngLat: [129.074, 35.1795] },
-  { id: 'solar-2', name: 'SOLAR #2', type: 'GENERATOR', status: 'stopped', power: '320 kW', lngLat: [129.074, 35.1785] },
-  { id: 'ess-1', name: 'ESS', type: 'ESS', status: 'normal', power: '-120 kW', lngLat: [129.076, 35.178] },
-  { id: 'load-1', name: 'LOAD #1', type: 'LOAD', status: 'normal', power: '420 kW', lngLat: [129.0775, 35.1795] },
-  { id: 'load-2', name: 'LOAD #2', type: 'LOAD', status: 'normal', power: '350 kW', lngLat: [129.0775, 35.1785] },
-  { id: 'load-3', name: 'LOAD #3', type: 'LOAD', status: 'error', power: '250 kW', lngLat: [129.0775, 35.1775] }
-])
+const equipmentData = ref<MapEquipment[]>([])
 
-const connections = ref<MapConnection[]>([
-  { id: 'line-solar1-ess', fromEquipmentId: 'solar-1', toEquipmentId: 'ess-1', direction: 'FORWARD', status: 'normal' },
-  { id: 'line-solar2-ess', fromEquipmentId: 'solar-2', toEquipmentId: 'ess-1', direction: 'FORWARD', status: 'stopped' },
-  { id: 'line-ess-load1', fromEquipmentId: 'ess-1', toEquipmentId: 'load-1', direction: 'FORWARD', status: 'normal' },
-  { id: 'line-ess-load2', fromEquipmentId: 'ess-1', toEquipmentId: 'load-2', direction: 'FORWARD', status: 'normal' },
-  { id: 'line-ess-load3', fromEquipmentId: 'ess-1', toEquipmentId: 'load-3', direction: 'FORWARD', status: 'error' }
-])
+const connections = ref<MapConnection[]>([])
+
+const isCustomEquipment = (id: string) => id.startsWith('custom-') || id.startsWith('reserve-')
+const isCustomLine = (id: string) => id.startsWith('custom-') || id.startsWith('custom-line-')
 
 const connectForm = ref({
   fromEquipmentId: '',
@@ -172,20 +273,297 @@ const lineToStatus = (status: string): MapConnection['status'] => {
   return 'normal'
 }
 
-const applyTopologyStatus = () => {
-  if (!props.topology) return
+const nodeTypeToEquipmentType = (nodeType: string): MapEquipment['type'] | null => {
+  if (nodeType === 'STORAGE') return 'ESS'
+  if (nodeType === 'LOAD') return 'LOAD'
+  if (nodeType === 'GENERATION') return 'GENERATOR'
+  return null
+}
 
-  const nodeStatusByResource = new Map(props.topology.nodes.map((node) => [node.resource_id.toUpperCase(), nodeToStatus(node.status)]))
-  equipmentData.value = equipmentData.value.map((item) => {
-    const status = nodeStatusByResource.get(item.name.toUpperCase())
-    return status ? { ...item, status } : item
+const resourceTypeToEquipmentType = (resourceType?: string): MapEquipment['type'] | null => {
+  if (!resourceType) return null
+  const upper = resourceType.toUpperCase()
+  if (upper === 'ESS') return 'ESS'
+  if (upper === 'LOAD') return 'LOAD'
+  if (upper === 'SOLAR' || upper === 'DIESEL_GENERATOR' || upper === 'DIESEL') return 'GENERATOR'
+  return null
+}
+
+const resourceStatusToEquipmentStatus = (status?: string): MapEquipment['status'] => {
+  const upper = (status ?? '').toUpperCase()
+  if (upper.includes('EMERGENCY') || upper.includes('FAULT') || upper.includes('ERROR') || upper.includes('OFFLINE')) return 'error'
+  if (upper.includes('WARNING') || upper.includes('OPEN') || upper.includes('BLOCKED')) return 'stopped'
+  return 'normal'
+}
+
+const applyUnintendedDisconnectStatus = <T extends MapEquipment['status'] | MapConnection['status']>(status: T): T => {
+  if (!hasUnintendedCommDisconnect.value) return status
+  return 'error' as T
+}
+
+const applyCommandToEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
+  const signal = latestSignalByResource.value.get(resourceId.toLowerCase())
+  if (!signal) return applyUnintendedDisconnectStatus(baseStatus)
+
+  if (signal.status === 'FAILED' || signal.status === 'TIMED_OUT' || signal.status === 'BLOCKED' || signal.status === 'REJECTED') {
+    return applyUnintendedDisconnectStatus('error')
+  }
+
+  if (signal.status !== 'COMPLETED' && signal.status !== 'RUNNING' && signal.status !== 'IN_PROGRESS' && signal.status !== 'ACCEPTED') {
+    return applyUnintendedDisconnectStatus(baseStatus)
+  }
+
+  if (
+    signal.action === 'STOP_CHARGE' ||
+    signal.action === 'STOP_DISCHARGE' ||
+    signal.action === 'STOP_GENERATOR' ||
+    signal.action === 'SHED_LOAD' ||
+    signal.action === 'OPEN_SWITCH' ||
+    signal.action === 'STANDBY'
+  ) {
+    return hasUnintendedCommDisconnect.value ? 'error' : 'stopped'
+  }
+
+  if (
+    signal.action === 'START_CHARGE' ||
+    signal.action === 'START_DISCHARGE' ||
+    signal.action === 'START_GENERATOR' ||
+    signal.action === 'RESTORE_LOAD' ||
+    signal.action === 'CLOSE_SWITCH'
+  ) {
+    return applyUnintendedDisconnectStatus(baseStatus === 'error' ? 'error' : 'normal')
+  }
+
+  return applyUnintendedDisconnectStatus(baseStatus)
+}
+
+const applyCommandToLineStatus = (lineId: string, fromResourceId: string, toResourceId: string, baseStatus: MapConnection['status']): MapConnection['status'] => {
+  const fromSignal = latestSignalByResource.value.get(fromResourceId.toLowerCase())
+  const toSignal = latestSignalByResource.value.get(toResourceId.toLowerCase())
+  const lineSignal = latestSignalByResource.value.get(lineId.toLowerCase())
+  const signal = lineSignal ?? fromSignal ?? toSignal
+  if (!signal) return applyUnintendedDisconnectStatus(baseStatus)
+
+  if (signal.status === 'FAILED' || signal.status === 'TIMED_OUT' || signal.status === 'BLOCKED' || signal.status === 'REJECTED') {
+    return applyUnintendedDisconnectStatus('error')
+  }
+  if (signal.status !== 'COMPLETED' && signal.status !== 'RUNNING' && signal.status !== 'IN_PROGRESS' && signal.status !== 'ACCEPTED') {
+    return applyUnintendedDisconnectStatus(baseStatus)
+  }
+  if (signal.action === 'OPEN_SWITCH' || signal.action === 'SHED_LOAD' || signal.action === 'STOP_GENERATOR' || signal.action === 'STANDBY') {
+    return hasUnintendedCommDisconnect.value ? 'error' : 'stopped'
+  }
+  if (signal.action === 'CLOSE_SWITCH' || signal.action === 'RESTORE_LOAD' || signal.action === 'START_GENERATOR') {
+    return applyUnintendedDisconnectStatus(baseStatus === 'error' ? 'error' : 'normal')
+  }
+  return applyUnintendedDisconnectStatus(baseStatus)
+}
+
+const BASE_LNG = 129.0755
+const BASE_LAT = 35.1785
+
+const hasValidLngLat = (lng: number, lat: number) => {
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false
+  if (Math.abs(lng) <= 0.001 && Math.abs(lat) <= 0.001) return false
+  return lng >= -180 && lng <= 180 && lat >= -85 && lat <= 85
+}
+
+const buildTopologyCoordinateMapper = (nodes: TopologyData['nodes']) => {
+  const rawPositions = nodes
+    .map((node) => ({ x: node.position?.x, y: node.position?.y }))
+    .filter((position): position is { x: number; y: number } => Number.isFinite(position.x) && Number.isFinite(position.y))
+
+  if (rawPositions.length === 0) {
+    return (_x: number, _y: number): [number, number] | null => null
+  }
+
+  const allAreLngLat = rawPositions.every((position) => hasValidLngLat(position.x, position.y))
+  if (allAreLngLat) {
+    return (x: number, y: number): [number, number] | null => (hasValidLngLat(x, y) ? [x, y] : null)
+  }
+
+  const xs = rawPositions.map((position) => position.x)
+  const ys = rawPositions.map((position) => position.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanX = Math.max(1, maxX - minX)
+  const spanY = Math.max(1, maxY - minY)
+
+  const targetWidth = 0.0032
+  const targetHeight = 0.0024
+
+  return (x: number, y: number): [number, number] | null => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+    const normalizedX = (x - minX) / spanX
+    const normalizedY = (y - minY) / spanY
+
+    const lng = BASE_LNG + (normalizedX - 0.5) * targetWidth
+    const lat = BASE_LAT + (0.5 - normalizedY) * targetHeight
+    return [lng, lat]
+  }
+}
+
+const fallbackPositionByType = (type: MapEquipment['type'], index: number): [number, number] => {
+  const baseLng = BASE_LNG
+  const baseLat = BASE_LAT
+
+  if (type === 'GENERATOR') {
+    return [baseLng - 0.0016, baseLat + 0.0007 - index * 0.0008]
+  }
+  if (type === 'ESS') {
+    return [baseLng, baseLat]
+  }
+  return [baseLng + 0.0016, baseLat + 0.0009 - index * 0.0008]
+}
+
+const toNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return undefined
+}
+
+const applyTopologyData = () => {
+  const customEquipments = equipmentData.value.filter((item) => isCustomEquipment(item.id))
+  const customLines = connections.value.filter((line) => isCustomLine(line.id))
+
+  const resources = props.resources ?? []
+  const resourceById = new Map(resources.map((resource) => [resource.resource_id.toLowerCase(), resource]))
+  const hasTopologyNodes = Boolean(props.topology && props.topology.nodes.length > 0)
+
+  if (hasTopologyNodes && props.topology) {
+    const mapTopologyPosition = buildTopologyCoordinateMapper(props.topology.nodes)
+    const flowByNodeId = new Map<string, number>()
+    props.topology.lines.forEach((line) => {
+      const value = Math.abs(line.flow_kw ?? 0)
+      flowByNodeId.set(line.from_node_id, (flowByNodeId.get(line.from_node_id) ?? 0) + value)
+      flowByNodeId.set(line.to_node_id, (flowByNodeId.get(line.to_node_id) ?? 0) + value)
+    })
+
+    const topologyEquipments: MapEquipment[] = []
+    const typeCounts: Record<MapEquipment['type'], number> = {
+      GENERATOR: 0,
+      ESS: 0,
+      LOAD: 0
+    }
+
+    props.topology.nodes.forEach((node) => {
+      const type = nodeTypeToEquipmentType(node.node_type)
+      if (!type) return
+      const linkedResource = resourceById.get(node.resource_id.toLowerCase())
+      const powerKw = flowByNodeId.get(node.node_id) ?? toNumber(linkedResource?.telemetry?.p_kw) ?? 0
+      const fallbackIndex = typeCounts[type]
+      typeCounts[type] += 1
+      const fallback = fallbackPositionByType(type, fallbackIndex)
+      const mappedPosition = mapTopologyPosition(node.position.x, node.position.y)
+      const lng = mappedPosition?.[0] ?? fallback[0]
+      const lat = mappedPosition?.[1] ?? fallback[1]
+
+      const equipmentStatus = applyCommandToEquipmentStatus(
+        node.resource_id,
+        linkedResource ? resourceStatusToEquipmentStatus(linkedResource.status) : nodeToStatus(node.status)
+      )
+
+      topologyEquipments.push({
+        id: node.node_id,
+        name: linkedResource?.name ?? node.resource_id,
+        type,
+        status: equipmentStatus,
+        power: `${Math.round(Math.abs(powerKw))} kW`,
+        lngLat: [lng, lat],
+        metrics: {
+          voltage: toNumber(linkedResource?.telemetry?.v_volt),
+          current: toNumber(linkedResource?.telemetry?.i_amp),
+          soc: toNumber(linkedResource?.telemetry?.soc),
+          frequency: toNumber(linkedResource?.telemetry?.f_hz),
+          pf: toNumber(linkedResource?.telemetry?.pf),
+          mode: linkedResource?.telemetry?.operating_mode
+        }
+      })
+    })
+
+    const nodeToResourceId = new Map(props.topology.nodes.map((node) => [node.node_id, node.resource_id]))
+    const topologyLines: MapConnection[] = props.topology.lines.map((line) => {
+      const fromResourceId = nodeToResourceId.get(line.from_node_id) ?? line.from_node_id
+      const toResourceId = nodeToResourceId.get(line.to_node_id) ?? line.to_node_id
+      return {
+        id: line.line_id,
+        fromEquipmentId: line.from_node_id,
+        toEquipmentId: line.to_node_id,
+        direction: line.direction,
+        status: applyCommandToLineStatus(line.line_id, fromResourceId, toResourceId, lineToStatus(line.status))
+      }
+    })
+
+    equipmentData.value = [...topologyEquipments, ...customEquipments]
+    connections.value = [...topologyLines, ...customLines]
+    return
+  }
+
+  const filteredResources = resources.filter((resource) => resourceTypeToEquipmentType(resource.resource_type) !== null)
+  if (filteredResources.length === 0) {
+    equipmentData.value = customEquipments
+    connections.value = customLines
+    return
+  }
+
+  const typeCounts: Record<MapEquipment['type'], number> = {
+    GENERATOR: 0,
+    ESS: 0,
+    LOAD: 0
+  }
+
+  const fallbackEquipments: MapEquipment[] = filteredResources.map((resource) => {
+    const type = resourceTypeToEquipmentType(resource.resource_type) as MapEquipment['type']
+    const fallback = fallbackPositionByType(type, typeCounts[type])
+    typeCounts[type] += 1
+    const powerKw = Math.abs(toNumber(resource.telemetry?.p_kw) ?? 0)
+    return {
+      id: resource.resource_id,
+      name: resource.name ?? resource.resource_id,
+      type,
+      status: applyCommandToEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
+      power: `${Math.round(powerKw)} kW`,
+      lngLat: fallback,
+      metrics: {
+        voltage: toNumber(resource.telemetry?.v_volt),
+        current: toNumber(resource.telemetry?.i_amp),
+        soc: toNumber(resource.telemetry?.soc),
+        frequency: toNumber(resource.telemetry?.f_hz),
+        pf: toNumber(resource.telemetry?.pf),
+        mode: resource.telemetry?.operating_mode
+      }
+    }
   })
 
-  const lineStatusList = props.topology.lines.map((line) => lineToStatus(line.status))
-  connections.value = connections.value.map((line, idx) => ({
-    ...line,
-    status: lineStatusList[idx] ?? line.status
-  }))
+  const ess = fallbackEquipments.find((item) => item.type === 'ESS')
+  const generators = fallbackEquipments.filter((item) => item.type === 'GENERATOR')
+  const loads = fallbackEquipments.filter((item) => item.type === 'LOAD')
+
+  const fallbackLines: MapConnection[] = []
+  if (ess) {
+    generators.forEach((generator) => {
+      fallbackLines.push({
+        id: `line-${generator.id}-${ess.id}`,
+        fromEquipmentId: generator.id,
+        toEquipmentId: ess.id,
+        direction: 'FORWARD',
+        status: generator.status === 'error' || ess.status === 'error' ? 'error' : generator.status === 'stopped' || ess.status === 'stopped' ? 'stopped' : 'normal'
+      })
+    })
+    loads.forEach((load) => {
+      fallbackLines.push({
+        id: `line-${ess.id}-${load.id}`,
+        fromEquipmentId: ess.id,
+        toEquipmentId: load.id,
+        direction: 'FORWARD',
+        status: load.status === 'error' || ess.status === 'error' ? 'error' : load.status === 'stopped' || ess.status === 'stopped' ? 'stopped' : 'normal'
+      })
+    })
+  }
+
+  equipmentData.value = [...fallbackEquipments, ...customEquipments]
+  connections.value = [...fallbackLines, ...customLines]
 }
 
 const typePrefix: Record<MapEquipment['type'], string> = {
@@ -319,8 +697,20 @@ const handleZoomChange = (value: number) => {
 
 watch(
   () => props.topology,
-  () => applyTopologyStatus(),
+  () => applyTopologyData(),
   { deep: true, immediate: true }
+)
+
+watch(
+  () => props.resources,
+  () => applyTopologyData(),
+  { deep: true }
+)
+
+watch(
+  () => sortedControlSignals.value,
+  () => applyTopologyData(),
+  { deep: true }
 )
 
 watch(isEditMode, (next) => {

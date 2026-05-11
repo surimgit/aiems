@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import type { AlarmData } from '@/types/common'
@@ -17,29 +17,143 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const dismissed = ref(false)
 const dashboardStore = useDashboardStore()
-const { resources } = storeToRefs(dashboardStore)
+const {
+  resources,
+  resourcesLastFetchedAt,
+  topologyLastFetchedAt,
+  resourcesFetchFailStreak,
+  topologyFetchFailStreak
+} = storeToRefs(dashboardStore)
+
+const COMM_FAILURE_THRESHOLD = 3
+const COMM_STALE_TTL_MS = 8_000
+const nowTs = ref(Date.now())
+const nowTicker = setInterval(() => {
+  nowTs.value = Date.now()
+}, 1_000)
+onUnmounted(() => {
+  clearInterval(nowTicker)
+})
+
+type SystemAnomaly = {
+  level: 'critical' | 'warning'
+  causeCode: string
+  causeMessage: string
+  resourceId: string | null
+  timestamp: number
+}
+
+const systemAnomalies = computed<SystemAnomaly[]>(() => {
+  const list: SystemAnomaly[] = []
+
+  const resourceFail = resourcesFetchFailStreak.value
+  const topologyFail = topologyFetchFailStreak.value
+  const latestFetchedAt = Math.max(resourcesLastFetchedAt.value ?? 0, topologyLastFetchedAt.value ?? 0)
+  const staleMs = latestFetchedAt > 0 ? nowTs.value - latestFetchedAt : 0
+
+  if (resourceFail >= COMM_FAILURE_THRESHOLD || topologyFail >= COMM_FAILURE_THRESHOLD) {
+    const blockedPart = resourceFail >= topologyFail ? 'resources' : 'topology'
+    const failCount = Math.max(resourceFail, topologyFail)
+    list.push({
+      level: 'critical',
+      causeCode: 'COMMUNICATION_LOSS',
+      causeMessage: `통신 실패 연속 ${failCount}회 (${blockedPart} fetch 실패)`,
+      resourceId: null,
+      timestamp: nowTs.value
+    })
+  } else if (latestFetchedAt > 0 && staleMs > COMM_STALE_TTL_MS) {
+    list.push({
+      level: 'critical',
+      causeCode: 'HEARTBEAT_TIMEOUT',
+      causeMessage: `데이터 갱신 지연 ${(staleMs / 1000).toFixed(0)}초 (stale)`,
+      resourceId: null,
+      timestamp: nowTs.value
+    })
+  }
+
+  for (const resource of resources.value) {
+    const status = (resource.status ?? '').toUpperCase()
+    const comms = (resource.comms_health ?? '').toUpperCase()
+
+    if (status.includes('EMERGENCY') || status.includes('FAULT') || status.includes('ERROR') || status.includes('OFFLINE')) {
+      list.push({
+        level: 'critical',
+        causeCode: 'RESOURCE_FAULT',
+        causeMessage: `${resource.name ?? resource.resource_id} 상태 이상 (${status || 'UNKNOWN'})`,
+        resourceId: resource.resource_id,
+        timestamp: nowTs.value
+      })
+      continue
+    }
+
+    if (comms.includes('DISCONNECT') || comms.includes('OFFLINE') || comms.includes('TIMEOUT') || comms.includes('ERROR') || comms.includes('STALE')) {
+      list.push({
+        level: 'critical',
+        causeCode: 'BROKER_DISCONNECTED',
+        causeMessage: `${resource.name ?? resource.resource_id} 통신 이상 (${comms || 'UNKNOWN'})`,
+        resourceId: resource.resource_id,
+        timestamp: nowTs.value
+      })
+    }
+  }
+
+  return list
+})
+
+const newestSystemAnomaly = computed(() => {
+  if (systemAnomalies.value.length === 0) return null
+  return [...systemAnomalies.value].sort((a, b) => b.timestamp - a.timestamp)[0]
+})
+
+const systemAnomalySignature = computed(() =>
+  newestSystemAnomaly.value
+    ? `${newestSystemAnomaly.value.causeCode}:${newestSystemAnomaly.value.causeMessage}`
+    : ''
+)
+
+const alarmSignature = computed(() => {
+  return props.activeAlarms
+    .map((alarm) => `${alarm.alarm_id ?? ''}|${alarm.code}|${alarm.message}|${alarm.timestamp}|${alarm.acknowledged ? '1' : '0'}`)
+    .join('||')
+})
+
+const controlRetryPattern = /명령 전달\s*\d+회\s*재시도\s*후\s*최종\s*실패/i
+
+const parseControlRetryFailure = (message: string): { resourceId: string | null; causeMessage: string } | null => {
+  if (!controlRetryPattern.test(message)) return null
+  const idMatch = message.match(/실패\s*:\s*([\w-]+)/i)
+  const resourceId = idMatch?.[1] ?? null
+  const causeMessage = resourceId
+    ? `${resourceId} 제어 채널 전달 실패 (edge 또는 MQTT 연결 상태 확인 필요)`
+    : '제어 채널 전달 실패 (edge 또는 MQTT 연결 상태 확인 필요)'
+  return { resourceId, causeMessage }
+}
 
 watch(
-  () => props.activeAlarms,
+  () => `${alarmSignature.value}::${systemAnomalySignature.value}`,
   () => {
     dismissed.value = false
   },
-  { deep: true }
+  { immediate: true }
 )
 
 const criticalCount = computed(() => props.activeAlarms.filter((alarm) => alarm.level === 'critical').length)
 const warningCount = computed(() => props.activeAlarms.filter((alarm) => alarm.level === 'warning').length)
-const activeCount = computed(() => props.activeAlarms.length)
+const activeCount = computed(() => props.activeAlarms.length + systemAnomalies.value.length)
 
 const visible = computed(() => activeCount.value > 0 && !dismissed.value)
 
 const severity = computed<'critical' | 'warning' | 'info'>(() => {
+  if (newestSystemAnomaly.value?.level === 'critical') return 'critical'
   if (criticalCount.value > 0) return 'critical'
   if (warningCount.value > 0) return 'warning'
   return 'info'
 })
 
 const newestAlarmMessage = computed(() => {
+  if (newestSystemAnomaly.value) {
+    return `[${newestSystemAnomaly.value.causeCode}] ${newestSystemAnomaly.value.causeMessage}`
+  }
   if (!visible.value) return ''
 
   const sorted = [...props.activeAlarms].sort((a, b) => {
@@ -50,11 +164,18 @@ const newestAlarmMessage = computed(() => {
 
   const latest = sorted[0]
   const message = latest?.message?.trim()
-  if (message) return message
+  if (message) {
+    const parsed = parseControlRetryFailure(message)
+    if (parsed) {
+      return `[COMMUNICATION_LOSS] ${parsed.causeMessage}`
+    }
+    return message
+  }
   return latest?.code || t('common.noData')
 })
 
 const newestTargetResourceId = computed(() => {
+  if (newestSystemAnomaly.value?.resourceId) return newestSystemAnomaly.value.resourceId
   if (!visible.value) return null
 
   const sorted = [...props.activeAlarms].sort((a, b) => {
@@ -64,10 +185,13 @@ const newestTargetResourceId = computed(() => {
   })
 
   const latest = sorted[0]
+  const parsed = parseControlRetryFailure(latest?.message ?? '')
+  if (parsed?.resourceId) return parsed.resourceId
   return latest?.ess_id || null
 })
 
 const bannerText = computed(() => {
+  if (newestAlarmMessage.value) return newestAlarmMessage.value
   const resourceId = newestTargetResourceId.value
   if (!resourceId) return t('anomalyBanner.simple')
 
@@ -160,14 +284,14 @@ const closeBanner = () => {
 }
 
 .severity-critical {
-  @apply bg-red-600 text-white;
+  @apply bg-red-600/70 text-white backdrop-blur;
 }
 
 .severity-warning {
-  @apply bg-amber-500 text-slate-950;
+  @apply bg-amber-500/70 text-slate-950 backdrop-blur;
 }
 
 .severity-info {
-  @apply bg-sky-600 text-white;
+  @apply bg-sky-600/70 text-white backdrop-blur;
 }
 </style>

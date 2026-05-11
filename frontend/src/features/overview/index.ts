@@ -24,6 +24,7 @@ import { formatPower } from '@/domain/units'
 export interface UseOverviewFeature {
   powerSummary: ComputedRef<ReturnType<typeof useDashboardStore>['powerSummary']>
   essList: ComputedRef<ReturnType<typeof useDashboardStore>['essList']>
+  resources: ComputedRef<ReturnType<typeof useDashboardStore>['resources']>
   activeAlarms: ComputedRef<ReturnType<typeof useAlarmStore>['activeAlarms']>
   isLoading: ComputedRef<boolean>
   netPowerDisplay: ComputedRef<string>
@@ -38,6 +39,7 @@ export const useOverviewFeature = (): UseOverviewFeature => {
   const isLoading = computed(() => dashboardStore.loading)
   const powerSummary = computed(() => dashboardStore.powerSummary)
   const essList = computed(() => dashboardStore.essList)
+  const resources = computed(() => dashboardStore.resources)
   const activeAlarms = computed(() => alarmStore.activeAlarms)
 
   const netPowerDisplay = computed(() => {
@@ -65,6 +67,7 @@ export const useOverviewFeature = (): UseOverviewFeature => {
   return {
     powerSummary,
     essList,
+    resources,
     activeAlarms,
     isLoading,
     netPowerDisplay,

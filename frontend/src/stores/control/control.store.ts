@@ -4,7 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { DEFAULT_EDGE_ID, DEFAULT_OPERATOR_ID, DEFAULT_SITE_ID } from '@/app/config'
+import { DEFAULT_OPERATOR_ID, DEFAULT_SITE_ID } from '@/app/config'
 import type {
   CommandAction,
   ControlResult,
@@ -28,7 +28,6 @@ interface PendingCommand {
 
 interface ControlState {
   siteId: string
-  edgeId: string
   operatorId: string
   pendingCommands: PendingCommand[]
   commandHistory: ControlResult[]
@@ -42,7 +41,7 @@ interface ControlGetters {
 }
 
 interface ControlActions {
-  setContext(payload: { siteId?: string; edgeId?: string; operatorId?: string }): void
+  setContext(payload: { siteId?: string; operatorId?: string }): void
   submitCommand(payload: Omit<OperatorCommandRequest, 'requested_by'> & { requested_by?: string }): Promise<ControlResult>
   approveAiRecommendation(recommendationId: string, reason?: string): Promise<ControlResult>
   rejectAiRecommendation(recommendationId: string, reason?: string): Promise<ControlResult>
@@ -53,7 +52,6 @@ interface ControlActions {
 export const useControlStore = defineStore('control', {
   state: (): ControlState => ({
     siteId: DEFAULT_SITE_ID,
-    edgeId: DEFAULT_EDGE_ID,
     operatorId: DEFAULT_OPERATOR_ID,
     pendingCommands: [],
     commandHistory: [],
@@ -72,9 +70,10 @@ export const useControlStore = defineStore('control', {
   },
 
   actions: {
-    setContext(payload: { siteId?: string; edgeId?: string; operatorId?: string }): void {
+    
+    
+    setContext(payload: { siteId?: string; operatorId?: string }): void {
       if (payload.siteId) this.siteId = payload.siteId
-      if (payload.edgeId) this.edgeId = payload.edgeId
       if (payload.operatorId) this.operatorId = payload.operatorId
     },
 
@@ -90,10 +89,12 @@ export const useControlStore = defineStore('control', {
           requested_by: payload.requested_by ?? this.operatorId
         })
 
+        const resolvedTarget = result.target_resource_id ?? result.device_id ?? payload.device_id
+
         this.pendingCommands.unshift({
           command_id: result.command_id,
           status: result.status,
-          target_resource_id: result.target_resource_id,
+          target_resource_id: resolvedTarget,
           action: result.action,
           created_at: result.created_at
         })
@@ -147,12 +148,13 @@ export const useControlStore = defineStore('control', {
 
       try {
         const result = await getCommandStatus(commandId)
+        const resolvedTarget = result.target_resource_id ?? result.device_id
         const index = this.pendingCommands.findIndex((item) => item.command_id === result.command_id)
         if (index >= 0) {
           this.pendingCommands[index] = {
             command_id: result.command_id,
             status: result.status,
-            target_resource_id: result.target_resource_id,
+            target_resource_id: resolvedTarget,
             action: result.action,
             created_at: result.created_at
           }
@@ -171,7 +173,7 @@ export const useControlStore = defineStore('control', {
       this.error = null
 
       try {
-        const history = await listCommands({ site_id: this.siteId })
+        const history = await listCommands({ site_id: this.siteId, limit: 100, offset: 0 })
         this.commandHistory = Array.isArray(history) ? history : []
         return this.commandHistory
       } catch (error) {

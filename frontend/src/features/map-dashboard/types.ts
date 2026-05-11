@@ -10,6 +10,14 @@ export interface MapEquipment {
   status: EquipmentStatus
   power: string
   lngLat: [number, number]
+  metrics?: {
+    voltage?: number
+    current?: number
+    soc?: number
+    frequency?: number
+    pf?: number
+    mode?: string
+  }
 }
 
 export type ConnectionDirection = 'FORWARD' | 'REVERSE' | 'BIDIRECTIONAL'

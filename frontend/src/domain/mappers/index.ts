@@ -26,10 +26,15 @@ export const mapPowerSummaryDto = (dto: PlantSummaryDto): PowerSummary => ({
 })
 
 export const mapResourceDto = (dto: ResourceDto): ResourceInfo => ({
+  // backend/simulator variations normalize
+  // - DIESEL -> DIESEL_GENERATOR
+  // - lowercase types/status -> uppercase
   resource_id: dto.resource_id,
-  resource_type: dto.resource_type,
+  resource_type: ((dto.resource_type ?? '').toUpperCase() === 'DIESEL'
+    ? 'DIESEL_GENERATOR'
+    : (dto.resource_type ?? '').toUpperCase()) as ResourceInfo['resource_type'],
   name: dto.name,
-  status: dto.status,
+  status: dto.status ? dto.status.toUpperCase() : dto.status,
   comms_health: dto.comms_health,
   position: dto.position,
   controllable: dto.controllable,

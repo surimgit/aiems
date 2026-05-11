@@ -8,7 +8,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { DEFAULT_SITE_ID } from '@/app/config'
+import { DEFAULT_OPERATOR_ID, DEFAULT_SITE_ID } from '@/app/config'
 import type { AlarmData } from '@/types/common'
 import { acknowledgeAlarmById, getAlarmList } from '@/api/dashboard.client'
 
@@ -131,7 +131,7 @@ export const useAlarmStore = defineStore(
         }
 
         try {
-          await acknowledgeAlarmById(this.siteId, alarmId)
+          await acknowledgeAlarmById(this.siteId, alarmId, DEFAULT_OPERATOR_ID)
         } catch (error) {
           if (alarm) {
             alarm.acknowledged = previous
