@@ -19,6 +19,7 @@ services:
       - "mqtt:172.31.45.48"
       - "postgres:172.31.44.52"
       - "timescaledb:172.31.44.52"
+      - "state-processor:172.31.33.89"
 
   ai:
     build:
