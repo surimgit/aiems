@@ -209,6 +209,8 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+# .env.example → .env 복사 (빌드 시 환경변수 적용)
+COPY frontend/.env.example ./.env
 RUN npm run build
 EOF
                             docker build -t frontend-builder -f frontend.Dockerfile .
