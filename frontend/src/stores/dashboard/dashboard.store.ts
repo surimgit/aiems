@@ -39,6 +39,10 @@ interface DashboardState {
   error: string | null
   pollingInterval: number
   selectedEssId: string | null
+  resourcesLastFetchedAt: number | null
+  topologyLastFetchedAt: number | null
+  resourcesFetchFailStreak: number
+  topologyFetchFailStreak: number
 }
 
 interface DashboardGetters {
@@ -79,7 +83,11 @@ export const useDashboardStore = defineStore(
       loading: false,
       error: null,
       pollingInterval: 5000,
-      selectedEssId: null
+      selectedEssId: null,
+      resourcesLastFetchedAt: null,
+      topologyLastFetchedAt: null,
+      resourcesFetchFailStreak: 0,
+      topologyFetchFailStreak: 0
     }),
     
     getters: {
@@ -196,8 +204,11 @@ export const useDashboardStore = defineStore(
 
         try {
           this.resources = await getResources(siteId ?? this.siteId)
+          this.resourcesLastFetchedAt = Date.now()
+          this.resourcesFetchFailStreak = 0
         } catch (error) {
           this.error = (error as Error).message
+          this.resourcesFetchFailStreak += 1
           console.error('[DashboardStore] Fetch resources error:', error)
         } finally {
           this.loading = false
@@ -210,8 +221,11 @@ export const useDashboardStore = defineStore(
 
         try {
           this.topology = await getTopology(siteId ?? this.siteId)
+          this.topologyLastFetchedAt = Date.now()
+          this.topologyFetchFailStreak = 0
         } catch (error) {
           this.error = (error as Error).message
+          this.topologyFetchFailStreak += 1
           console.error('[DashboardStore] Fetch topology error:', error)
         } finally {
           this.loading = false

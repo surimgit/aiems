@@ -9,7 +9,6 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
  * - TopologyPage: 토폴로지 (설비 배치)
  * - ForecastPage: 예측 (AI 예측)
  * - RecommendationPage: 권장 조치 (AI 권장)
- * - AlarmPage: 알람/비상
  * - HistoryPage: 이력 (과거 데이터)
  */
 
@@ -46,9 +45,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/alarm',
-    name: 'alarm',
-    component: () => import('@/pages/AlarmPage.vue'),
-    meta: { title: '알람', icon: '🔔' }
+    redirect: { path: '/', query: { panel: 'alarm' } }
   },
   {
     path: '/history',
@@ -64,11 +61,13 @@ const router = createRouter({
 })
 
 // 라우트 메뉴 정보 (사이드바용)
-export const menuItems = routes.map(route => ({
-  path: route.path,
-  name: route.name as string,
-  title: route.meta?.title as string,
-  icon: route.meta?.icon as string
-}))
+export const menuItems = routes
+  .filter((route) => typeof route.name === 'string' && route.meta)
+  .map((route) => ({
+    path: route.path,
+    name: route.name as string,
+    title: route.meta?.title as string,
+    icon: route.meta?.icon as string
+  }))
 
 export default router

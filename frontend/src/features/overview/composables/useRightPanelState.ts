@@ -8,11 +8,6 @@ export const useRightPanelState = () => {
   const isOpen = computed(() => state.value === 'open' || state.value === 'switching')
 
   const open = (nextMode: RightPanelMode) => {
-    if (mode.value === nextMode && isOpen.value) {
-      close()
-      return
-    }
-
     if (!isOpen.value) {
       state.value = 'opening'
       mode.value = nextMode
@@ -32,6 +27,10 @@ export const useRightPanelState = () => {
   }
 
   const toggle = (nextMode: RightPanelMode) => {
+    if (mode.value === nextMode && isOpen.value) {
+      close()
+      return
+    }
     open(nextMode)
   }
 

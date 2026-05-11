@@ -78,8 +78,12 @@ export const getAlarmList = async (siteId: string): Promise<AlarmData[]> => {
   return http.get<AlarmData[]>(`/api/plants/${siteId}/alarms`)
 }
 
-export const acknowledgeAlarmById = async (siteId: string, alarmId: string): Promise<void> => {
-  await http.post<void>(`/api/plants/${siteId}/alarms/${alarmId}/ack`)
+export const acknowledgeAlarmById = async (
+  siteId: string,
+  alarmId: string,
+  ackedBy: string
+): Promise<void> => {
+  await http.post<void>(`/api/plants/${siteId}/alarms/${alarmId}/ack`, { acked_by: ackedBy })
 }
 
 export const getForecastList = async (siteId: string): Promise<ForecastContract[]> => {

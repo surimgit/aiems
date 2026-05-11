@@ -79,6 +79,7 @@
       :equipment-data="equipmentData"
       :ui-positions="uiPositions"
       :map-zoom="mapZoom"
+      :visible-metrics="visibleMetrics"
       :is-edit-mode="isEditMode"
       @edit-equip="openEditModal"
     />
@@ -107,6 +108,14 @@ const isEditMode = ref(false)
 const isAddArmed = ref(false)
 const isUiVisible = ref(true)
 const mapZoom = ref(16)
+const visibleMetrics = ref({
+  voltage: true,
+  current: true,
+  soc: true,
+  frequency: false,
+  pf: false,
+  mode: false
+})
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 const equipmentData = ref<MapEquipment[]>([
   { id: 'solar-1', name: 'SOLAR #1', type: 'GENERATOR', status: 'normal', power: '640 kW', lngLat: [129.074, 35.1795] },

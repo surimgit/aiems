@@ -1,10 +1,13 @@
 import { ref, type Ref } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
-import { useForecastFeature } from '@/features/forecast'
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
 import { useControlStore } from '@/stores/control/control.store'
+import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 
-const POLLING_INTERVAL_MS = 30_000
+const POLLING_INTERVAL_MS = 100
+const TOPOLOGY_REFRESH_TICKS = 10
+const ALARM_REFRESH_TICKS = 20
+const COMMAND_REFRESH_TICKS = 20
 
 export interface UseOverviewPolling {
   isRunning: Ref<boolean>
@@ -13,12 +16,13 @@ export interface UseOverviewPolling {
 }
 
 export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOverviewPolling => {
-  const forecastFeature = useForecastFeature()
   const alarmStore = useAlarmStore()
   const controlStore = useControlStore()
+  const dashboardStore = useDashboardStore()
 
   const isRunning = ref(false)
   const isTickInFlight = ref(false)
+  const tickCount = ref(0)
   let timerId: ReturnType<typeof setTimeout> | null = null
 
   const scheduleNextTick = () => {
@@ -36,10 +40,17 @@ export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOvervie
 
     isTickInFlight.value = true
     try {
+      tickCount.value += 1
+      const shouldRefreshTopology = tickCount.value % TOPOLOGY_REFRESH_TICKS === 0
+      const shouldRefreshAlarms = tickCount.value % ALARM_REFRESH_TICKS === 0
+      const shouldRefreshCommands = tickCount.value % COMMAND_REFRESH_TICKS === 0
+
       await Promise.allSettled([
-        forecastFeature.fetchForecasts(siteId),
-        alarmStore.fetchAlarms(siteId),
-        controlStore.fetchCommandHistory()
+        dashboardStore.fetchPowerSummary(siteId),
+        dashboardStore.fetchResources(siteId),
+        ...(shouldRefreshTopology ? [dashboardStore.fetchTopology(siteId)] : []),
+        ...(shouldRefreshAlarms ? [alarmStore.fetchAlarms(siteId)] : []),
+        ...(shouldRefreshCommands ? [controlStore.fetchCommandHistory()] : [])
       ])
     } catch (error) {
       console.error('[OverviewPolling] Unexpected tick error:', error)
@@ -56,8 +67,10 @@ export const useOverviewPolling = (siteId: string = DEFAULT_SITE_ID): UseOvervie
 
     alarmStore.setSiteId(siteId)
     controlStore.setContext({ siteId })
+    dashboardStore.setSiteId(siteId)
 
     isRunning.value = true
+    tickCount.value = 0
     scheduleNextTick()
   }
 

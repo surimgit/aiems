@@ -34,6 +34,7 @@ const emit = defineEmits<{
 const mapContainer = ref<HTMLElement | null>(null);
 let map: maplibregl.Map | null = null;
 let animationId: number | null = null;
+let hasAutoCentered = false;
 
 const toPointFeatureCollection = () => ({
   type: "FeatureCollection",
@@ -129,6 +130,23 @@ const refreshMapSources = () => {
   if (lines) lines.setData(toLineFeatureCollection() as any);
 };
 
+const centerMapToEquipments = () => {
+  if (!map || props.equipmentData.length === 0) return;
+  const bounds = new maplibregl.LngLatBounds();
+  props.equipmentData.forEach((item) => bounds.extend(item.lngLat));
+
+  if (props.equipmentData.length === 1) {
+    map.easeTo({ center: props.equipmentData[0].lngLat, zoom: 16, duration: 600 });
+    return;
+  }
+
+  map.fitBounds(bounds, {
+    padding: { top: 120, right: 80, bottom: 120, left: 80 },
+    duration: 700,
+    maxZoom: 16,
+  });
+};
+
 const startAnimation = () => {
   const dashLen = 2;
   const gapLen = 2;
@@ -188,8 +206,15 @@ onMounted(() => {
     style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     center: [129.0755, 35.1785],
     zoom: 16,
+    minZoom: 11,
+    maxZoom: 18,
     pitch: 60,
     bearing: -15,
+    renderWorldCopies: false,
+    maxBounds: [
+      [128.6, 34.8],
+      [129.6, 35.6],
+    ],
   });
 
   map.on("zoom", () => {
@@ -448,6 +473,15 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.equipmentData, refreshMapSources, { deep: true });
+watch(
+  () => props.equipmentData,
+  (items) => {
+    if (hasAutoCentered || items.length === 0) return;
+    centerMapToEquipments();
+    hasAutoCentered = true;
+  },
+  { deep: true, immediate: true },
+);
 watch(() => props.connections, refreshMapSources, { deep: true });
 watch(
   () => props.selectedLineId,

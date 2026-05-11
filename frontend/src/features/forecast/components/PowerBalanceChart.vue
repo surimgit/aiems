@@ -26,27 +26,6 @@ const toFiniteNumberOrNull = (value: unknown): number | null => {
   return value
 }
 
-const buildDevFallbackSeries = (): PowerPoint[] => {
-  const baseDate = new Date()
-  baseDate.setMinutes(0, 0, 0)
-
-  return Array.from({ length: 24 }, (_, hourOffset) => {
-    const pointDate = new Date(baseDate)
-    pointDate.setHours(baseDate.getHours() + hourOffset)
-
-    const daytimeFactor = Math.max(0, Math.sin(((hourOffset - 6) / 24) * Math.PI * 2))
-    const generationKw = Math.round(480 + daytimeFactor * 620)
-    const consumptionKw = Math.round(620 + Math.sin(((hourOffset + 2) / 24) * Math.PI * 2) * 210)
-
-    return {
-      ts: pointDate.toISOString(),
-      generationKw,
-      consumptionKw,
-      balanceKw: generationKw - consumptionKw
-    }
-  })
-}
-
 const normalizeSeries = (points: PowerPoint[]): PowerPoint[] => {
   const deduped = new Map<string, PowerPoint>()
   points.forEach((point) => {
@@ -61,7 +40,7 @@ const normalizeSeries = (points: PowerPoint[]): PowerPoint[] => {
 
 const normalizedSeries = computed<PowerPoint[]>(() => {
   if (generationForecast.value.length === 0 || demandForecast.value.length === 0) {
-    return import.meta.env.DEV ? buildDevFallbackSeries() : []
+    return []
   }
 
   const generationMap = new Map<string, number | null>()
