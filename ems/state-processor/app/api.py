@@ -837,6 +837,219 @@ def _register_routes(app: Flask) -> None:
                 "switches": switches,
             }
 
+    # ── Topology CRUD (task_022 방안 A) ────────────────────────────────────────
+    # control_db 에 직접 INSERT/DELETE 하여 dev 서버 EMS 토폴로지를 변경한다.
+    # nginx 는 /api/plants/ 를 모든 HTTP method 허용하여 프록시하므로 추가 설정 불필요.
+
+    @blp.route("/plants/<string:site_id>/topology/nodes")
+    class PlantTopologyNodeListResource(MethodView):
+        def post(self, site_id):
+            """토폴로지 노드 생성 — control_db.topology_nodes INSERT."""
+            if site_id not in _KNOWN_SITES:
+                return jsonify({"error": "site not found"}), 404
+            body = request.get_json(force=True) or {}
+            node_id = (body.get("node_id") or "").strip()
+            node_type = (body.get("node_type") or "").strip().upper()
+            device_id = (body.get("device_id") or body.get("edge_id") or "").strip() or None
+            label = (body.get("label") or node_id).strip()
+            x = float(body.get("x") or 0.0)
+            y = float(body.get("y") or 0.0)
+
+            if not node_id:
+                return jsonify({"error": "node_id is required"}), 400
+            if node_type not in ("GENERATION", "STORAGE", "LOAD", "BUS", "GRID"):
+                return jsonify({"error": "node_type must be GENERATION/STORAGE/LOAD/BUS/GRID"}), 400
+
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO topology_nodes (site_id, node_id, node_type, device_id, label, x, y)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (site_id, node_id) DO UPDATE
+                            SET node_type = EXCLUDED.node_type,
+                                device_id = EXCLUDED.device_id,
+                                label     = EXCLUDED.label,
+                                x         = EXCLUDED.x,
+                                y         = EXCLUDED.y
+                        """,
+                        (site_id, node_id, node_type, device_id, label, x, y),
+                    )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                return jsonify({"error": str(e)}), 500
+            finally:
+                pool.putconn(conn)
+
+            return jsonify({"node_id": node_id, "status": "created"}), 201
+
+    @blp.route("/plants/<string:site_id>/topology/nodes/<string:node_id>")
+    class PlantTopologyNodeResource(MethodView):
+        def delete(self, site_id, node_id):
+            """토폴로지 노드 삭제 — 연결된 라인/스위치도 cascade 삭제."""
+            if site_id not in _KNOWN_SITES:
+                return jsonify({"error": "site not found"}), 404
+
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    # 연결된 라인 조회 (cascade 용)
+                    cur.execute(
+                        """
+                        SELECT line_id FROM topology_lines
+                        WHERE site_id = %s AND (from_node_id = %s OR to_node_id = %s)
+                        """,
+                        (site_id, node_id, node_id),
+                    )
+                    line_ids = [r[0] for r in cur.fetchall()]
+
+                    # 연결된 스위치 삭제
+                    if line_ids:
+                        cur.execute(
+                            "DELETE FROM topology_switches WHERE site_id = %s AND line_id = ANY(%s)",
+                            (site_id, line_ids),
+                        )
+                    # 라인 삭제
+                    cur.execute(
+                        "DELETE FROM topology_lines WHERE site_id = %s AND (from_node_id = %s OR to_node_id = %s)",
+                        (site_id, node_id, node_id),
+                    )
+                    # 노드 삭제
+                    cur.execute(
+                        "DELETE FROM topology_nodes WHERE site_id = %s AND node_id = %s",
+                        (site_id, node_id),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return jsonify({"error": f"node '{node_id}' not found"}), 404
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                return jsonify({"error": str(e)}), 500
+            finally:
+                pool.putconn(conn)
+
+            return jsonify({"node_id": node_id, "status": "deleted", "removed_lines": line_ids}), 200
+
+    @blp.route("/plants/<string:site_id>/topology/lines")
+    class PlantTopologyLineListResource(MethodView):
+        def post(self, site_id):
+            """토폴로지 라인 + 스위치 생성 — control_db INSERT."""
+            if site_id not in _KNOWN_SITES:
+                return jsonify({"error": "site not found"}), 404
+            body = request.get_json(force=True) or {}
+            line_id = (body.get("line_id") or "").strip()
+            from_node_id = (body.get("from_node_id") or "").strip()
+            to_node_id = (body.get("to_node_id") or "").strip()
+            rating_kw = float(body.get("rating_kw") or 0.0)
+
+            if not line_id or not from_node_id or not to_node_id:
+                return jsonify({"error": "line_id, from_node_id, to_node_id are required"}), 400
+
+            # 스위치 정보 (없으면 기본값)
+            sw = body.get("switch") or {}
+            switch_id = (sw.get("switch_id") or f"sw-{line_id}").strip()
+            switch_type = (sw.get("switch_type") or "CB").strip()
+            is_closed = bool(sw.get("is_closed", True))
+            controllable = bool(sw.get("controllable", True))
+
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO topology_lines (site_id, line_id, from_node_id, to_node_id, rating_kw)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (site_id, line_id) DO NOTHING
+                        """,
+                        (site_id, line_id, from_node_id, to_node_id, rating_kw),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return jsonify({"error": f"line '{line_id}' already exists"}), 409
+
+                    cur.execute(
+                        """
+                        INSERT INTO topology_switches (site_id, switch_id, line_id, switch_type, is_closed, controllable)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (site_id, switch_id) DO NOTHING
+                        """,
+                        (site_id, switch_id, line_id, switch_type, is_closed, controllable),
+                    )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                return jsonify({"error": str(e)}), 500
+            finally:
+                pool.putconn(conn)
+
+            return jsonify({"line_id": line_id, "switch_id": switch_id, "status": "created"}), 201
+
+    @blp.route("/plants/<string:site_id>/topology/lines/<string:line_id>")
+    class PlantTopologyLineResource(MethodView):
+        def delete(self, site_id, line_id):
+            """토폴로지 라인 삭제 — 연결된 스위치도 함께 삭제."""
+            if site_id not in _KNOWN_SITES:
+                return jsonify({"error": "site not found"}), 404
+
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM topology_switches WHERE site_id = %s AND line_id = %s",
+                        (site_id, line_id),
+                    )
+                    cur.execute(
+                        "DELETE FROM topology_lines WHERE site_id = %s AND line_id = %s",
+                        (site_id, line_id),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return jsonify({"error": f"line '{line_id}' not found"}), 404
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                return jsonify({"error": str(e)}), 500
+            finally:
+                pool.putconn(conn)
+
+            return jsonify({"line_id": line_id, "status": "deleted"}), 200
+
+        def patch(self, site_id, line_id):
+            """토폴로지 라인 스위치 상태 변경 — is_closed UPDATE."""
+            if site_id not in _KNOWN_SITES:
+                return jsonify({"error": "site not found"}), 404
+            body = request.get_json(force=True) or {}
+            is_closed = body.get("is_closed")
+            if is_closed is None:
+                return jsonify({"error": "is_closed is required"}), 400
+
+            pool = get_control_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE topology_switches SET is_closed = %s WHERE site_id = %s AND line_id = %s",
+                        (bool(is_closed), site_id, line_id),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return jsonify({"error": f"line '{line_id}' not found"}), 404
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                return jsonify({"error": str(e)}), 500
+            finally:
+                pool.putconn(conn)
+
+            return jsonify({"line_id": line_id, "is_closed": bool(is_closed), "status": "updated"}), 200
+
     # ── 이벤트 로그 ────────────────────────────────────────────────────────────
 
     @blp.route("/plants/<string:site_id>/events")
