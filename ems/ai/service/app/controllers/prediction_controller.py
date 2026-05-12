@@ -5,6 +5,10 @@ from flask_smorest import Blueprint
 
 from ..schemas.prediction_schema import (
     CapacityFactorPredictionRequestSchema,
+    ForecastAccuracyQuerySchema,
+    ForecastAccuracyResponseSchema,
+    ForecastActualUpsertRequestSchema,
+    ForecastActualUpsertResponseSchema,
     ForecastRequestSchema,
     ForecastResponseSchema,
     LiveSatelliteCapacityFactorPredictionRequestSchema,
@@ -80,6 +84,22 @@ class ForecastResource(MethodView):
     @blp.response(200, ForecastResponseSchema)
     def post(self, payload):
         return forecast_service.forecast(payload)
+
+
+@blp.route("/forecast/actuals")
+class ForecastActualsResource(MethodView):
+    @blp.arguments(ForecastActualUpsertRequestSchema)
+    @blp.response(200, ForecastActualUpsertResponseSchema)
+    def post(self, payload):
+        return forecast_service.save_actuals(payload)
+
+
+@blp.route("/forecast/accuracy")
+class ForecastAccuracyResource(MethodView):
+    @blp.arguments(ForecastAccuracyQuerySchema, location="query")
+    @blp.response(200, ForecastAccuracyResponseSchema)
+    def get(self, payload):
+        return forecast_service.accuracy(payload)
 
 
 @blp.route("/site-profile/structure")
