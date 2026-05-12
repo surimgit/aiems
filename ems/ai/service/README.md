@@ -3,7 +3,7 @@
 Flask runtime service for EMS AI prediction.
 
 This folder is the deployable MSA boundary. Offline collection, preprocessing,
-and training jobs remain outside this service.
+and training jobs remain outside this service .
 
 ## Run Locally
 
