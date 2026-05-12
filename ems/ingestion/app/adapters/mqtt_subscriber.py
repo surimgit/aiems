@@ -51,11 +51,21 @@ async def run(publisher: RedisPublisher) -> None:
                             if len(parts) == 2 and parts[1] == "heartbeat":
                                 try:
                                     hb = json.loads(message.payload)
-                                    device_id = hb.get("device_id")
+                                    device_id = hb.get("device_id") or hb.get("resource_id")
+                                    edge_id = (
+                                        hb.get("edge_id")
+                                        or hb.get("edgeId")
+                                        or hb.get("edgeID")
+                                        or device_id
+                                    )
                                     if device_id:
+                                        timestamp = hb.get("timestamp", "")
                                         key = f"{_HEARTBEAT_PREFIX}{SITE_ID}:{device_id}"
-                                        await redis.setex(key, _HEARTBEAT_TTL_SEC, hb.get("timestamp", ""))
-                                        print(f"[ingestion] heartbeat: {device_id}")
+                                        await redis.setex(key, _HEARTBEAT_TTL_SEC, timestamp)
+                                        if edge_id and edge_id != device_id:
+                                            edge_key = f"{_HEARTBEAT_PREFIX}{SITE_ID}:{edge_id}:{device_id}"
+                                            await redis.setex(edge_key, _HEARTBEAT_TTL_SEC, timestamp)
+                                        print(f"[ingestion] heartbeat: edge={edge_id} device={device_id}")
                                 except Exception as e:
                                     print(f"[ingestion] heartbeat 파싱 실패: {e}")
                                 continue

@@ -30,12 +30,13 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
 
     # --- 해제 조건: 부족 or ESS 충전 가능 ---
     if net_power <= 0 or any_can_charge:
-        for device_id, _ in solar_targets:
+        for device_id, state in solar_targets:
             key = f"{_REDIS_PREFIX}{device_id}"
             if await redis.exists(key):
                 await redis.delete(key)
                 commands.append({
                     "device_id": device_id,
+                    "edge_id": state.get("edge_id"),
                     "resource_type": "solar",
                     "command_type": "clear_curtailment",
                     "payload": {},
@@ -48,10 +49,11 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     target_total_kw = max(solar_p - net_power, 0.0)
     per_device_limit = round(target_total_kw / len(solar_targets), 1)
 
-    for device_id, _ in solar_targets:
+    for device_id, state in solar_targets:
         await redis.set(f"{_REDIS_PREFIX}{device_id}", "1")
         commands.append({
             "device_id": device_id,
+            "edge_id": state.get("edge_id"),
             "resource_type": "solar",
             "command_type": "curtailment",
             "payload": {"limit_kw": per_device_limit},

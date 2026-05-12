@@ -21,7 +21,7 @@ class TelemetryCoalescer:
     ) -> None:
         self._publisher = publisher
         self._interval_sec = interval_sec
-        self._windows: dict[tuple[str, str, str, str], _TelemetryWindow] = {}
+        self._windows: dict[tuple[str, str, str, str, str], _TelemetryWindow] = {}
         self._lock = asyncio.Lock()
 
     async def add(self, stream: str, envelope: dict) -> None:
@@ -47,7 +47,7 @@ class TelemetryCoalescer:
         if not pending:
             return
 
-        failed: dict[tuple[str, str, str, str], tuple[str, dict]] = {}
+        failed: dict[tuple[str, str, str, str, str], tuple[str, dict]] = {}
         counts: Counter[str] = Counter()
 
         items = list(pending.items())
@@ -74,7 +74,7 @@ class TelemetryCoalescer:
 
     async def _restore_pending(
         self,
-        pending: dict[tuple[str, str, str, str], tuple[str, dict]],
+        pending: dict[tuple[str, str, str, str, str], tuple[str, dict]],
     ) -> None:
         async with self._lock:
             for key, (stream, envelope) in pending.items():
@@ -159,10 +159,11 @@ class _NumericStat:
         }
 
 
-def _key(stream: str, envelope: dict) -> tuple[str, str, str, str]:
+def _key(stream: str, envelope: dict) -> tuple[str, str, str, str, str]:
     return (
         stream,
         str(envelope.get("site_id") or ""),
+        str(envelope.get("edge_id") or ""),
         str(envelope.get("resource_type") or ""),
         str(envelope.get("resource_id") or ""),
     )
