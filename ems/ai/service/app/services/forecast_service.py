@@ -10,6 +10,7 @@ from astral.sun import elevation
 
 from .load_service import LoadService
 from .prediction_service import PredictionService
+from ..repositories.forecast_repository import ForecastRepository
 
 
 class ForecastService:
@@ -17,9 +18,11 @@ class ForecastService:
         self,
         prediction_service: PredictionService | None = None,
         load_service: LoadService | None = None,
+        forecast_repository: ForecastRepository | None = None,
     ) -> None:
         self.prediction_service = prediction_service or PredictionService()
         self.load_service = load_service or LoadService()
+        self.forecast_repository = forecast_repository or ForecastRepository()
 
     def forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
         solar_payload = dict(payload.get("solar") or {})
@@ -45,7 +48,7 @@ class ForecastService:
 
         forecasts = self._merge(solar_result, load_result)
         recommendations = self._recommend(forecasts, payload)
-        return {
+        result = {
             "ok": True,
             "task": "forecast",
             "rows": len(forecasts),
@@ -54,6 +57,40 @@ class ForecastService:
             "solar_result": solar_result,
             "load_result": load_result,
         }
+        result["persistence"] = self._persist(payload, result)
+        return result
+
+    def _persist(self, payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+        if not self.forecast_repository.enabled:
+            return {"enabled": False, "saved": False}
+        try:
+            forecast_run_id = self.forecast_repository.save_forecast(payload, result)
+        except Exception as exc:  # pragma: no cover - defensive boundary for external DB
+            self._log_persistence_failure(payload, exc)
+            return {"enabled": True, "saved": False, "error": str(exc)}
+        result["forecast_run_id"] = forecast_run_id
+        return {"enabled": True, "saved": True, "forecast_run_id": forecast_run_id}
+
+    def save_actuals(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True, "task": "forecast_actuals", **self.forecast_repository.save_actuals(payload)}
+
+    def accuracy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True, "task": "forecast_accuracy", **self.forecast_repository.forecast_accuracy(payload)}
+
+    def _log_persistence_failure(self, payload: dict[str, Any], exc: Exception) -> None:
+        try:
+            self.forecast_repository.save_event(
+                None,
+                "FORECAST_SAVE_FAILED",
+                str(exc),
+                {
+                    "site_id": payload.get("site_id") or (payload.get("site") or {}).get("site_id"),
+                    "start_time": payload.get("start_time"),
+                    "periods": payload.get("periods"),
+                },
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _is_horizon_request(payload: dict[str, Any]) -> bool:

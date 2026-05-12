@@ -147,14 +147,49 @@ class ForecastRequestSchema(Schema):
     net_load_high_threshold_kw = fields.Float(load_default=0.0)
 
 
+class ForecastActualUpsertRequestSchema(Schema):
+    site_id = fields.String(load_default=None, allow_none=True)
+    forecast_run_id = fields.String(load_default=None, allow_none=True)
+    actual_source = fields.String(load_default=None, allow_none=True)
+    actuals = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True, validate=validate.Length(min=1))
+
+
+class ForecastAccuracyQuerySchema(Schema):
+    site_id = fields.String(load_default=None, allow_none=True)
+    forecast_run_id = fields.String(load_default=None, allow_none=True)
+    from_time = fields.String(load_default=None, allow_none=True)
+    to_time = fields.String(load_default=None, allow_none=True)
+    limit = fields.Integer(load_default=100, validate=validate.Range(min=1, max=1000))
+    min_denominator_kw = fields.Float(load_default=1.0, validate=validate.Range(min=0.001))
+
+
 class ForecastResponseSchema(Schema):
     ok = fields.Boolean(required=True)
     task = fields.String(required=True)
     rows = fields.Integer(required=True)
+    forecast_run_id = fields.String(allow_none=True)
+    persistence = fields.Raw(allow_none=True)
     forecasts = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     recommendations = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     solar_result = fields.Raw(allow_none=True)
     load_result = fields.Raw(allow_none=True)
+
+
+class ForecastActualUpsertResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(required=True)
+    matched = fields.Integer(required=True)
+    skipped = fields.Integer(required=True)
+    errors = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
+
+
+class ForecastAccuracyResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(required=True)
+    summary = fields.Dict(keys=fields.String(), values=fields.Raw(), required=True)
+    rows = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
 
 
 class PredictionModelStatusSchema(Schema):
