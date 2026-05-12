@@ -1,6 +1,7 @@
 import json
 import redis.asyncio as aioredis
 from ..config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_STATE_STREAM
+from ..realtime import emit_state_update
 
 
 # 시뮬레이터 telemetry 주기(0.5~1s) 대비 충분한 여유.
@@ -34,6 +35,7 @@ class StatePublisher:
 
         await self._client.set(key, value, ex=_STATE_TTL_SEC)
         await self._client.xadd(REDIS_STATE_STREAM, {"data": value})
+        emit_state_update(snapshot)
 
     async def close(self) -> None:
         await self._client.aclose()

@@ -44,3 +44,13 @@ CONTROL_DB_PASSWORD = os.getenv("CONTROL_PASSWORD", "")
 # state-processor 는 control_db (EMS 메타데이터) 와 이 API (런타임 토폴로지) 를
 # 합쳐서 응답한다. 운영자가 simulator UI 에서 라인을 추가하면 자동 반영.
 SIMULATOR_TOPOLOGY_URL = os.getenv("SIMULATOR_TOPOLOGY_URL", "http://host.docker.internal:8081")
+
+# ── Socket.IO ──────────────────────────────────────────────────────────────
+# 로컬 프론트/게이트웨이 개발 편의를 위해 기본은 전체 허용.
+# 운영에서 별도 도메인으로 제한하려면 쉼표 구분 문자열로 지정한다.
+_socketio_origins = os.getenv("SOCKETIO_CORS_ALLOWED_ORIGINS", "*")
+SOCKETIO_CORS_ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _socketio_origins.split(",") if origin.strip()]
+    if _socketio_origins != "*"
+    else "*"
+)

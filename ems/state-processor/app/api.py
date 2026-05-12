@@ -15,6 +15,7 @@ from .config import (
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
     SIMULATOR_TOPOLOGY_URL,
 )
+from .extensions import socketio
 
 _KNOWN_SITES = [SITE_ID]
 
@@ -168,6 +169,8 @@ def _compute_summary(site_id: str, states: list[dict]) -> dict:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    socketio.init_app(app)
+    from . import realtime  # noqa: F401  # Socket.IO event handlers registration.
     PrometheusMetrics(app, group_by="endpoint")
     app.config["API_TITLE"] = "State API"
     app.config["API_VERSION"] = "1.0"
