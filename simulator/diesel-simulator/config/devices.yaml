@@ -1,7 +1,0 @@
-plant_id: PLANT-ALPHA
-mqtt_broker_host: mosquitto
-mqtt_broker_port: 1883
-
-devices:
-  - device_id: diesel-01
-    max_capacity_kw: 1000.0
