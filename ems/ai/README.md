@@ -6,6 +6,7 @@
 - [Baseline Solar Training Result](./docs/ml/baseline-training-result.md)
 - [Load Profile And LLM Structuring](./docs/ml/load-profile-and-llm.md)
 - [AI Code Map](./docs/ops/ai-code-map.md)
+- [AI Forecast Persistence And API Flow](./docs/AI_FORECAST_PERSISTENCE_AND_API_FLOW.md)
 
 Current decision:
 
@@ -28,6 +29,7 @@ control: EMS Rule Engine
 가장 먼저 볼 문서:
 
 - [AI Docs Guide](./docs/GUIDE.md)
+- [AI Forecast Persistence And API Flow](./docs/AI_FORECAST_PERSISTENCE_AND_API_FLOW.md)
 
 ## Folder Roles
 
