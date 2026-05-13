@@ -28,12 +28,10 @@ class RunpodClient:
         runpod_input = dict(payload)
         runpod_input["task"] = task
 
-        policy = self._policy()
-        wait_ms = policy["executionTimeout"]
-        url = f"{settings.runpod_base_url.rstrip('/')}/{settings.runpod_endpoint_id}/runsync?wait={wait_ms}"
+        url = f"{settings.runpod_base_url.rstrip('/')}/{settings.runpod_endpoint_id}/runsync"
         response = self.session.post(
             url,
-            json={"input": runpod_input, "policy": policy},
+            json={"input": runpod_input},
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=settings.runpod_timeout_seconds,
         )
@@ -76,13 +74,3 @@ class RunpodClient:
     def _env_secret(name: str) -> str | None:
         value = env_str(name)
         return value or None
-
-    @staticmethod
-    def _policy() -> dict[str, int | bool]:
-        execution_timeout = max(5_000, int(settings.runpod_execution_timeout_ms))
-        ttl = max(execution_timeout + 60_000, int(settings.runpod_ttl_ms))
-        return {
-            "executionTimeout": execution_timeout,
-            "lowPriority": False,
-            "ttl": ttl,
-        }

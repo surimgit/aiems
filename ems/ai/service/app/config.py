@@ -36,8 +36,6 @@ class Settings:
     runpod_api_key_env: str = env_str("S305_RUNPOD_API_KEY_ENV", "RUNPOD_KEY")
     runpod_base_url: str = env_str("S305_RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
     runpod_timeout_seconds: float = env_float("S305_RUNPOD_TIMEOUT_SECONDS", 900.0)
-    runpod_execution_timeout_ms: int = int(env_float("S305_RUNPOD_EXECUTION_TIMEOUT_SECONDS", 900.0) * 1000)
-    runpod_ttl_ms: int = int(env_float("S305_RUNPOD_TTL_SECONDS", 3600.0) * 1000)
     schedule_token: str | None = env_str("S305_AI_SCHEDULE_TOKEN")
     forecast_solar_backend: str = env_str("S305_FORECAST_SOLAR_BACKEND", "live_satellite")
     ai_db_enabled: bool = env_bool("S305_AI_DB_ENABLED", True)
