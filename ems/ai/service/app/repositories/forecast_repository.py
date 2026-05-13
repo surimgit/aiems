@@ -182,6 +182,96 @@ class ForecastRepository:
 
         return {"enabled": True, "matched": matched, "skipped": skipped, "errors": errors}
 
+    def latest_forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "found": False,
+                "forecast_run_id": None,
+                "forecasts": [],
+                "recommendations": [],
+            }
+
+        import psycopg
+
+        site_id = payload.get("site_id")
+        if not site_id:
+            raise ValueError("site_id is required")
+
+        with psycopg.connect(self._conninfo()) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        forecast_run_id,
+                        site_id,
+                        trigger_source,
+                        base_time,
+                        horizon_hours,
+                        model_name,
+                        model_version,
+                        status,
+                        response_payload_json,
+                        created_at,
+                        completed_at
+                    FROM public.ai_forecast_run
+                    WHERE site_id = %s
+                      AND status = 'SUCCESS'
+                    ORDER BY completed_at DESC NULLS LAST, created_at DESC
+                    LIMIT 1
+                    """,
+                    (site_id,),
+                )
+                run = cur.fetchone()
+                if not run:
+                    return {
+                        "enabled": True,
+                        "found": False,
+                        "forecast_run_id": None,
+                        "forecasts": [],
+                        "recommendations": [],
+                    }
+
+                forecast_run_id = run[0]
+                cur.execute(
+                    """
+                    SELECT
+                        forecast_point_id,
+                        site_id,
+                        target_time,
+                        horizon_step,
+                        predicted_solar_kw,
+                        predicted_load_kw,
+                        predicted_net_load_kw,
+                        confidence,
+                        raw_output_json
+                    FROM public.ai_forecast_point
+                    WHERE forecast_run_id = %s
+                    ORDER BY horizon_step ASC, target_time ASC
+                    """,
+                    (forecast_run_id,),
+                )
+                points = cur.fetchall()
+
+        response_payload = self._json_value(run[8]) or {}
+        forecasts = [self._forecast_point_row(row) for row in points]
+        return {
+            "enabled": True,
+            "found": True,
+            "forecast_run_id": str(forecast_run_id),
+            "site_id": run[1],
+            "trigger_source": run[2],
+            "base_time": run[3].isoformat() if run[3] else None,
+            "horizon_hours": run[4],
+            "model_name": run[5],
+            "model_version": run[6],
+            "status": run[7],
+            "created_at": run[9].isoformat() if run[9] else None,
+            "completed_at": run[10].isoformat() if run[10] else None,
+            "forecasts": forecasts,
+            "recommendations": response_payload.get("recommendations") or [],
+        }
+
     def forecast_accuracy(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.enabled:
             return {"enabled": False, "summary": {}, "rows": []}
@@ -517,3 +607,40 @@ class ForecastRepository:
         if confidence is None:
             return None
         return float(confidence)
+
+    @staticmethod
+    def _json_value(value: Any) -> dict[str, Any] | list[Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
+    @staticmethod
+    def _forecast_point_row(record: tuple[Any, ...]) -> dict[str, Any]:
+        (
+            forecast_point_id,
+            site_id,
+            target_time,
+            horizon_step,
+            predicted_solar_kw,
+            predicted_load_kw,
+            predicted_net_load_kw,
+            confidence,
+            raw_output_json,
+        ) = record
+        raw_output = ForecastRepository._json_value(raw_output_json) or {}
+        row = dict(raw_output) if isinstance(raw_output, dict) else {}
+        row.update({
+            "forecast_point_id": int(forecast_point_id),
+            "site_id": site_id,
+            "target_time": target_time.isoformat() if target_time else None,
+            "horizon_step": int(horizon_step) if horizon_step is not None else None,
+            "predicted_solar_kw": ForecastRepository._optional_float(predicted_solar_kw),
+            "predicted_load_kw": ForecastRepository._optional_float(predicted_load_kw),
+            "predicted_net_load_kw": ForecastRepository._optional_float(predicted_net_load_kw),
+            "confidence": ForecastRepository._optional_float(confidence),
+        })
+        return row

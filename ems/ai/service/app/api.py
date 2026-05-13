@@ -30,4 +30,8 @@ def create_app() -> Flask:
     def handle_file_not_found(error: FileNotFoundError):
         return jsonify({"status": "not_found", "message": str(error)}), 404
 
+    @app.errorhandler(PermissionError)
+    def handle_permission_error(error: PermissionError):
+        return jsonify({"status": "unauthorized", "message": str(error)}), 401
+
     return app

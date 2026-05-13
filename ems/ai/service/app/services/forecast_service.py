@@ -60,6 +60,21 @@ class ForecastService:
         result["persistence"] = self._persist(payload, result)
         return result
 
+    def scheduled_forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.forecast({
+            **payload,
+            "trigger_source": payload.get("trigger_source") or "scheduled",
+        })
+
+    def latest(self, payload: dict[str, Any]) -> dict[str, Any]:
+        latest = self.forecast_repository.latest_forecast(payload)
+        return {
+            "ok": True,
+            "task": "forecast_latest",
+            "rows": len(latest.get("forecasts") or []),
+            **latest,
+        }
+
     def _persist(self, payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         if not self.forecast_repository.enabled:
             return {"enabled": False, "saved": False}

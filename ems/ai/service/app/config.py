@@ -36,6 +36,7 @@ class Settings:
     runpod_api_key_env: str = env_str("S305_RUNPOD_API_KEY_ENV", "RUNPOD_KEY")
     runpod_base_url: str = env_str("S305_RUNPOD_BASE_URL", "https://api.runpod.ai/v2")
     runpod_timeout_seconds: float = env_float("S305_RUNPOD_TIMEOUT_SECONDS", 180.0)
+    schedule_token: str | None = env_str("S305_AI_SCHEDULE_TOKEN")
     ai_db_enabled: bool = env_bool("S305_AI_DB_ENABLED", True)
     ai_database_url: str | None = env_str("S305_AI_DATABASE_URL") or env_str("DATABASE_URL")
     ai_db_host: str | None = env_str("S305_AI_DB_HOST") or env_str("AI_DB_HOST") or env_str("POSTGRES_HOST")
