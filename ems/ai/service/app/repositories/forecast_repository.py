@@ -339,7 +339,10 @@ class ForecastRepository:
         if not settings.ai_db_host:
             raise RuntimeError("S305_AI_DB_HOST or S305_AI_DATABASE_URL is required when S305_AI_DB_ENABLED=true")
         if not settings.ai_db_password:
-            raise RuntimeError("S305_AI_DB_PASSWORD is required when S305_AI_DB_ENABLED=true")
+            raise RuntimeError(
+                "S305_AI_DB_PASSWORD, AI_DB_PASSWORD, POSTGRES_ROOT_PASSWORD, or AI_PASSWORD "
+                "is required when S305_AI_DB_ENABLED=true"
+            )
         return (
             f"host={settings.ai_db_host} "
             f"port={settings.ai_db_port} "

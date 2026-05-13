@@ -18,7 +18,7 @@ DB_HOST = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT", 5432))
 DB_NAME = os.getenv("AI_DB") or os.getenv("DB_NAME", "ai_db")
 DB_USER = os.getenv("AI_USER") or os.getenv("DB_USER", "ai_user")
-DB_PASSWORD = os.getenv("AI_PASSWORD") or os.getenv("DB_PASSWORD", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_ROOT_PASSWORD") or os.getenv("AI_PASSWORD", "")
 
 # ── OpenAI (선택) ─────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

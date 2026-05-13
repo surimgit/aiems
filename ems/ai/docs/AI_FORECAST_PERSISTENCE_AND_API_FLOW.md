@@ -176,7 +176,7 @@ AI 서비스는 기존 배포 env를 우선 사용한다.
 | port | `S305_AI_DB_PORT` → `AI_DB_PORT` → `POSTGRES_PORT` |
 | database | `S305_AI_DB_NAME` → `AI_DB` |
 | user | `S305_AI_DB_USER` → `AI_USER` |
-| password | `S305_AI_DB_PASSWORD` → `AI_DB_PASSWORD` → `AI_PASSWORD` |
+| password | `S305_AI_DB_PASSWORD` → `AI_DB_PASSWORD` → `POSTGRES_ROOT_PASSWORD` → `AI_PASSWORD` |
 
 CI/CD가 dev/app 별로 다음 값을 주입하면 AI 서비스는 그대로 따른다.
 

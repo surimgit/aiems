@@ -44,7 +44,10 @@ class Settings:
     ai_db_name: str = env_str("S305_AI_DB_NAME") or env_str("AI_DB", "ai_db")
     ai_db_user: str = env_str("S305_AI_DB_USER") or env_str("AI_USER", "ai_user")
     ai_db_password: str | None = (
-        env_str("S305_AI_DB_PASSWORD") or env_str("AI_DB_PASSWORD") or env_str("AI_PASSWORD")
+        env_str("S305_AI_DB_PASSWORD")
+        or env_str("AI_DB_PASSWORD")
+        or env_str("POSTGRES_ROOT_PASSWORD")
+        or env_str("AI_PASSWORD")
     )
 
 
