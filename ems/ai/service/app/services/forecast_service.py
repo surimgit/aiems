@@ -101,6 +101,7 @@ class ForecastService:
             "ok": True,
             "task": "forecast_latest",
             "rows": len(latest.get("forecasts") or []),
+            "warnings": latest.get("warnings") or [],
             **latest,
         }
 
@@ -364,6 +365,7 @@ class ForecastService:
                 row["predicted_solar_kw"] = item.get("predicted_generation_kw", item.get("predicted_solar_kw"))
                 row["solar_confidence"] = item.get("confidence")
                 row["solar_model_version"] = item.get("model_version")
+                row["solar_backend"] = item.get("backend")
         if load_result:
             for item in load_result.get("predictions", []):
                 target_time = item.get("target_time")

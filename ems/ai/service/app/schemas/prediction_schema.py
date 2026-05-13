@@ -214,6 +214,8 @@ class ForecastLatestResponseSchema(Schema):
     status = fields.String(allow_none=True)
     created_at = fields.String(allow_none=True)
     completed_at = fields.String(allow_none=True)
+    issued_at = fields.String(allow_none=True)
+    warnings = fields.List(fields.String(), load_default=list)
     forecasts = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     recommendations = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
 
