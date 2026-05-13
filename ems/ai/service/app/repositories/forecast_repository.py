@@ -465,6 +465,9 @@ class ForecastRepository:
 
     @staticmethod
     def _ensure_latest_24h_table(cur: Any) -> None:
+        cur.execute("SELECT to_regclass('public.ai_forecast_latest_24h') IS NOT NULL")
+        if bool(cur.fetchone()[0]):
+            return
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS public.ai_forecast_latest_24h (
