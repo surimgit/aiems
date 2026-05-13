@@ -65,6 +65,7 @@ def _extract_location(data: dict) -> dict | None:
         _as_dict(payload.get("location")),
         _as_dict(payload.get("geo")),
         _as_dict(payload.get("position")),
+        _as_dict(payload.get("spec")),
     ])
 
     for source in candidates:
