@@ -87,6 +87,7 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
 def _start(diesel: dict, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
+        "edge_id": diesel.get("edge_id"),
         "resource_type": "diesel",
         "command_type": "start",
         "payload": {},
@@ -98,6 +99,7 @@ def _start(diesel: dict, reason: str) -> dict:
 def _stop(diesel: dict, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
+        "edge_id": diesel.get("edge_id"),
         "resource_type": "diesel",
         "command_type": "stop",
         "payload": {},
@@ -109,6 +111,7 @@ def _stop(diesel: dict, reason: str) -> dict:
 def _load_control(diesel: dict, target_kw: float, reason: str) -> dict:
     return {
         "device_id": diesel["device_id"],
+        "edge_id": diesel.get("edge_id"),
         "resource_type": "diesel",
         "command_type": "load_control",
         "payload": {"target_kw": target_kw},

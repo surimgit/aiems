@@ -53,15 +53,20 @@ class EventPublisher:
         envelope = {
             "event_id": f"evt-{uuid.uuid4().hex[:12]}",
             "site_id": SITE_ID,
+            "edge_id": event.get("edge_id"),
             "device_id": event["device_id"],
             "resource_type": event["resource_type"].upper(),
             "event_type": event["event_type"],
             "severity": severity,
             "message": event.get("message", ""),
             "payload": event.get("payload", {}),
+            "location": event.get("location"),
+            "latitude": event.get("latitude"),
+            "longitude": event.get("longitude"),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": "control",
         }
+        envelope = {key: value for key, value in envelope.items() if value is not None}
         data = json.dumps(envelope, ensure_ascii=False)
 
         if severity == "CRITICAL":

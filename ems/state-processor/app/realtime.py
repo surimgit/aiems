@@ -47,8 +47,12 @@ def emit_state_update(snapshot: dict) -> None:
         "type": "state_update",
         "timestamp": snapshot.get("calculated_at") or snapshot.get("timestamp"),
         "site_id": site_id,
+        "edge_id": snapshot.get("edge_id"),
         "device_id": snapshot.get("device_id"),
         "resource_type": snapshot.get("resource_type"),
+        "location": snapshot.get("location"),
+        "latitude": snapshot.get("latitude"),
+        "longitude": snapshot.get("longitude"),
         "data": snapshot,
     }
 

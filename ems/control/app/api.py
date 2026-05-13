@@ -252,6 +252,7 @@ def _register_routes(app: Flask) -> None:
 
     class OperatorCommandRequestSchema(Schema):
         site_id = fields.String(required=True)
+        edge_id = fields.String(load_default=None, allow_none=True)
         device_id = fields.String(required=True)
         resource_type = fields.String(required=True)
         action = fields.String(
@@ -273,6 +274,7 @@ def _register_routes(app: Flask) -> None:
         command_id = fields.String()
         status = fields.String()
         site_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         device_id = fields.String()
         action = fields.String()
         created_at = fields.DateTime()
@@ -405,6 +407,7 @@ def _register_routes(app: Flask) -> None:
                     "kind": "command",
                     "command_id": command_id,
                     "site_id": payload["site_id"],
+                    "edge_id": payload.get("edge_id"),
                     "device_id": payload["device_id"],
                     "resource_type": payload["resource_type"].upper(),
                     "command_type": translated["command_type"],
@@ -414,6 +417,7 @@ def _register_routes(app: Flask) -> None:
                     "ack_status": "PENDING",
                     "timestamp": now.isoformat(),
                 }
+                _envelope = {k: v for k, v in _envelope.items() if v is not None}
                 _r.xadd("mg:db:write", {"data": json.dumps(_envelope, ensure_ascii=False)})
                 _r.close()
             except Exception as e:
@@ -445,15 +449,22 @@ def _register_routes(app: Flask) -> None:
                         password=REDIS_PASSWORD, socket_connect_timeout=2,
                     )
                     translated = _translate_action(payload["action"])
-                    _r.set(
-                        f"desired:{SITE_ID}:{device_id}",
-                        json.dumps({
+                    desired_value = json.dumps({
                             "command_id": command_id,
                             "command_type": translated["command_type"],
                             "payload": translated["payload"],
                             "issued_by": payload["requested_by"],
                             "issued_at": _time.time(),
-                        }, ensure_ascii=False),
+                        }, ensure_ascii=False)
+                    if payload.get("edge_id") and payload["edge_id"] != device_id:
+                        _r.set(
+                            f"desired:{SITE_ID}:{payload['edge_id']}:{device_id}",
+                            desired_value,
+                            ex=43200,
+                        )
+                    _r.set(
+                        f"desired:{SITE_ID}:{device_id}",
+                        desired_value,
                         ex=43200,
                     )
                     _r.close()
@@ -466,6 +477,7 @@ def _register_routes(app: Flask) -> None:
                 "command_id": command_id,
                 "status": "ACCEPTED",
                 "site_id": payload["site_id"],
+                "edge_id": payload.get("edge_id"),
                 "device_id": payload["device_id"],
                 "action": payload["action"],
                 "created_at": now,

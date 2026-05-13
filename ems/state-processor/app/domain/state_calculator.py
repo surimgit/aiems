@@ -16,10 +16,14 @@ def calculate(envelope: dict) -> dict:
     if not envelope.get("resource_id"):
         print(f"[state_calculator] resource_id 없는 envelope 무시: resource_type={resource_type}")
         return None
-    payload = envelope.get("payload", {})
+    payload = envelope.get("payload") or {}
+    if not isinstance(payload, dict):
+        payload = {}
     instantaneous = payload.get("instantaneous", {})
     status = payload.get("status", {})
     energy = payload.get("energy", {})
+    edge_id = envelope.get("edge_id") or envelope.get("resource_id")
+    location = _extract_location(envelope, payload)
 
     reported_state = {
         "P": instantaneous.get("P"),
@@ -76,10 +80,15 @@ def calculate(envelope: dict) -> dict:
 
     return {
         "site_id": envelope.get("site_id"),
+        "edge_id": edge_id,
         "device_id": envelope.get("resource_id"),
         "resource_type": resource_type,
         "timestamp": envelope.get("timestamp"),
+        "location": location,
+        "latitude": location.get("latitude") if location else None,
+        "longitude": location.get("longitude") if location else None,
         "reported_state": reported_state,
+        "telemetry_window": payload.get("window"),
         "desired_state": None,      # state_publisher에서 Redis desired 키 조회 후 채움
         "last_command_id": None,    # 위와 동일
         "comms_health": status.get("comms_health", "unknown"),
@@ -87,3 +96,41 @@ def calculate(envelope: dict) -> dict:
         "interlock": interlock,
         "calculated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _extract_location(envelope: dict, payload: dict) -> dict | None:
+    for source in (
+        envelope,
+        envelope.get("location") or {},
+        payload,
+        payload.get("location") or {},
+        payload.get("geo") or {},
+        payload.get("position") or {},
+    ):
+        latitude = _to_float(_first_present(source, ("latitude", "lat", "y")))
+        longitude = _to_float(_first_present(source, ("longitude", "lon", "lng", "x")))
+        if latitude is not None and longitude is not None:
+            return {
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+    return None
+
+
+def _first_present(source: dict, keys: tuple[str, ...]):
+    if not isinstance(source, dict):
+        return None
+    for key in keys:
+        value = source.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _to_float(value) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

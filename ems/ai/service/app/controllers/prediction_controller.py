@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
@@ -9,6 +10,8 @@ from ..schemas.prediction_schema import (
     ForecastAccuracyResponseSchema,
     ForecastActualUpsertRequestSchema,
     ForecastActualUpsertResponseSchema,
+    ForecastLatestQuerySchema,
+    ForecastLatestResponseSchema,
     ForecastRequestSchema,
     ForecastResponseSchema,
     LiveSatelliteCapacityFactorPredictionRequestSchema,
@@ -28,6 +31,7 @@ from ..services.load_service import LoadService
 from ..services.model_service import ModelService
 from ..services.prediction_service import PredictionService
 from ..services.site_profile_service import SiteProfileService
+from ..config import settings
 
 
 blp = Blueprint("ai", "ai", url_prefix="/api/ai")
@@ -86,6 +90,23 @@ class ForecastResource(MethodView):
         return forecast_service.forecast(payload)
 
 
+@blp.route("/forecast/scheduled")
+class ForecastScheduledResource(MethodView):
+    @blp.arguments(ForecastRequestSchema)
+    @blp.response(200, ForecastResponseSchema)
+    def post(self, payload):
+        _require_schedule_token()
+        return forecast_service.scheduled_forecast(payload)
+
+
+@blp.route("/forecast/latest")
+class ForecastLatestResource(MethodView):
+    @blp.arguments(ForecastLatestQuerySchema, location="query")
+    @blp.response(200, ForecastLatestResponseSchema)
+    def get(self, payload):
+        return forecast_service.latest(payload)
+
+
 @blp.route("/forecast/actuals")
 class ForecastActualsResource(MethodView):
     @blp.arguments(ForecastActualUpsertRequestSchema)
@@ -116,3 +137,11 @@ class LoadPredictionResource(MethodView):
     @blp.response(200, LoadPredictionResponseSchema)
     def post(self, payload):
         return load_service.predict_load(payload)
+
+
+def _require_schedule_token() -> None:
+    if not settings.schedule_token:
+        return
+    supplied = request.headers.get("X-AI-Schedule-Token")
+    if supplied != settings.schedule_token:
+        raise PermissionError("invalid schedule token")

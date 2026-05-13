@@ -280,9 +280,9 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                         ))
                     # TTL 초과 장치는 상태를 알 수 없으므로 standby 강제 진입
                     if resource_type == "ess":
-                        failsafe_commands.append(_failsafe_standby(device_id, resource_type, age))
+                        failsafe_commands.append(_failsafe_standby(device_id, resource_type, age, state.get("edge_id")))
                     elif resource_type == "diesel":
-                        failsafe_commands.append(_failsafe_stop(device_id, resource_type, age))
+                        failsafe_commands.append(_failsafe_stop(device_id, resource_type, age, state.get("edge_id")))
                 else:
                     await event_pub.clear_alert(key)
             except Exception as e:
@@ -302,8 +302,11 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
         if resource_type not in _HEARTBEAT_RESOURCE_TYPES:
             # SWITCH / LINE / GRID 등 정적 자원은 heartbeat 안 보냄 → 검사 제외
             continue
-        hb_key = f"ems:heartbeat:{SITE_ID}:{device_id}"
-        hb_exists = await redis.exists(hb_key)
+        edge_id = state.get("edge_id")
+        hb_keys = [f"ems:heartbeat:{SITE_ID}:{device_id}"]
+        if edge_id and edge_id != device_id:
+            hb_keys.insert(0, f"ems:heartbeat:{SITE_ID}:{edge_id}:{device_id}")
+        hb_exists = any([await redis.exists(hb_key) for hb_key in hb_keys])
         evt_key = f"{device_id}:EVT-N-013"
         if not hb_exists:
             if not await event_pub.is_alerted(evt_key):
@@ -312,6 +315,8 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                     device_id, resource_type, "EVT-N-013", "WARNING",
                     f"heartbeat 두절: {device_id} 30초 이상 응답 없음",
                     {"device_id": device_id},
+                    edge_id=edge_id,
+                    location=state.get("location"),
                 ))
         else:
             await event_pub.clear_alert(evt_key)
@@ -320,20 +325,28 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
 
 
 def _evt(device_id: str, resource_type: str, event_type: str,
-         severity: str, message: str, payload: dict) -> dict:
-    return {
+         severity: str, message: str, payload: dict,
+         edge_id: str | None = None, location: dict | None = None) -> dict:
+    event = {
         "device_id": device_id,
+        "edge_id": edge_id,
         "resource_type": resource_type,
         "event_type": event_type,
         "severity": severity,
         "message": message,
         "payload": payload,
     }
+    if location:
+        event["location"] = location
+        event["latitude"] = location.get("latitude")
+        event["longitude"] = location.get("longitude")
+    return {key: value for key, value in event.items() if value is not None}
 
 
-def _failsafe_standby(device_id: str, resource_type: str, age: float) -> dict:
+def _failsafe_standby(device_id: str, resource_type: str, age: float, edge_id: str | None = None) -> dict:
     return {
         "device_id": device_id,
+        "edge_id": edge_id,
         "resource_type": resource_type,
         "command_type": "ess_mode",
         "payload": {"mode": "standby", "target_power_kw": 0.0},
@@ -342,9 +355,10 @@ def _failsafe_standby(device_id: str, resource_type: str, age: float) -> dict:
     }
 
 
-def _failsafe_stop(device_id: str, resource_type: str, age: float) -> dict:
+def _failsafe_stop(device_id: str, resource_type: str, age: float, edge_id: str | None = None) -> dict:
     return {
         "device_id": device_id,
+        "edge_id": edge_id,
         "resource_type": resource_type,
         "command_type": "stop",
         "payload": {},

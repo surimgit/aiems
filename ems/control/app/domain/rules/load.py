@@ -88,14 +88,14 @@ def _evaluate_soc_threshold_shed(flow: dict, policy, states: dict) -> list[dict]
     events: list[dict] = []
 
     load_targets = [
-        (device_id, _load_priority(device_id, policy))
+        (device_id, state, _load_priority(device_id, policy))
         for device_id, state in states.items()
         if state.get("resource_type") == "LOAD"
     ]
     # 등급 큰 순서로 정렬 (등급 4 → 3 → 2 → 1)
-    load_targets.sort(key=lambda x: x[1], reverse=True)
+    load_targets.sort(key=lambda x: x[2], reverse=True)
 
-    for device_id, grade in load_targets:
+    for device_id, state, grade in load_targets:
         # min_grade_to_shed 이상 등급만 차단 대상
         if grade < min_grade_to_shed:
             continue
@@ -109,6 +109,7 @@ def _evaluate_soc_threshold_shed(flow: dict, policy, states: dict) -> list[dict]
             "event_type": "EVT-N-006",
             "severity": "WARNING",
             "device_id": device_id,
+            "edge_id": state.get("edge_id"),
             "resource_type": "load",
             "message": (
                 f"부하 차단 검토 (선제): ESS 평균 SOC={avg_soc:.1f}% <= {triggered_threshold}% "
@@ -177,14 +178,14 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
     deficit = abs(net_power)
 
     load_targets = [
-        (device_id, _load_priority(device_id, policy))
+        (device_id, state, _load_priority(device_id, policy))
         for device_id, state in states.items()
         if state.get("resource_type") == "LOAD"
     ]
-    load_targets.sort(key=lambda x: x[1], reverse=True)
+    load_targets.sort(key=lambda x: x[2], reverse=True)
 
     remaining_deficit = deficit
-    for device_id, grade in load_targets:
+    for device_id, state, grade in load_targets:
         if remaining_deficit <= 0:
             break
 
@@ -208,6 +209,7 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
             "event_type": "EVT-N-006",
             "severity": "WARNING",
             "device_id": device_id,
+            "edge_id": state.get("edge_id"),
             "resource_type": "load",
             "message": (
                 f"부하 차단 검토 필요: deficit={deficit:.1f}kW, ESS/Diesel 불가, "

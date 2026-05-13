@@ -101,11 +101,7 @@ class MqttCommander:
             "issued_by": command.get("issued_by", "rule"),
             "issued_at": time.time(),
         }
-        await self._redis.set(
-            f"desired:{SITE_ID}:{device_id}",
-            json.dumps(desired, ensure_ascii=False),
-            ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
-        )
+        await self._set_desired(command, desired)
 
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
         self._pending_verify[command_id] = (
@@ -201,7 +197,7 @@ class MqttCommander:
     ) -> None:
         await asyncio.sleep(_VERIFY_DELAY_SEC)
         try:
-            state_raw = await self._redis.get(f"state:{SITE_ID}:{device_id}")
+            state_raw = await self._get_state(device_id)
             if not state_raw:
                 # 상태 자체가 없으면 TTL 초과 → safety 룰이 처리
                 return
@@ -227,6 +223,40 @@ class MqttCommander:
                 })
         except Exception as e:
             print(f"[control][verify] ERROR | {device_id} | {e}")
+
+    async def _get_state(self, device_id: str) -> str | None:
+        state_raw = await self._redis.get(f"state:{SITE_ID}:{device_id}")
+        if state_raw:
+            return state_raw
+
+        pattern = f"state:{SITE_ID}:*:{device_id}"
+        keys = [key async for key in self._redis.scan_iter(pattern)]
+        if not keys:
+            return None
+        values = await self._redis.mget(*keys)
+        states = [json.loads(value) for value in values if value]
+        if not states:
+            return None
+        latest = max(
+            states,
+            key=lambda state: state.get("calculated_at") or state.get("timestamp") or "",
+        )
+        return json.dumps(latest, ensure_ascii=False)
+
+    async def _set_desired(self, command: dict, desired: dict) -> None:
+        device_id = command["device_id"]
+        edge_id = command.get("edge_id")
+        value = json.dumps(desired, ensure_ascii=False)
+        keys = [f"desired:{SITE_ID}:{device_id}"]
+        if edge_id and edge_id != device_id:
+            keys.insert(0, f"desired:{SITE_ID}:{edge_id}:{device_id}")
+
+        for key in keys:
+            await self._redis.set(
+                key,
+                value,
+                ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
+            )
 
     async def _timeout_checker(self) -> None:
         while True:

@@ -11,7 +11,7 @@ class WindowAggregator:
         self._buffers: dict[str, list[dict]] = defaultdict(list)
 
     def add(self, snapshot: dict) -> None:
-        key = snapshot["device_id"]
+        key = _identity_key(snapshot)
         buf = self._buffers[key]
         if len(buf) >= _MAX_BUFFER_SIZE:
             buf.pop(0)  # 가장 오래된 항목 제거
@@ -22,7 +22,7 @@ class WindowAggregator:
         current, self._buffers = self._buffers, defaultdict(list)
 
         results = []
-        for device_id, snapshots in current.items():
+        for snapshots in current.values():
             if not snapshots:
                 continue
             p_values = [s["reported_state"].get("P") for s in snapshots if s["reported_state"].get("P") is not None]
@@ -36,7 +36,8 @@ class WindowAggregator:
             results.append({
                 "time": latest["timestamp"],
                 "site_id": latest["site_id"],
-                "device_id": device_id,
+                "edge_id": latest.get("edge_id"),
+                "device_id": latest["device_id"],
                 "resource_type": latest["resource_type"],
                 "p_avg": _avg(p_values),
                 "p_max": max(p_values) if p_values else None,
@@ -53,3 +54,10 @@ class WindowAggregator:
 
 def _avg(values: list) -> float | None:
     return sum(values) / len(values) if values else None
+
+
+def _identity_key(snapshot: dict) -> str:
+    site_id = snapshot.get("site_id") or ""
+    edge_id = snapshot.get("edge_id") or snapshot.get("device_id") or ""
+    device_id = snapshot.get("device_id") or ""
+    return f"{site_id}:{edge_id}:{device_id}"

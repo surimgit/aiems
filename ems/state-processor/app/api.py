@@ -59,10 +59,14 @@ def _state_to_resource(state: dict) -> dict:
 
     out: dict = {
         "resource_id": state.get("device_id"),
+        "edge_id": state.get("edge_id"),
         "resource_type": rt,
         "name": state.get("device_id"),
         "status": status,
         "comms_health": comms,
+        "location": state.get("location"),
+        "latitude": state.get("latitude"),
+        "longitude": state.get("longitude"),
     }
 
     if rt == "SWITCH":
@@ -107,6 +111,7 @@ def _state_to_ess_status(state: dict) -> dict:
 
     return {
         "ess_id": state.get("device_id"),
+        "edge_id": state.get("edge_id"),
         "name": state.get("device_id"),
         "capacity_kwh": reported.get("capacity_kwh") or 0.0,
         "max_power_kw": reported.get("power_limit_kw") or 0.0,
@@ -114,6 +119,9 @@ def _state_to_ess_status(state: dict) -> dict:
         "soh": reported.get("SOH"),
         "status": status,
         "power_kw": p,
+        "location": state.get("location"),
+        "latitude": state.get("latitude"),
+        "longitude": state.get("longitude"),
         "updated_at": state.get("calculated_at") or state.get("timestamp"),
     }
 
@@ -320,6 +328,7 @@ def _register_routes(app: Flask) -> None:
 
     class EssStatusSchema(Schema):
         ess_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         name = fields.String(allow_none=True)
         capacity_kwh = fields.Float()
         max_power_kw = fields.Float()
@@ -327,6 +336,9 @@ def _register_routes(app: Flask) -> None:
         soh = fields.Float(allow_none=True)
         status = fields.String()  # 'idle' / 'charging' / 'discharging' / 'fault'
         power_kw = fields.Float(allow_none=True)
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         updated_at = fields.String(allow_none=True)
 
     class PlantStateSchema(Schema):
@@ -372,15 +384,20 @@ def _register_routes(app: Flask) -> None:
 
     class DeviceStateSchema(Schema):
         device_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         site_id = fields.String()
         resource_type = fields.String()
         timestamp = fields.String()
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         P = fields.Float(allow_none=True)
         SOC = fields.Float(allow_none=True)
         operating_mode = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
         emergency = fields.Boolean()
         interlock = fields.Boolean()
+        telemetry_window = fields.Dict(allow_none=True)
         desired_state = fields.Dict(allow_none=True)
         last_command_id = fields.String(allow_none=True)
 
@@ -448,10 +465,14 @@ def _register_routes(app: Flask) -> None:
 
     class ResourceSchema(Schema):
         resource_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         resource_type = fields.String()
         name = fields.String(allow_none=True)
         status = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         position = fields.String(allow_none=True)
         controllable = fields.Boolean(allow_none=True)
         interlock_blocked = fields.Boolean(allow_none=True)
@@ -596,15 +617,20 @@ def _register_routes(app: Flask) -> None:
             return [
                 {
                     "device_id": s.get("device_id"),
+                    "edge_id": s.get("edge_id"),
                     "site_id": s.get("site_id"),
                     "resource_type": s.get("resource_type"),
                     "timestamp": s.get("calculated_at") or s.get("timestamp"),
+                    "location": s.get("location"),
+                    "latitude": s.get("latitude"),
+                    "longitude": s.get("longitude"),
                     "P": (s.get("reported_state") or {}).get("P"),
                     "SOC": (s.get("reported_state") or {}).get("SOC"),
                     "operating_mode": (s.get("reported_state") or {}).get("operating_mode"),
                     "comms_health": s.get("comms_health"),
                     "emergency": s.get("emergency", False),
                     "interlock": s.get("interlock", False),
+                    "telemetry_window": s.get("telemetry_window"),
                     "desired_state": s.get("desired_state"),
                     "last_command_id": s.get("last_command_id"),
                 }
