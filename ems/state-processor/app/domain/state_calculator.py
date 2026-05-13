@@ -106,7 +106,7 @@ def _extract_location(envelope: dict, payload: dict) -> dict | None:
         payload.get("location") or {},
         payload.get("geo") or {},
         payload.get("position") or {},
-        payload.get("spec") or {},
+        payload.get("spec") or {},  # 시뮬레이터 spec 추가, 위도 경도 확인용
     ):
         latitude = _to_float(_first_present(source, ("latitude", "lat", "y")))
         longitude = _to_float(_first_present(source, ("longitude", "lon", "lng", "x")))

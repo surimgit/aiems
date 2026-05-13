@@ -66,7 +66,7 @@ def _extract_location(data: dict) -> dict | None:
         _as_dict(payload.get("location")),
         _as_dict(payload.get("geo")),
         _as_dict(payload.get("position")),
-        _as_dict(payload.get("spec")),
+        _as_dict(payload.get("spec")),      # 시뮬레이터 spec 추가, 위도 경도 확인용
     ])
 
     for source in candidates:
