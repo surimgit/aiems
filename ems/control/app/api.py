@@ -314,6 +314,10 @@ def _register_routes(app: Flask) -> None:
         changed_at = fields.DateTime()
         changed_by = fields.String()
 
+    class RecommendationDecisionSchema(Schema):
+        requested_by = fields.String(required=True)
+        reason = fields.String(load_default="")
+
     # ── Action 변환 ───────────────────────────────────────────────────────────
 
     _ACTION_MAP = {
@@ -470,6 +474,30 @@ def _register_routes(app: Flask) -> None:
                 "action": payload["action"],
                 "created_at": now,
             }
+
+    # ── AI 추천 승인/거부 (미구현 → 503) ───────────────────────────────────────
+
+    def _ai_unavailable():
+        return jsonify({
+            "error_code": "FEATURE_UNAVAILABLE",
+            "message": "AI 서비스가 아직 활성화되지 않았습니다.",
+            "trace_id": str(uuid.uuid4()),
+            "details": {},
+        }), 503
+
+    @blp.route("/recommendations/<string:recommendation_id>/approve")
+    class RecommendationApproveResource(MethodView):
+        @blp.arguments(RecommendationDecisionSchema)
+        def post(self, payload, recommendation_id):
+            """AI 추천 승인 — 미구현 (AI 서비스 비활성화 상태)."""
+            return _ai_unavailable()
+
+    @blp.route("/recommendations/<string:recommendation_id>/reject")
+    class RecommendationRejectResource(MethodView):
+        @blp.arguments(RecommendationDecisionSchema)
+        def post(self, payload, recommendation_id):
+            """AI 추천 거부 — 미구현 (AI 서비스 비활성화 상태)."""
+            return _ai_unavailable()
 
     @blp.route("/commands")
     class CommandListResource(MethodView):
