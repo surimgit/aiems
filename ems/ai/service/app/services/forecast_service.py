@@ -188,47 +188,71 @@ class ForecastService:
         longitude = self._required_float(payload, site, "longitude")
         installed_capacity_kw = float(site.get("installed_capacity_kw") or payload.get("installed_capacity_kw"))
         target_times = self._live_satellite_target_times(payload, timezone_name)
+        targets = [
+            {
+                "target_time": target_time.isoformat(),
+                "horizon_hours": min(index, 24),
+            }
+            for index, target_time in enumerate(target_times, start=1)
+        ]
         predictions: list[dict[str, Any]] = []
         warnings: list[str] = []
 
-        for index, target_time in enumerate(target_times, start=1):
-            request_payload = {
-                "site_id": site_id,
-                "region": site.get("region") or payload.get("region"),
-                "latitude": latitude,
-                "longitude": longitude,
-                "dong_code": site.get("dong_code") or payload.get("dong_code"),
-                "installed_capacity_kw": installed_capacity_kw,
-                "model_capacity_kw": payload.get("model_capacity_kw") or site.get("model_capacity_kw"),
-                "horizon_hours": min(index, 24),
-                "target_time": target_time.isoformat(),
-                "weather_search_hours": payload.get("weather_search_hours"),
-                "satellite_search_hours": payload.get("satellite_search_hours"),
-                "model_path": payload.get("solar_model_path"),
-                "model_version": payload.get("solar_model_version"),
-                "max_capacity_factor": payload.get("max_capacity_factor"),
-            }
-            result = self.live_satellite_service.predict(
-                {key: value for key, value in request_payload.items() if value is not None}
-            )
-            prediction = result.get("prediction") or {}
-            warnings.extend(str(item) for item in (result.get("warnings") or []))
-            target = result.get("target") or {}
-            predictions.append(
+        request_payload = {
+            "site_id": site_id,
+            "region": site.get("region") or payload.get("region"),
+            "latitude": latitude,
+            "longitude": longitude,
+            "dong_code": site.get("dong_code") or payload.get("dong_code"),
+            "installed_capacity_kw": installed_capacity_kw,
+            "model_capacity_kw": payload.get("model_capacity_kw") or site.get("model_capacity_kw"),
+            "targets": targets,
+            "weather_search_hours": payload.get("weather_search_hours"),
+            "satellite_search_hours": payload.get("satellite_search_hours"),
+            "model_path": payload.get("solar_model_path"),
+            "model_version": payload.get("solar_model_version"),
+            "max_capacity_factor": payload.get("max_capacity_factor"),
+        }
+        result = self.live_satellite_service.predict(
+            {key: value for key, value in request_payload.items() if value is not None}
+        )
+        warnings.extend(str(item) for item in (result.get("warnings") or []))
+        live_predictions = result.get("predictions") or []
+        if not live_predictions and result.get("prediction"):
+            live_predictions = [
                 {
-                    "target_time": target.get("target_time") or target_time.isoformat(),
-                    "site_id": site_id,
-                    "predicted_generation_kw": prediction.get("predicted_generation_kw"),
-                    "confidence": prediction.get("confidence"),
-                    "model_version": prediction.get("model_version") or "satellite-v10-live",
-                    "backend": "live_satellite",
-                    "horizon_hours": target.get("horizon_hours", min(index, 24)),
-                    "postprocess_reason": prediction.get("postprocess_reason"),
-                    "raw_prediction": prediction,
-                    "site": result.get("site"),
-                    "target": target,
+                    "raw_prediction": result.get("prediction"),
+                    "target": result.get("target"),
                     "weather": result.get("weather"),
                     "satellite": result.get("satellite"),
+                }
+            ]
+
+        for index, item in enumerate(live_predictions, start=1):
+            target_time = target_times[index - 1] if index <= len(target_times) else None
+            prediction = item.get("raw_prediction") or item.get("prediction") or item
+            target = item.get("target") or {}
+            predictions.append(
+                {
+                    "target_time": item.get("target_time") or target.get("target_time") or (
+                        target_time.isoformat() if target_time else None
+                    ),
+                    "site_id": site_id,
+                    "predicted_generation_kw": item.get("predicted_generation_kw")
+                    if item.get("predicted_generation_kw") is not None
+                    else prediction.get("predicted_generation_kw"),
+                    "confidence": item.get("confidence")
+                    if item.get("confidence") is not None
+                    else prediction.get("confidence"),
+                    "model_version": item.get("model_version") or prediction.get("model_version") or "satellite-v10-live",
+                    "backend": "live_satellite",
+                    "horizon_hours": item.get("horizon_hours") or target.get("horizon_hours", min(index, 24)),
+                    "postprocess_reason": item.get("postprocess_reason") or prediction.get("postprocess_reason"),
+                    "raw_prediction": prediction,
+                    "site": item.get("site") or result.get("site"),
+                    "target": target,
+                    "weather": item.get("weather") or result.get("weather"),
+                    "satellite": item.get("satellite") or result.get("satellite"),
                 }
             )
 

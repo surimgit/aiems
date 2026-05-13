@@ -104,8 +104,9 @@ class LiveSatellitePredictionService:
         payload["region"] = self._normalize_region(payload.get("region"))
         if self.runpod_client.enabled:
             return self.runpod_client.run_sync("predict_live_satellite_capacity_factor", payload)
-        raise RuntimeError("RunPod is required for live satellite capacity factor inference")
+        return self._predict_local(payload)
 
+    def _predict_local(self, payload: dict[str, Any]) -> dict[str, Any]:
         key = self._auth_key()
         warnings: list[str] = []
 
@@ -115,24 +116,10 @@ class LiveSatellitePredictionService:
 
         latitude, longitude = self._site_lat_lon(payload, region)
         dong_code = str(payload.get("dong_code") or REGION_DONG_CODE[region])
-        horizon_hours = int(self._float(payload.get("horizon_hours"), 1.0))
-        if not 1 <= horizon_hours <= 24:
-            raise ValueError("horizon_hours must be between 1 and 24 for the satellite model")
 
         now_kst = datetime.now(KST).replace(second=0, microsecond=0)
-        target_time = self._target_time(payload.get("target_time"), now_kst, horizon_hours)
-        solar_elevation = self._solar_elevation(latitude, longitude, target_time)
-
+        target_specs = self._target_specs(payload, now_kst)
         grid = self._resolve_grid(longitude, latitude, key)
-        weather = self._fetch_weather(
-            grid,
-            target_time,
-            now_kst,
-            key,
-            search_hours=int(self._float(payload.get("weather_search_hours"), 6.0)),
-        )
-        warnings.extend(weather.warnings)
-
         satellite_records, satellite_warnings = self._fetch_satellite_sequence(
             dong_code,
             now_kst,
@@ -140,31 +127,83 @@ class LiveSatellitePredictionService:
             search_hours=int(self._float(payload.get("satellite_search_hours"), 12.0)),
         )
         warnings.extend(satellite_warnings)
-
-        images, satellite_summary, proxy_warnings = self._build_proxy_images(satellite_records, weather.values)
-        warnings.extend(proxy_warnings)
         installed_capacity_kw = self._float(payload.get("installed_capacity_kw"), 100.0)
         model_capacity_kw = self._float(
             payload.get("model_capacity_kw", payload.get("estimated_capacity_kw")),
             DEFAULT_MODEL_CAPACITY_KW,
         )
-
-        feature = {
+        site_info = {
             "site_id": payload.get("site_id"),
             "region": region,
-            "target_time": target_time.isoformat(),
-            "horizon_hours": horizon_hours,
-            "installed_capacity_kw": installed_capacity_kw,
-            "estimated_capacity_kw": model_capacity_kw,
-            "solar_elevation": solar_elevation,
-            "is_daylight": 1.0 if solar_elevation > 0.0 else 0.0,
-            "wind_speed_ms": self._value(weather.values, "WSD", 0.0),
-            "wind_dir_deg": self._value(weather.values, "VEC", 0.0),
-            "temperature_c": self._value(weather.values, "T1H", self._value(weather.values, "TMP", 15.0)),
-            "humidity_pct": self._value(weather.values, "REH", 60.0),
-            "rainfall_mm": self._value(weather.values, "RN1", self._value(weather.values, "PCP", 0.0)),
-            "images": images.tolist(),
+            "latitude": latitude,
+            "longitude": longitude,
+            "dong_code": dong_code,
+            "grid": grid.__dict__,
         }
+        features: list[dict[str, Any]] = []
+        details: list[dict[str, Any]] = []
+
+        for spec in target_specs:
+            target_time = spec["target_time"]
+            horizon_hours = spec["horizon_hours"]
+            solar_elevation = self._solar_elevation(latitude, longitude, target_time)
+            weather = self._fetch_weather(
+                grid,
+                target_time,
+                now_kst,
+                key,
+                search_hours=int(self._float(payload.get("weather_search_hours"), 6.0)),
+            )
+            warnings.extend(weather.warnings)
+
+            images, satellite_summary, proxy_warnings = self._build_proxy_images(satellite_records, weather.values)
+            warnings.extend(proxy_warnings)
+            feature = {
+                "site_id": payload.get("site_id"),
+                "region": region,
+                "target_time": target_time.isoformat(),
+                "horizon_hours": horizon_hours,
+                "installed_capacity_kw": installed_capacity_kw,
+                "estimated_capacity_kw": model_capacity_kw,
+                "solar_elevation": solar_elevation,
+                "is_daylight": 1.0 if solar_elevation > 0.0 else 0.0,
+                "wind_speed_ms": self._value(weather.values, "WSD", 0.0),
+                "wind_dir_deg": self._value(weather.values, "VEC", 0.0),
+                "temperature_c": self._value(weather.values, "T1H", self._value(weather.values, "TMP", 15.0)),
+                "humidity_pct": self._value(weather.values, "REH", 60.0),
+                "rainfall_mm": self._value(weather.values, "RN1", self._value(weather.values, "PCP", 0.0)),
+                "images": images.tolist(),
+            }
+            features.append(feature)
+            details.append(
+                {
+                    "target": {
+                        "target_time": target_time.isoformat(),
+                        "horizon_hours": horizon_hours,
+                        "solar_elevation": solar_elevation,
+                        "is_daylight": solar_elevation > 0.0,
+                        "installed_capacity_kw": installed_capacity_kw,
+                        "model_capacity_kw": model_capacity_kw,
+                    },
+                    "weather": {
+                        "source": weather.source,
+                        "tmfc": weather.tmfc,
+                        "tmef": weather.tmef,
+                        "values": weather.values,
+                    },
+                    "satellite": {
+                        "source": "kma_apihub_gk2a_area",
+                        "mode": "scalar_area_to_64x64_proxy",
+                        "image_shape": list(images.shape),
+                        "channels": ["CA", "CF_PROXY", "CT_PROXY", "CLD"],
+                        "frames": satellite_summary,
+                    },
+                    "model_input": {
+                        "numeric_feature_values": {key: value for key, value in feature.items() if key != "images"},
+                        "image_summary": self._image_summary(images),
+                    },
+                }
+            )
 
         prediction_payload = {
             "site_id": payload.get("site_id"),
@@ -175,51 +214,95 @@ class LiveSatellitePredictionService:
             "device": payload.get("device"),
             "image_normalization": payload.get("image_normalization") or "binary",
             "max_capacity_factor": payload.get("max_capacity_factor") or settings.default_max_capacity_factor,
-            "features": [feature],
+            "features": features,
         }
         prediction_result = self.prediction_service.predict_satellite_capacity_factor(prediction_payload)
+        raw_predictions = prediction_result.get("predictions") or []
+        if len(raw_predictions) != len(details):
+            raise RuntimeError(
+                f"Satellite prediction row count mismatch: expected {len(details)}, got {len(raw_predictions)}"
+            )
+
+        predictions: list[dict[str, Any]] = []
+        for index, prediction in enumerate(raw_predictions):
+            detail = details[index]
+            target = detail["target"]
+            predictions.append(
+                {
+                    "target_time": prediction.get("target_time") or target.get("target_time"),
+                    "site_id": prediction.get("site_id") or payload.get("site_id"),
+                    "predicted_generation_kw": prediction.get("predicted_generation_kw"),
+                    "confidence": prediction.get("confidence"),
+                    "model_version": prediction.get("model_version"),
+                    "backend": "live_satellite",
+                    "horizon_hours": prediction.get("horizon_hours") or target.get("horizon_hours"),
+                    "postprocess_reason": prediction.get("postprocess_reason"),
+                    "raw_prediction": prediction,
+                    "site": site_info,
+                    "target": target,
+                    "weather": detail["weather"],
+                    "satellite": detail["satellite"],
+                    "model_input": detail["model_input"],
+                }
+            )
+
+        first_detail = details[0]
+        first_prediction = raw_predictions[0]
 
         return {
             "ok": True,
             "task": "predict_live_satellite_capacity_factor",
             "input_mode": "gk2a_area_proxy",
-            "warnings": warnings,
-            "site": {
-                "site_id": payload.get("site_id"),
-                "region": region,
-                "latitude": latitude,
-                "longitude": longitude,
-                "dong_code": dong_code,
-                "grid": grid.__dict__,
-            },
-            "target": {
-                "target_time": target_time.isoformat(),
-                "horizon_hours": horizon_hours,
-                "solar_elevation": solar_elevation,
-                "is_daylight": solar_elevation > 0.0,
-                "installed_capacity_kw": installed_capacity_kw,
-                "model_capacity_kw": model_capacity_kw,
-            },
-            "weather": {
-                "source": weather.source,
-                "tmfc": weather.tmfc,
-                "tmef": weather.tmef,
-                "values": weather.values,
-            },
-            "satellite": {
-                "source": "kma_apihub_gk2a_area",
-                "mode": "scalar_area_to_64x64_proxy",
-                "image_shape": list(images.shape),
-                "channels": ["CA", "CF_PROXY", "CT_PROXY", "CLD"],
-                "frames": satellite_summary,
-            },
-            "model_input": {
-                "numeric_feature_values": {key: value for key, value in feature.items() if key != "images"},
-                "image_summary": self._image_summary(images),
-            },
-            "prediction": prediction_result["predictions"][0],
+            "warnings": sorted(set(warnings)),
+            "rows": len(predictions),
+            "site": site_info,
+            "targets": [detail["target"] for detail in details],
+            "target": first_detail["target"],
+            "weather": first_detail["weather"],
+            "satellite": first_detail["satellite"],
+            "model_input": first_detail["model_input"],
+            "prediction": first_prediction,
+            "predictions": predictions,
             "prediction_result": prediction_result,
         }
+
+    @classmethod
+    def _target_specs(cls, payload: dict[str, Any], now_kst: datetime) -> list[dict[str, Any]]:
+        targets = payload.get("targets")
+        if isinstance(targets, list) and targets:
+            specs = []
+            for index, item in enumerate(targets[:24], start=1):
+                source = item if isinstance(item, dict) else {"target_time": item}
+                horizon_hours = int(cls._float(source.get("horizon_hours"), float(index)))
+                if not 1 <= horizon_hours <= 24:
+                    raise ValueError("horizon_hours must be between 1 and 24 for the satellite model")
+                specs.append(
+                    {
+                        "target_time": cls._target_time(source.get("target_time"), now_kst, horizon_hours),
+                        "horizon_hours": horizon_hours,
+                    }
+                )
+            return specs
+
+        target_times = payload.get("target_times")
+        if isinstance(target_times, list) and target_times:
+            return [
+                {
+                    "target_time": cls._target_time(target_time, now_kst, min(index, 24)),
+                    "horizon_hours": min(index, 24),
+                }
+                for index, target_time in enumerate(target_times[:24], start=1)
+            ]
+
+        horizon_hours = int(cls._float(payload.get("horizon_hours"), 1.0))
+        if not 1 <= horizon_hours <= 24:
+            raise ValueError("horizon_hours must be between 1 and 24 for the satellite model")
+        return [
+            {
+                "target_time": cls._target_time(payload.get("target_time"), now_kst, horizon_hours),
+                "horizon_hours": horizon_hours,
+            }
+        ]
 
     @staticmethod
     def _load_env_file(env_file: Path) -> None:
