@@ -25,7 +25,7 @@ import time as _time
 _shared_pending_acks: dict[str, tuple[float, str, str]] = {}
 
 # device_id → sent_at (cooldown 중인 장치 추적)
-_COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 길게
+_COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 김
 _device_cooldown: dict[str, float] = {}
 
 # ess_mode 명령의 dead-band: 마지막 발행한 (mode, target_power_kw) 기억
