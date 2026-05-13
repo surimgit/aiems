@@ -16,8 +16,10 @@ services:
     restart: always
     extra_hosts:
       - "redis:172.31.45.48"
+      - "mqtt:172.31.45.48"
       - "postgres:172.31.44.52"
       - "timescaledb:172.31.44.52"
+      - "state-processor:172.31.33.89"
 
   ai:
     build:
@@ -33,5 +35,6 @@ services:
     restart: always
     extra_hosts:
       - "redis:172.31.45.48"
+      - "mqtt:172.31.45.48"
       - "postgres:172.31.44.52"
       - "timescaledb:172.31.44.52"

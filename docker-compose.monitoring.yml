@@ -33,6 +33,9 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
       TZ: Asia/Seoul
     volumes:
       - grafana_data:/var/lib/grafana
@@ -58,10 +61,26 @@ services:
     networks:
       - monitoring
 
+  # Loki — 로그 저장 (Promtail이 6개 EC2에서 푸시)
+  # 3100 포트는 Tailscale 사설망(100.x)으로만 접근하도록 EC2 SG에서 비공개 유지
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: loki
+    restart: always
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./infra/monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - monitoring
+
 volumes:
   prometheus_data:
   grafana_data:
   alertmanager_data:
+  loki_data:
 
 networks:
   monitoring:

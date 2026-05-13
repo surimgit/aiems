@@ -1,5 +1,15 @@
 export type DashboardLayoutMode = 'tablet' | 'laptop' | 'wall'
 
+export const dashboardLayoutTokens = {
+  tabletMaxWidth: 1024,
+  wallMinWidth: 2560,
+  panelWidth: {
+    laptop: 380,
+    wall: 460,
+    tabletMax: 420
+  }
+} as const
+
 export type DashboardWidgetId =
   | 'topologyStage'
   | 'selectedResourcePanel'
@@ -50,7 +60,7 @@ export const dashboardLayoutPresets: Record<DashboardLayoutMode, DashboardLayout
 }
 
 export const resolveDashboardLayoutMode = (viewportWidth: number): DashboardLayoutMode => {
-  if (viewportWidth <= 1024) return 'tablet'
-  if (viewportWidth >= 2560) return 'wall'
+  if (viewportWidth <= dashboardLayoutTokens.tabletMaxWidth) return 'tablet'
+  if (viewportWidth >= dashboardLayoutTokens.wallMinWidth) return 'wall'
   return 'laptop'
 }

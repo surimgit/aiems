@@ -1,0 +1,35 @@
+# Promtail — docker container logs를 Loki에 푸시
+# 각 EC2에서 동일 설정으로 동작
+# 실행 시 -config.expand-env=true 로 env 치환 활성화 필요
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://100.124.158.59:3100/loki/api/v1/push   # CI/CD EC2 Tailscale IP
+    external_labels:
+      host: ${HOSTNAME_LABEL:unknown}
+
+scrape_configs:
+  # Docker 컨테이너 로그 (모든 컨테이너)
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # 컨테이너 이름을 라벨로
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # 환경 구분 (app-* = prod, dev-* = dev)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(app|dev)-.+'
+        target_label: env
+        replacement: '$1'
+      # 이미지명
+      - source_labels: ['__meta_docker_container_image']
+        target_label: image

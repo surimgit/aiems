@@ -209,6 +209,8 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+# .env.example → .env 복사 (빌드 시 환경변수 적용)
+COPY frontend/.env.example ./.env
 RUN npm run build
 EOF
                             docker build -t frontend-builder -f frontend.Dockerfile .
@@ -458,18 +460,14 @@ EOF
                 stage('Deploy - Frontend (dev)') {
                     when { expression { env.SHOULD_DEPLOY_FRONTEND_DEV == 'true' } }
                     steps {
-                        configFileProvider([configFile(fileId: 'ems-env-dev', targetLocation: '.env')]) {
-                            sshagent(credentials: ['ec2-ssh-key']) {
-                                sh '''
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/dev/frontend-dist || true'
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev/frontend-dist'
-                                    scp -o StrictHostKeyChecking=accept-new docker-compose.gateway.yml .env ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
-                                    scp -o StrictHostKeyChecking=accept-new -rp gateway/ ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/dev/frontend-dist/*'
-                                    scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/frontend-dist/
-                                    ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml up -d --build --remove-orphans'
-                                '''
-                            }
+                        sshagent(credentials: ['ec2-ssh-key']) {
+                            sh '''
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'sudo chown -R ubuntu:ubuntu /home/ubuntu/dev/frontend-dist || true'
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'mkdir -p /home/ubuntu/dev/frontend-dist'
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'rm -rf /home/ubuntu/dev/frontend-dist/*'
+                                scp -o StrictHostKeyChecking=accept-new -rp frontend/dist/* ubuntu@${GATEWAY_IP}:/home/ubuntu/dev/frontend-dist/
+                                ssh -o StrictHostKeyChecking=accept-new ubuntu@${GATEWAY_IP} 'cd /home/ubuntu/dev && docker compose --project-name dev -f docker-compose.gateway.yml restart gateway'
+                            '''
                         }
                     }
                 }

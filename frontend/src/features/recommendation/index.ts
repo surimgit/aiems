@@ -9,18 +9,24 @@
 import { computed } from 'vue'
 import { DEFAULT_SITE_ID } from '@/app/config'
 import { useAiStore } from '@/stores/ai/ai.store'
+import type { ComputedRef } from 'vue'
+import type { Recommendation } from '@/types/common'
 
 export interface UseRecommendationFeature {
-  recommendations: ReturnType<typeof useAiStore>['sortedRecommendations']
-  highPriorityRecommendations: ReturnType<typeof useAiStore>['highPriorityRecommendations']
-  isLoading: boolean
+  recommendations: ComputedRef<Recommendation[]>
+  highPriorityRecommendations: ComputedRef<Recommendation[]>
+  isLoading: ComputedRef<boolean>
+  fetchRecommendations: (siteId?: string) => Promise<void>
 }
 
 export const useRecommendationFeature = (): UseRecommendationFeature => {
   const aiStore = useAiStore()
   
-  const recommendations = computed(() => aiStore.sortedRecommendations)
-  const highPriorityRecommendations = computed(() => aiStore.highPriorityRecommendations)
+  const recommendations = computed(() => [...aiStore.recommendations].sort((a, b) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 }
+    return priorityOrder[a.priority] - priorityOrder[b.priority]
+  }))
+  const highPriorityRecommendations = computed(() => aiStore.recommendations.filter((r) => r.priority === 'high'))
   const isLoading = computed(() => aiStore.loading)
   
   const fetchRecommendations = async (siteId: string = DEFAULT_SITE_ID) => {

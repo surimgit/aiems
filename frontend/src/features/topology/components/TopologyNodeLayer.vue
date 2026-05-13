@@ -17,7 +17,7 @@ const emit = defineEmits<{
       :key="node.node_id"
       class="cursor-pointer"
       :transform="`translate(${node.position.x}, ${node.position.y})`"
-      @click="emit('select-node', node.node_id)"
+      @click="emit('select-node', node.resource_id)"
     >
       <circle r="24" class="fill-slate-900 stroke-emerald-400" />
       <text y="40" text-anchor="middle" class="fill-slate-200 text-[12px]">{{ node.resource_id }}</text>

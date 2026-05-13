@@ -10,7 +10,7 @@
 import { defineStore } from 'pinia'
 import { DEFAULT_SITE_ID } from '@/app/config'
 import type { AlarmData } from '@/types/common'
-import { getAlarmList } from '@/api/dashboard.client'
+import { acknowledgeAlarmById, getAlarmList } from '@/api/dashboard.client'
 
 const normalizeAlarmList = (payload: unknown): AlarmData[] => {
   if (Array.isArray(payload)) {
@@ -59,7 +59,7 @@ interface AlarmActions {
   clearAll(): void
 }
 
-export const useAlarmStore = defineStore<'alarm', AlarmState, AlarmGetters, AlarmActions>(
+export const useAlarmStore = defineStore(
   'alarm',
   {
     state: (): AlarmState => ({
@@ -122,11 +122,23 @@ export const useAlarmStore = defineStore<'alarm', AlarmState, AlarmGetters, Alar
       },
       
       async acknowledgeAlarm(alarmId: string): Promise<void> {
+        this.error = null
         const alarm = this.alarms.find((a) => a.alarm_id === alarmId)
+        const previous = alarm?.acknowledged
+
         if (alarm) {
           alarm.acknowledged = true
         }
-        // TODO: API 호출하여 서버에 확인 처리
+
+        try {
+          await acknowledgeAlarmById(this.siteId, alarmId)
+        } catch (error) {
+          if (alarm) {
+            alarm.acknowledged = previous
+          }
+          this.error = (error as Error).message
+          throw error
+        }
       },
       
       setFilter(filter: AlarmState['filter']): void {
