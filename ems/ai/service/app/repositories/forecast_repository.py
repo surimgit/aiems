@@ -407,8 +407,7 @@ class ForecastRepository:
                     solar_backend,
                     trigger_source,
                     issued_at,
-                    updated_at,
-                    raw_output_json
+                    updated_at
                 )
                 VALUES (
                     %s,
@@ -425,8 +424,7 @@ class ForecastRepository:
                     %s,
                     %s,
                     %s,
-                    now(),
-                    %s
+                    now()
                 )
                 ON CONFLICT (site_id, horizon_index) DO UPDATE SET
                     forecast_run_id = EXCLUDED.forecast_run_id,
@@ -441,8 +439,7 @@ class ForecastRepository:
                     solar_backend = EXCLUDED.solar_backend,
                     trigger_source = EXCLUDED.trigger_source,
                     issued_at = EXCLUDED.issued_at,
-                    updated_at = now(),
-                    raw_output_json = EXCLUDED.raw_output_json
+                    updated_at = now()
                 """,
                 (
                     row.get("site_id") or site_id,
@@ -459,7 +456,6 @@ class ForecastRepository:
                     row.get("solar_backend") or solar_backend,
                     trigger_source,
                     issued_at,
-                    cls._jsonb(row),
                 ),
             )
 
@@ -522,8 +518,7 @@ class ForecastRepository:
                 solar_backend,
                 trigger_source,
                 issued_at,
-                updated_at,
-                raw_output_json
+                updated_at
             FROM public.ai_forecast_latest_24h
             WHERE site_id = %s
             ORDER BY horizon_index ASC
@@ -628,10 +623,8 @@ class ForecastRepository:
             trigger_source,
             issued_at,
             updated_at,
-            raw_output_json,
         ) = record
-        raw_output = cls._json_value(raw_output_json) or {}
-        row = dict(raw_output) if isinstance(raw_output, dict) else {}
+        row: dict[str, Any] = {}
         row.update(
             {
                 "site_id": site_id,
