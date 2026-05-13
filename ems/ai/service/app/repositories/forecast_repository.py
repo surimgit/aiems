@@ -76,6 +76,7 @@ class ForecastRepository:
                 )
                 run_id = cur.fetchone()[0]
                 self._insert_points(cur, run_id, site_id, forecasts)
+                self._replace_latest_24h(cur, run_id, site_id, forecasts, payload, result, started_at)
                 self._insert_event(
                     cur,
                     run_id,
@@ -200,30 +201,15 @@ class ForecastRepository:
 
         with psycopg.connect(self._conninfo()) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        forecast_run_id,
-                        site_id,
-                        trigger_source,
-                        base_time,
-                        horizon_hours,
-                        model_name,
-                        model_version,
-                        status,
-                        response_payload_json,
-                        created_at,
-                        completed_at
-                    FROM public.ai_forecast_run
-                    WHERE site_id = %s
-                      AND status = 'SUCCESS'
-                    ORDER BY completed_at DESC NULLS LAST, created_at DESC
-                    LIMIT 1
-                    """,
-                    (site_id,),
-                )
-                run = cur.fetchone()
-                if not run:
+                if self._latest_24h_table_exists(cur):
+                    latest_rows = self._select_latest_24h(cur, site_id)
+                    if latest_rows:
+                        forecast_run_id = latest_rows[0][1]
+                        run = self._select_run(cur, forecast_run_id)
+                        return self._latest_response_from_projection(site_id, forecast_run_id, latest_rows, run)
+
+                run = self._select_latest_run(cur, site_id)
+                if run is None:
                     return {
                         "enabled": True,
                         "found": False,
@@ -384,6 +370,285 @@ class ForecastRepository:
                     ForecastRepository._jsonb(row),
                 ),
             )
+
+    @classmethod
+    def _replace_latest_24h(
+        cls,
+        cur: Any,
+        run_id: UUID,
+        site_id: str,
+        forecasts: list[dict[str, Any]],
+        payload: dict[str, Any],
+        result: dict[str, Any],
+        issued_at: datetime,
+    ) -> None:
+        cls._ensure_latest_24h_table(cur)
+        cur.execute("DELETE FROM public.ai_forecast_latest_24h WHERE site_id = %s", (site_id,))
+        trigger_source = payload.get("trigger_source") or "api"
+        solar_backend = cls._solar_backend(payload, result)
+        for index, row in enumerate(forecasts[:24]):
+            target_time = row.get("target_time")
+            if not target_time:
+                continue
+            cur.execute(
+                """
+                INSERT INTO public.ai_forecast_latest_24h (
+                    site_id,
+                    horizon_index,
+                    forecast_run_id,
+                    target_time,
+                    predicted_solar_kw,
+                    predicted_load_kw,
+                    safe_predicted_load_kw,
+                    predicted_net_load_kw,
+                    solar_confidence,
+                    load_model_version,
+                    solar_model_version,
+                    solar_backend,
+                    trigger_source,
+                    issued_at,
+                    updated_at,
+                    raw_output_json
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s::timestamptz,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    now(),
+                    %s
+                )
+                ON CONFLICT (site_id, horizon_index) DO UPDATE SET
+                    forecast_run_id = EXCLUDED.forecast_run_id,
+                    target_time = EXCLUDED.target_time,
+                    predicted_solar_kw = EXCLUDED.predicted_solar_kw,
+                    predicted_load_kw = EXCLUDED.predicted_load_kw,
+                    safe_predicted_load_kw = EXCLUDED.safe_predicted_load_kw,
+                    predicted_net_load_kw = EXCLUDED.predicted_net_load_kw,
+                    solar_confidence = EXCLUDED.solar_confidence,
+                    load_model_version = EXCLUDED.load_model_version,
+                    solar_model_version = EXCLUDED.solar_model_version,
+                    solar_backend = EXCLUDED.solar_backend,
+                    trigger_source = EXCLUDED.trigger_source,
+                    issued_at = EXCLUDED.issued_at,
+                    updated_at = now(),
+                    raw_output_json = EXCLUDED.raw_output_json
+                """,
+                (
+                    row.get("site_id") or site_id,
+                    index,
+                    run_id,
+                    target_time,
+                    cls._optional_float(row.get("predicted_solar_kw")),
+                    cls._optional_float(row.get("predicted_load_kw")),
+                    cls._optional_float(row.get("safe_predicted_load_kw")),
+                    cls._optional_float(row.get("predicted_net_load_kw")),
+                    cls._optional_float(row.get("solar_confidence") or row.get("confidence")),
+                    row.get("load_model_version"),
+                    row.get("solar_model_version"),
+                    row.get("solar_backend") or solar_backend,
+                    trigger_source,
+                    issued_at,
+                    cls._jsonb(row),
+                ),
+            )
+
+    @staticmethod
+    def _ensure_latest_24h_table(cur: Any) -> None:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.ai_forecast_latest_24h (
+                site_id TEXT NOT NULL,
+                horizon_index INTEGER NOT NULL CHECK (horizon_index >= 0 AND horizon_index < 24),
+                forecast_run_id UUID NOT NULL,
+                target_time TIMESTAMPTZ NOT NULL,
+                predicted_solar_kw DOUBLE PRECISION,
+                predicted_load_kw DOUBLE PRECISION,
+                safe_predicted_load_kw DOUBLE PRECISION,
+                predicted_net_load_kw DOUBLE PRECISION,
+                solar_confidence DOUBLE PRECISION,
+                load_model_version TEXT,
+                solar_model_version TEXT,
+                solar_backend TEXT,
+                trigger_source TEXT,
+                issued_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                raw_output_json JSONB,
+                PRIMARY KEY (site_id, horizon_index)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_ai_forecast_latest_24h_target_time
+            ON public.ai_forecast_latest_24h (site_id, target_time)
+            """
+        )
+
+    @staticmethod
+    def _latest_24h_table_exists(cur: Any) -> bool:
+        cur.execute("SELECT to_regclass('public.ai_forecast_latest_24h') IS NOT NULL")
+        return bool(cur.fetchone()[0])
+
+    @staticmethod
+    def _select_latest_24h(cur: Any, site_id: str) -> list[tuple[Any, ...]]:
+        cur.execute(
+            """
+            SELECT
+                site_id,
+                forecast_run_id,
+                horizon_index,
+                target_time,
+                predicted_solar_kw,
+                predicted_load_kw,
+                safe_predicted_load_kw,
+                predicted_net_load_kw,
+                solar_confidence,
+                load_model_version,
+                solar_model_version,
+                solar_backend,
+                trigger_source,
+                issued_at,
+                updated_at,
+                raw_output_json
+            FROM public.ai_forecast_latest_24h
+            WHERE site_id = %s
+            ORDER BY horizon_index ASC
+            """,
+            (site_id,),
+        )
+        return cur.fetchall()
+
+    @staticmethod
+    def _select_latest_run(cur: Any, site_id: str) -> tuple[Any, ...] | None:
+        cur.execute(
+            """
+            SELECT
+                forecast_run_id,
+                site_id,
+                trigger_source,
+                base_time,
+                horizon_hours,
+                model_name,
+                model_version,
+                status,
+                response_payload_json,
+                created_at,
+                completed_at
+            FROM public.ai_forecast_run
+            WHERE site_id = %s
+              AND status = 'SUCCESS'
+            ORDER BY completed_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """,
+            (site_id,),
+        )
+        return cur.fetchone()
+
+    @staticmethod
+    def _select_run(cur: Any, forecast_run_id: str | UUID) -> tuple[Any, ...] | None:
+        cur.execute(
+            """
+            SELECT
+                forecast_run_id,
+                site_id,
+                trigger_source,
+                base_time,
+                horizon_hours,
+                model_name,
+                model_version,
+                status,
+                response_payload_json,
+                created_at,
+                completed_at
+            FROM public.ai_forecast_run
+            WHERE forecast_run_id = %s
+            """,
+            (forecast_run_id,),
+        )
+        return cur.fetchone()
+
+    @classmethod
+    def _latest_response_from_projection(
+        cls,
+        site_id: str,
+        forecast_run_id: str | UUID,
+        latest_rows: list[tuple[Any, ...]],
+        run: tuple[Any, ...] | None,
+    ) -> dict[str, Any]:
+        response_payload = cls._json_value(run[8]) if run else {}
+        response_payload = response_payload if isinstance(response_payload, dict) else {}
+        issued_at = latest_rows[0][13] if latest_rows else None
+        return {
+            "enabled": True,
+            "found": True,
+            "forecast_run_id": str(forecast_run_id),
+            "site_id": site_id,
+            "trigger_source": latest_rows[0][12] if latest_rows else (run[2] if run else None),
+            "base_time": run[3].isoformat() if run and run[3] else None,
+            "horizon_hours": len(latest_rows),
+            "model_name": run[5] if run else "forecast",
+            "model_version": run[6] if run else None,
+            "status": run[7] if run else "SUCCESS",
+            "created_at": run[9].isoformat() if run and run[9] else None,
+            "completed_at": run[10].isoformat() if run and run[10] else None,
+            "issued_at": issued_at.isoformat() if issued_at else None,
+            "forecasts": [cls._latest_24h_row(row) for row in latest_rows],
+            "recommendations": response_payload.get("recommendations") or [],
+        }
+
+    @classmethod
+    def _latest_24h_row(cls, record: tuple[Any, ...]) -> dict[str, Any]:
+        (
+            site_id,
+            forecast_run_id,
+            horizon_index,
+            target_time,
+            predicted_solar_kw,
+            predicted_load_kw,
+            safe_predicted_load_kw,
+            predicted_net_load_kw,
+            solar_confidence,
+            load_model_version,
+            solar_model_version,
+            solar_backend,
+            trigger_source,
+            issued_at,
+            updated_at,
+            raw_output_json,
+        ) = record
+        raw_output = cls._json_value(raw_output_json) or {}
+        row = dict(raw_output) if isinstance(raw_output, dict) else {}
+        row.update(
+            {
+                "site_id": site_id,
+                "forecast_run_id": str(forecast_run_id),
+                "horizon_index": int(horizon_index),
+                "target_time": target_time.isoformat() if target_time else None,
+                "predicted_solar_kw": cls._optional_float(predicted_solar_kw),
+                "predicted_load_kw": cls._optional_float(predicted_load_kw),
+                "safe_predicted_load_kw": cls._optional_float(safe_predicted_load_kw),
+                "predicted_net_load_kw": cls._optional_float(predicted_net_load_kw),
+                "solar_confidence": cls._optional_float(solar_confidence),
+                "load_model_version": load_model_version,
+                "solar_model_version": solar_model_version,
+                "solar_backend": solar_backend,
+                "trigger_source": trigger_source,
+                "issued_at": issued_at.isoformat() if issued_at else None,
+                "updated_at": updated_at.isoformat() if updated_at else None,
+            }
+        )
+        return row
 
     @staticmethod
     def _insert_event(
@@ -575,6 +840,18 @@ class ForecastRepository:
                 return str(row["solar_model_version"])
             if row.get("load_model_version"):
                 return str(row["load_model_version"])
+        return None
+
+    @staticmethod
+    def _solar_backend(payload: dict[str, Any], result: dict[str, Any]) -> str | None:
+        solar = payload.get("solar") or {}
+        if payload.get("solar_backend"):
+            return str(payload["solar_backend"])
+        if solar.get("backend"):
+            return str(solar["backend"])
+        solar_result = result.get("solar_result") or {}
+        if solar_result.get("backend"):
+            return str(solar_result["backend"])
         return None
 
     @staticmethod
