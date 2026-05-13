@@ -1178,7 +1178,13 @@ def _register_routes(app: Flask) -> None:
     class PlantEventResource(MethodView):
         @blp.response(200, EventLogSchema(many=True))
         def get(self, site_id):
-            """Plant 이벤트 로그 조회 — 프론트 EventDto 형식."""
+            """Plant 이벤트 로그 조회 — 프론트 EventDto 형식.
+
+            쿼리 파라미터 (모두 옵션):
+              - device_id: 특정 디바이스 필터
+              - severity: INFO/WARNING/ALARM/EMERGENCY
+              - limit: 기본 100, 최대 1000
+            """
             device_id = request.args.get("device_id")
             severity = request.args.get("severity")
             limit = min(int(request.args.get("limit", 100)), 1000)
@@ -1238,7 +1244,13 @@ def _register_routes(app: Flask) -> None:
     class PlantAlarmListResource(MethodView):
         @blp.response(200, AlarmSchema(many=True))
         def get(self, site_id):
-            """알람 목록 조회 — WARNING 이상 이벤트. 프론트 AlarmData DTO 형식."""
+            """알람 목록 조회 — WARNING 이상 이벤트. 프론트 AlarmData DTO 형식.
+
+            쿼리 파라미터 (모두 옵션):
+              - acknowledged: true/false/미입력=전체
+              - severity: WARNING/CRITICAL/EMERGENCY
+              - limit: 기본 100, 최대 1000
+            """
             acknowledged = request.args.get("acknowledged")  # "true" / "false" / 미입력=전체
             severity = request.args.get("severity")          # info / warning / critical (프론트) 또는 WARNING / CRITICAL (DB)
             limit = min(int(request.args.get("limit", 100)), 1000)
