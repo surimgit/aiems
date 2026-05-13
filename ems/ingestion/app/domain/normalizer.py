@@ -50,6 +50,7 @@ def _extract_edge_id(topic_device_id: str, data: dict) -> str:
     return topic_device_id
 
 
+# cicd 왜 안돼
 def _extract_location(data: dict) -> dict | None:
     payload = _as_dict(data.get("data"))
     candidates = [
