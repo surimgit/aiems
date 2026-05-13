@@ -28,6 +28,11 @@ _shared_pending_acks: dict[str, tuple[float, str, str]] = {}
 _COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 길게
 _device_cooldown: dict[str, float] = {}
 
+# ess_mode 명령의 dead-band: 마지막 발행한 (mode, target_power_kw) 기억
+# 변화량이 _ESS_DEADBAND_KW 미만이면 재발행 안 함
+_ESS_DEADBAND_KW = 2.0
+_device_last_ess_cmd: dict[str, tuple[str, float]] = {}  # device_id → (mode, kw)
+
 # Operator 명령용 MQTT 싱글턴 — 매번 connect/disconnect 방지
 _operator_mqtt: mqtt_client.Client | None = None
 
@@ -148,7 +153,21 @@ def _start_worker() -> None:
 
         if cmd["command_type"] == "ess_mode":
             requested_mode = cmd["payload"].get("mode", "standby")
-            return current_mode != requested_mode
+            requested_kw = float(cmd["payload"].get("target_power_kw", 0.0))
+
+            # 모드 전환이면 무조건 발행
+            if current_mode != requested_mode:
+                _device_last_ess_cmd[device_id] = (requested_mode, requested_kw)
+                return True
+
+            # 같은 모드면 dead-band 체크 — power set-point 변화가 작으면 스킵
+            last_mode, last_kw = _device_last_ess_cmd.get(device_id, (None, None))
+            if last_mode == requested_mode and last_kw is not None:
+                if abs(requested_kw - last_kw) < _ESS_DEADBAND_KW:
+                    return False
+
+            _device_last_ess_cmd[device_id] = (requested_mode, requested_kw)
+            return True
 
         if cmd["command_type"] == "start":
             return current_mode_lower not in ("running", "starting")
@@ -296,6 +315,7 @@ def _register_routes(app: Flask) -> None:
         reason = fields.String(allow_none=True)
         issued_by = fields.String(allow_none=True)
 
+
     class PolicySchema(Schema):
         key = fields.String()
         value = fields.Float()
@@ -315,6 +335,10 @@ def _register_routes(app: Flask) -> None:
         new_value = fields.Float()
         changed_at = fields.DateTime()
         changed_by = fields.String()
+
+    class RecommendationDecisionSchema(Schema):
+        requested_by = fields.String(required=True)
+        reason = fields.String(load_default="")
 
     # ── Action 변환 ───────────────────────────────────────────────────────────
 
@@ -438,9 +462,10 @@ def _register_routes(app: Flask) -> None:
                 client = _get_operator_mqtt()
                 client.publish(topic, mqtt_payload)
                 print(f"[control][operator] → {topic} | {payload['action']} | by {payload['requested_by']}")
-                # ACK 추적 + cooldown 등록
+                # ACK 추적 + cooldown 등록 + dead-band 캐시 초기화
                 _shared_pending_acks[command_id] = (_time.monotonic(), device_id, resource_type)
                 _device_cooldown[device_id] = _time.monotonic()
+                _device_last_ess_cmd.pop(device_id, None)
                 # desired_state Redis 저장 (rule 경로와 동일하게 폐루프 추적 가능하도록)
                 try:
                     import redis as _redis_sync
@@ -483,6 +508,30 @@ def _register_routes(app: Flask) -> None:
                 "created_at": now,
             }
 
+    # ── AI 추천 승인/거부 (미구현 → 503) ───────────────────────────────────────
+
+    def _ai_unavailable():
+        return jsonify({
+            "error_code": "FEATURE_UNAVAILABLE",
+            "message": "AI 서비스가 아직 활성화되지 않았습니다.",
+            "trace_id": str(uuid.uuid4()),
+            "details": {},
+        }), 503
+
+    @blp.route("/recommendations/<string:recommendation_id>/approve")
+    class RecommendationApproveResource(MethodView):
+        @blp.arguments(RecommendationDecisionSchema)
+        def post(self, payload, recommendation_id):
+            """AI 추천 승인 — 미구현 (AI 서비스 비활성화 상태)."""
+            return _ai_unavailable()
+
+    @blp.route("/recommendations/<string:recommendation_id>/reject")
+    class RecommendationRejectResource(MethodView):
+        @blp.arguments(RecommendationDecisionSchema)
+        def post(self, payload, recommendation_id):
+            """AI 추천 거부 — 미구현 (AI 서비스 비활성화 상태)."""
+            return _ai_unavailable()
+
     @blp.route("/commands")
     class CommandListResource(MethodView):
         @blp.response(200, CommandHistorySchema(many=True))
@@ -492,15 +541,18 @@ def _register_routes(app: Flask) -> None:
             쿼리 파라미터 (모두 옵션):
               - site_id: 특정 plant 필터 (멀티 plant 지원)
               - device_id: 특정 디바이스 필터
-              - limit: 기본 100, 최대 1000
-              - offset: 기본 0 (페이지네이션)
+              - issued_by: 발행자 필터 (예: operator-01, rule)
+              - page: 페이지 번호 1-based (기본 1)
+              - page_size: 페이지 크기 (기본 50, 최대 1000)
 
             정렬: time DESC.
             """
             site_id = request.args.get("site_id")
             device_id = request.args.get("device_id")
-            limit = min(int(request.args.get("limit", 100)), 1000)
-            offset = max(int(request.args.get("offset", 0)), 0)
+            issued_by = request.args.get("issued_by")
+            page_size = min(int(request.args.get("page_size", 50)), 1000)
+            page = max(int(request.args.get("page", 1)), 1)
+            offset = (page - 1) * page_size
 
             filters: list[str] = []
             params: list = []
@@ -510,6 +562,9 @@ def _register_routes(app: Flask) -> None:
             if device_id:
                 filters.append("device_id = %s")
                 params.append(device_id)
+            if issued_by:
+                filters.append("issued_by = %s")
+                params.append(issued_by)
             where_clause = ("WHERE " + " AND ".join(filters)) if filters else ""
 
             # control_history 는 TimescaleDB 시계열 — TS pool 사용.
@@ -526,7 +581,7 @@ def _register_routes(app: Flask) -> None:
                         ORDER BY time DESC
                         LIMIT %s OFFSET %s
                         """,
-                        (*params, limit, offset),
+                        (*params, page_size, offset),
                     )
                     rows = cur.fetchall()
             finally:
