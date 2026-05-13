@@ -39,8 +39,12 @@ model_service = ModelService()
 prediction_service = PredictionService()
 site_profile_service = SiteProfileService()
 load_service = LoadService()
-forecast_service = ForecastService(prediction_service=prediction_service, load_service=load_service)
 live_satellite_service = LiveSatellitePredictionService(prediction_service=prediction_service)
+forecast_service = ForecastService(
+    prediction_service=prediction_service,
+    load_service=load_service,
+    live_satellite_service=live_satellite_service,
+)
 
 
 @blp.route("/models")

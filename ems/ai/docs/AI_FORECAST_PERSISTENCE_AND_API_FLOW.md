@@ -283,11 +283,14 @@ forecast 결과의 시간대별 point를 저장한다. `forecasts` 배열 1개 r
 ```json
 {
   "site_id": "PLANT-ALPHA",
+  "solar_backend": "live_satellite",
   "start_time": "2026-05-12T15:00:00+09:00",
   "periods": 24,
   "frequency_hours": 1,
   "site": {
     "site_id": "PLANT-ALPHA",
+    "region": "대전시",
+    "dong_code": "3000000000",
     "latitude": 36.35,
     "longitude": 127.38,
     "timezone": "Asia/Seoul",
@@ -298,6 +301,10 @@ forecast 결과의 시간대별 point를 저장한다. `forecasts` 배열 1개 r
 ```
 
 운영 최종형에서는 `site` 내부 스펙을 프론트가 주지 않고 AI가 Redis latest state에서 조립한다. 위 예시는 API 형태 설명용이다.
+
+`solar_backend=live_satellite`이면 태양광 발전 예측은 RunPod v10 live satellite 경로를 사용한다. v10은 `horizon_hours=1~24` 시간 단위 예측 모델이므로 scheduled forecast는 최대 24개 hourly anchor를 생성해 저장한다. v10 호출이 실패하면 API는 LightGBM capacity-factor forecast로 fallback하고, 응답 `warnings`에 fallback 사유를 남긴다.
+
+`solar_backend`를 생략한 일반 `/api/ai/forecast` 호출은 기존 LightGBM capacity-factor 경로를 사용한다. `/api/ai/forecast/scheduled`는 `S305_FORECAST_SOLAR_BACKEND` 값을 따르며 기본값은 `live_satellite`다.
 
 응답 핵심:
 
