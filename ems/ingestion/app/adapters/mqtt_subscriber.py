@@ -1,3 +1,5 @@
+# plz commit
+
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -11,6 +13,7 @@ from ..domain.normalizer import normalize
 from ..domain.classifier import classify
 from .redis_publisher import RedisPublisher
 from .telemetry_coalescer import TelemetryCoalescer
+
 
 _HEARTBEAT_TTL_SEC = 30  # 시뮬레이터 10초 주기 × 3회 미수신 시 만료
 _HEARTBEAT_PREFIX = "ems:heartbeat:"
