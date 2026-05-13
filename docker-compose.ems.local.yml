@@ -67,6 +67,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SITE_ID=PLANT-ALPHA
+      - LOCAL_SIM_TOPOLOGY_MQTT_ENABLED=true
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_NAME=emsdb

@@ -14,10 +14,12 @@ from .config import (
     CONTROL_DB_USER, CONTROL_DB_PASSWORD,
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
     SIMULATOR_TOPOLOGY_URL,
+    LOCAL_SIM_TOPOLOGY_MQTT_ENABLED,
 )
 from .extensions import socketio
 
 _KNOWN_SITES = [SITE_ID]
+_LOCAL_TOPOLOGY_CACHE_PREFIX = "ems:topology:"
 
 
 def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
@@ -34,6 +36,86 @@ def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
     except Exception as e:
         print(f"[state-processor][topology] simulator 응답 실패 (DB 만 사용): {e}")
         return None
+
+
+def _apply_live_state_to_topology(topology: dict, states: list[dict]) -> dict:
+    out = json.loads(json.dumps(topology))
+    state_by_device = {s.get("device_id"): s for s in states if s.get("device_id")}
+    state_by_switch = {
+        s.get("device_id"): s for s in states
+        if (s.get("resource_type") or "").upper() == "SWITCH"
+    }
+
+    def _node_status(device_id: str | None) -> str:
+        if not device_id:
+            return "NORMAL"
+        s = state_by_device.get(device_id) or {}
+        if s.get("emergency"):
+            return "EMERGENCY"
+        if (s.get("comms_health") or "") == "stale":
+            return "WARNING"
+        return "NORMAL"
+
+    node_device_map = {}
+    for node in out.get("nodes", []) or []:
+        resource_id = node.get("resource_id")
+        node_device_map[node.get("node_id")] = resource_id
+        node["status"] = _node_status(resource_id)
+        node.setdefault("position", {"x": 0.0, "y": 0.0})
+
+    switches_by_line: dict[str, list[dict]] = {}
+    for sw in out.get("switches", []) or []:
+        switch_id = sw.get("switch_id")
+        if switch_id:
+            live = state_by_switch.get(switch_id) or {}
+            reported = live.get("reported_state") or {}
+            if reported.get("switch_state"):
+                sw["position"] = reported["switch_state"]
+            if reported.get("interlock_blocked") is not None:
+                sw["interlock_blocked"] = bool(reported.get("interlock_blocked"))
+        if sw.get("line_id"):
+            switches_by_line.setdefault(sw["line_id"], []).append(sw)
+
+    def _line_flow_kw(from_node_id: str) -> float:
+        dev_id = node_device_map.get(from_node_id)
+        if not dev_id:
+            return 0.0
+        s = state_by_device.get(dev_id) or {}
+        p = (s.get("reported_state") or {}).get("P")
+        return float(p) if p is not None else 0.0
+
+    def _direction(flow_kw: float) -> str:
+        if flow_kw > 0.01:
+            return "FORWARD"
+        if flow_kw < -0.01:
+            return "REVERSE"
+        return "BIDIRECTIONAL"
+
+    for line in out.get("lines", []) or []:
+        flow = _line_flow_kw(line.get("from_node_id"))
+        line["flow_kw"] = round(flow, 2)
+        line["direction"] = _direction(flow)
+        sws = switches_by_line.get(line.get("line_id") or "", [])
+        if any((sw.get("position") or "").upper() == "OPEN" for sw in sws):
+            line["status"] = "OPEN"
+        else:
+            line["status"] = (line.get("status") or "NORMAL").upper()
+
+    return out
+
+
+def _get_local_topology_from_redis(redis_client: redis.Redis, site_id: str) -> dict | None:
+    raw = redis_client.get(f"{_LOCAL_TOPOLOGY_CACHE_PREFIX}{site_id}")
+    if not raw:
+        return None
+    try:
+        entry = json.loads(raw)
+    except Exception:
+        return None
+    topology = entry.get("topology")
+    if not isinstance(topology, dict):
+        return None
+    return topology
 
 # ── DTO 변환 헬퍼 (module-level) ──────────────────────────────────────────────
 # 시뮬레이터의 DIESEL → 프론트 enum DIESEL_GENERATOR 로 변환.
@@ -653,6 +735,18 @@ def _register_routes(app: Flask) -> None:
         @blp.response(200, TopologySchema)
         def get(self, site_id):
             """Plant 토폴로지 — DB 정적 정보 + Redis state 로 status/flow 산출."""
+            states = _get_site_states(site_id)
+            if LOCAL_SIM_TOPOLOGY_MQTT_ENABLED:
+                cached = _get_local_topology_from_redis(get_redis(), site_id)
+                if cached is None:
+                    return {
+                        "site_id": site_id,
+                        "nodes": [],
+                        "lines": [],
+                        "switches": [],
+                    }
+                return _apply_live_state_to_topology(cached, states)
+
             pool = get_control_db_pool()
             conn = pool.getconn()
             try:
@@ -687,7 +781,6 @@ def _register_routes(app: Flask) -> None:
                 pool.putconn(conn)
 
             # Redis state 인덱스 (device_id → state) — 노드 status 산출용.
-            states = _get_site_states(site_id)
             state_by_device = {s.get("device_id"): s for s in states if s.get("device_id")}
             state_by_switch = {
                 s.get("device_id"): s for s in states

@@ -51,6 +51,7 @@ services:
     env_file: .env
     environment:
       FLASK_APP: app.main:app
+      LOCAL_SIM_TOPOLOGY_MQTT_ENABLED: ${LOCAL_SIM_TOPOLOGY_MQTT_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy

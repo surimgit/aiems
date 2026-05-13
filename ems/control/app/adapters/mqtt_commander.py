@@ -32,6 +32,39 @@ _ACK_TIMEOUT_BY_TYPE: dict[str, float] = {
 }
 
 
+def _build_mqtt_command(command_id: str, command: dict) -> tuple[str, dict]:
+    device_id = command["device_id"]
+    resource_type = command["resource_type"]
+    command_type = command["command_type"]
+    timeout_sec = _ACK_TIMEOUT_BY_TYPE.get(command_type, _ACK_TIMEOUT_SEC)
+
+    if resource_type.lower() == "switch" and command_type in ("open", "close"):
+        return (
+            f"{SITE_ID}/simulator-manager/topology/command",
+            {
+                "command_id": command_id,
+                "target_type": "switch",
+                "target_id": device_id,
+                "command": "OPEN_SWITCH" if command_type == "open" else "CLOSE_SWITCH",
+                "source": command.get("issued_by", "rule"),
+                "expires_in_sec": command.get("expires_in_sec", timeout_sec),
+                "force": command.get("force", False),
+            },
+        )
+
+    return (
+        f"{SITE_ID}/{resource_type}/{device_id}/command",
+        {
+            "command_id": command_id,
+            "command_type": command_type,
+            "payload": command["payload"],
+            "source": command.get("issued_by", "rule"),
+            "expires_in_sec": command.get("expires_in_sec", timeout_sec),
+            "force": command.get("force", False),
+        },
+    )
+
+
 class MqttCommander:
     def __init__(self, db: ControlDBWriter, event_pub: EventPublisher,
                  pending_acks: dict | None = None, device_cooldown: dict | None = None):
@@ -78,17 +111,7 @@ class MqttCommander:
         device_id = command["device_id"]
         resource_type = command["resource_type"]
         command_id = str(uuid.uuid4())
-        command_type = command["command_type"]
-        topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
-        timeout_sec = _ACK_TIMEOUT_BY_TYPE.get(command_type, _ACK_TIMEOUT_SEC)
-        payload = {
-            "command_id": command_id,
-            "command_type": command_type,
-            "payload": command["payload"],
-            "source": command.get("issued_by", "rule"),
-            "expires_in_sec": command.get("expires_in_sec", timeout_sec),
-            "force": command.get("force", False),
-        }
+        topic, payload = _build_mqtt_command(command_id, command)
         # publish 전에 먼저 등록 — ACK가 publish await 중에 먼저 들어오는 race condition 방지
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
         self._retry_counts[command_id] = (0, command)
@@ -128,6 +151,7 @@ class MqttCommander:
                     password=MQTT_PASSWORD,
                 ) as sub:
                     await sub.subscribe(f"{SITE_ID}/+/+/ack", qos=1)
+                    await sub.subscribe(f"{SITE_ID}/simulator-manager/topology/command/ack", qos=1)
                     print("[control][ack] ACK 구독 시작")
                     async for msg in sub.messages:
                         topic = str(msg.topic)
@@ -288,16 +312,7 @@ class MqttCommander:
                         device_id,
                         resource_type,
                     ))
-                    cmd_type = original_cmd["command_type"]
-                    topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
-                    retry_payload = {
-                        "command_id": new_id,
-                        "command_type": cmd_type,
-                        "payload": original_cmd["payload"],
-                        "source": original_cmd.get("issued_by", "rule"),
-                        "expires_in_sec": _ACK_TIMEOUT_BY_TYPE.get(cmd_type, _ACK_TIMEOUT_SEC),
-                        "force": original_cmd.get("force", False),
-                    }
+                    topic, retry_payload = _build_mqtt_command(new_id, original_cmd)
                     try:
                         await self._pub_client.publish(topic, json.dumps(retry_payload, ensure_ascii=False))
                         await self._db.update_ack(command_id, "TIMEOUT")

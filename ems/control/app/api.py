@@ -44,6 +44,35 @@ def _get_operator_mqtt() -> mqtt_client.Client:
     return _operator_mqtt
 
 
+def _build_operator_mqtt_command(command_id: str, payload: dict, translated: dict) -> tuple[str, str]:
+    resource_type = payload["resource_type"].lower()
+    device_id = payload["device_id"]
+    action = payload["action"]
+
+    if resource_type == "switch" and action in ("OPEN_SWITCH", "CLOSE_SWITCH"):
+        topic = f"{SITE_ID}/simulator-manager/topology/command"
+        body = {
+            "command_id": command_id,
+            "target_type": "switch",
+            "target_id": device_id,
+            "command": action,
+            "source": "operator",
+            "expires_in_sec": 30,
+            "force": True,
+        }
+        return topic, json.dumps(body, ensure_ascii=False)
+
+    topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
+    body = {
+        "command_id": command_id,
+        **translated,
+        "source": "operator",
+        "expires_in_sec": 30,
+        "force": True,
+    }
+    return topic, json.dumps(body, ensure_ascii=False)
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     PrometheusMetrics(app, group_by="endpoint")
@@ -426,14 +455,7 @@ def _register_routes(app: Flask) -> None:
             # MQTT로 실제 장치에 명령 전송
             resource_type = payload["resource_type"].lower()
             device_id = payload["device_id"]
-            topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
-            mqtt_payload = json.dumps({
-                "command_id": command_id,
-                **_translate_action(payload["action"]),
-                "source": "operator",
-                "expires_in_sec": 30,
-                "force": True,
-            }, ensure_ascii=False)
+            topic, mqtt_payload = _build_operator_mqtt_command(command_id, payload, translated)
             try:
                 client = _get_operator_mqtt()
                 client.publish(topic, mqtt_payload)
