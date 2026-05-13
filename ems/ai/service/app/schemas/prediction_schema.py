@@ -132,6 +132,21 @@ class ForecastRequestSchema(Schema):
     site_id = fields.String(load_default=None, allow_none=True)
     site = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=dict)
     trigger_source = fields.String(load_default=None, allow_none=True)
+    solar_backend = fields.String(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(["capacity_factor", "lightgbm", "live_satellite", "satellite", "v10"]),
+    )
+    region = fields.String(load_default=None, allow_none=True)
+    latitude = fields.Float(load_default=None, allow_none=True)
+    longitude = fields.Float(load_default=None, allow_none=True)
+    dong_code = fields.String(load_default=None, allow_none=True)
+    installed_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    timezone = fields.String(load_default=None, allow_none=True)
+    weather_search_hours = fields.Integer(load_default=None, allow_none=True)
+    satellite_search_hours = fields.Integer(load_default=None, allow_none=True)
+    model_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    max_capacity_factor = fields.Float(load_default=None, allow_none=True)
     solar_model_path = fields.String(load_default=None, allow_none=True)
     solar_model_version = fields.String(load_default=None, allow_none=True)
     start_time = fields.String(load_default=None, allow_none=True)
@@ -176,6 +191,7 @@ class ForecastResponseSchema(Schema):
     rows = fields.Integer(required=True)
     forecast_run_id = fields.String(allow_none=True)
     persistence = fields.Raw(allow_none=True)
+    warnings = fields.List(fields.String(), load_default=list)
     forecasts = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     recommendations = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     solar_result = fields.Raw(allow_none=True)

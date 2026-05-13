@@ -8,9 +8,14 @@ from zoneinfo import ZoneInfo
 from astral import Observer
 from astral.sun import elevation
 
+from .live_satellite_service import LiveSatellitePredictionService
 from .load_service import LoadService
 from .prediction_service import PredictionService
+from ..config import settings
 from ..repositories.forecast_repository import ForecastRepository
+
+
+LIVE_SATELLITE_BACKENDS = {"live_satellite", "satellite", "v10"}
 
 
 class ForecastService:
@@ -19,28 +24,49 @@ class ForecastService:
         prediction_service: PredictionService | None = None,
         load_service: LoadService | None = None,
         forecast_repository: ForecastRepository | None = None,
+        live_satellite_service: LiveSatellitePredictionService | None = None,
     ) -> None:
         self.prediction_service = prediction_service or PredictionService()
         self.load_service = load_service or LoadService()
         self.forecast_repository = forecast_repository or ForecastRepository()
+        self.live_satellite_service = live_satellite_service or LiveSatellitePredictionService(
+            prediction_service=self.prediction_service
+        )
 
     def forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
         solar_payload = dict(payload.get("solar") or {})
         load_payload = dict(payload.get("load") or {})
         site_profile = payload.get("site_profile")
+        warnings: list[str] = []
+        solar_result = None
+        solar_target_times: list[str] | None = None
+        solar_backend = self._solar_backend(payload)
 
-        if not solar_payload.get("features") and self._is_horizon_request(payload):
-            solar_payload = self._build_solar_payload(payload)
+        if solar_payload.get("features"):
+            solar_result = self.prediction_service.predict_capacity_factor(solar_payload)
+        elif self._is_horizon_request(payload):
+            if solar_backend in LIVE_SATELLITE_BACKENDS:
+                try:
+                    solar_result = self._predict_live_satellite_forecast(payload)
+                    solar_target_times = [
+                        item["target_time"] for item in solar_result.get("predictions", []) if item.get("target_time")
+                    ]
+                    warnings.extend(solar_result.get("warnings") or [])
+                except Exception as exc:
+                    warnings.append(f"live_satellite_failed: {exc}; fallback=capacity_factor")
+                    solar_payload = self._build_solar_payload(payload)
+            else:
+                solar_payload = self._build_solar_payload(payload)
+
+        if solar_result is None and solar_payload.get("features"):
+            solar_result = self.prediction_service.predict_capacity_factor(solar_payload)
 
         if not load_payload and self._is_horizon_request(payload):
-            load_payload = self._build_load_payload(payload)
+            load_source = {**payload, "target_times": solar_target_times} if solar_target_times else payload
+            load_payload = self._build_load_payload(load_source)
 
         if site_profile and "site_profile" not in load_payload:
             load_payload = {**load_payload, "site_profile": site_profile}
-
-        solar_result = None
-        if solar_payload.get("features"):
-            solar_result = self.prediction_service.predict_capacity_factor(solar_payload)
 
         load_result = None
         if load_payload:
@@ -57,6 +83,8 @@ class ForecastService:
             "solar_result": solar_result,
             "load_result": load_result,
         }
+        if warnings:
+            result["warnings"] = warnings
         result["persistence"] = self._persist(payload, result)
         return result
 
@@ -64,6 +92,7 @@ class ForecastService:
         return self.forecast({
             **payload,
             "trigger_source": payload.get("trigger_source") or "scheduled",
+            "solar_backend": payload.get("solar_backend") or settings.forecast_solar_backend,
         })
 
     def latest(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -111,11 +140,16 @@ class ForecastService:
     def _is_horizon_request(payload: dict[str, Any]) -> bool:
         return bool(payload.get("target_times") or payload.get("start_time") or payload.get("periods"))
 
+    @staticmethod
+    def _solar_backend(payload: dict[str, Any]) -> str:
+        solar = payload.get("solar") or {}
+        return str(payload.get("solar_backend") or solar.get("backend") or "capacity_factor").strip().lower()
+
     def _build_solar_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         site = payload.get("site") or {}
         site_id = payload.get("site_id") or site.get("site_id")
-        latitude = self._required_float(site, "latitude")
-        longitude = self._required_float(site, "longitude")
+        latitude = self._required_float(payload, site, "latitude")
+        longitude = self._required_float(payload, site, "longitude")
         installed_capacity_kw = float(site.get("installed_capacity_kw") or payload.get("installed_capacity_kw"))
         timezone_name = site.get("timezone") or payload.get("timezone") or "Asia/Seoul"
         history = self._history_defaults(payload)
@@ -145,6 +179,86 @@ class ForecastService:
             "model_version": payload.get("solar_model_version"),
             "features": features,
         }
+
+    def _predict_live_satellite_forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
+        site = payload.get("site") or {}
+        site_id = payload.get("site_id") or site.get("site_id")
+        timezone_name = site.get("timezone") or payload.get("timezone") or "Asia/Seoul"
+        latitude = self._required_float(payload, site, "latitude")
+        longitude = self._required_float(payload, site, "longitude")
+        installed_capacity_kw = float(site.get("installed_capacity_kw") or payload.get("installed_capacity_kw"))
+        target_times = self._live_satellite_target_times(payload, timezone_name)
+        predictions: list[dict[str, Any]] = []
+        warnings: list[str] = []
+
+        for index, target_time in enumerate(target_times, start=1):
+            request_payload = {
+                "site_id": site_id,
+                "region": site.get("region") or payload.get("region"),
+                "latitude": latitude,
+                "longitude": longitude,
+                "dong_code": site.get("dong_code") or payload.get("dong_code"),
+                "installed_capacity_kw": installed_capacity_kw,
+                "model_capacity_kw": payload.get("model_capacity_kw") or site.get("model_capacity_kw"),
+                "horizon_hours": min(index, 24),
+                "target_time": target_time.isoformat(),
+                "weather_search_hours": payload.get("weather_search_hours"),
+                "satellite_search_hours": payload.get("satellite_search_hours"),
+                "model_path": payload.get("solar_model_path"),
+                "model_version": payload.get("solar_model_version"),
+                "max_capacity_factor": payload.get("max_capacity_factor"),
+            }
+            result = self.live_satellite_service.predict(
+                {key: value for key, value in request_payload.items() if value is not None}
+            )
+            prediction = result.get("prediction") or {}
+            warnings.extend(str(item) for item in (result.get("warnings") or []))
+            target = result.get("target") or {}
+            predictions.append(
+                {
+                    "target_time": target.get("target_time") or target_time.isoformat(),
+                    "site_id": site_id,
+                    "predicted_generation_kw": prediction.get("predicted_generation_kw"),
+                    "confidence": prediction.get("confidence"),
+                    "model_version": prediction.get("model_version") or "satellite-v10-live",
+                    "backend": "live_satellite",
+                    "horizon_hours": target.get("horizon_hours", min(index, 24)),
+                    "postprocess_reason": prediction.get("postprocess_reason"),
+                    "raw_prediction": prediction,
+                    "site": result.get("site"),
+                    "target": target,
+                    "weather": result.get("weather"),
+                    "satellite": result.get("satellite"),
+                }
+            )
+
+        return {
+            "ok": True,
+            "task": "predict_live_satellite_capacity_factor",
+            "backend": "live_satellite",
+            "rows": len(predictions),
+            "predictions": predictions,
+            "warnings": sorted(set(warnings)),
+        }
+
+    @classmethod
+    def _live_satellite_target_times(cls, payload: dict[str, Any], timezone_name: str) -> list[datetime]:
+        if payload.get("target_times"):
+            parsed = [cls._parse_time(value, timezone_name) for value in payload["target_times"]]
+            step = max(1, int(math.ceil(len(parsed) / 24)))
+            return parsed[::step][:24]
+        if payload.get("start_time"):
+            start = cls._parse_time(payload["start_time"], timezone_name)
+        else:
+            start = datetime.now(ZoneInfo(timezone_name)).replace(minute=0, second=0, microsecond=0)
+        horizon_hours = cls._forecast_horizon_hours(payload)
+        return [start + timedelta(hours=index) for index in range(horizon_hours)]
+
+    @staticmethod
+    def _forecast_horizon_hours(payload: dict[str, Any]) -> int:
+        periods = int(payload.get("periods") or 24)
+        frequency_hours = float(payload.get("frequency_hours") or 1.0)
+        return max(1, min(24, int(math.ceil(periods * frequency_hours))))
 
     def _build_load_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         site = payload.get("site") or {}
@@ -181,10 +295,13 @@ class ForecastService:
         return parsed
 
     @staticmethod
-    def _required_float(site: dict[str, Any], key: str) -> float:
-        if site.get(key) is None:
+    def _required_float(payload: dict[str, Any], site: dict[str, Any], key: str) -> float:
+        value = site.get(key)
+        if value is None:
+            value = payload.get(key)
+        if value is None:
             raise ValueError(f"site.{key} is required for bundled forecast")
-        return float(site[key])
+        return float(value)
 
     @staticmethod
     def _history_defaults(payload: dict[str, Any]) -> dict[str, float]:
