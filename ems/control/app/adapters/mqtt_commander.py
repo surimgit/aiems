@@ -239,10 +239,7 @@ class MqttCommander:
                     "resource_type": resource_type,
                     "event_type": "EVT-N-005",
                     "severity": "WARNING",
-                    "message": (
-                        f"명령 수락됐으나 {_VERIFY_DELAY_SEC:.0f}s 후에도 상태 미반영 "
-                        f"[{command_type}]"
-                    ),
+                    "message": f"명령 미반영 ({command_type})",
                     "payload": {"command_id": command_id, "command_type": command_type, "expected": payload},
                 })
         except Exception as e:
@@ -327,7 +324,7 @@ class MqttCommander:
                         "resource_type": resource_type,
                         "event_type": "EVT-E-005",
                         "severity": "CRITICAL",
-                        "message": f"명령 전달 {_MAX_RETRIES}회 재시도 후 최종 실패: {device_id}",
+                        "message": f"명령 전달 실패",
                         "payload": {"command_id": command_id, "retries": _MAX_RETRIES},
                     })
 
