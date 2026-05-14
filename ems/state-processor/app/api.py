@@ -1,8 +1,9 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import psycopg2.pool
 import redis
-from flask import Flask, jsonify, request
+from flask import Flask, abort, jsonify, request
 from flask.views import MethodView
 from flask_smorest import Api, Blueprint
 from marshmallow import Schema, fields
@@ -20,6 +21,12 @@ from .extensions import socketio
 
 _KNOWN_SITES = [SITE_ID]
 _LOCAL_TOPOLOGY_CACHE_PREFIX = "ems:topology:"
+_KST = timezone(timedelta(hours=9), "Asia/Seoul")
+_SOLAR_SAVINGS_PERIODS = {"today", "month"}
+
+# 실제 한전 계약종별/계절/시간대별 단가를 확정하면 여기만 바꾼다.
+SOLAR_SAVINGS_TARIFF_WON_PER_KWH = 150.0
+SOLAR_SAVINGS_TARIFF_BASIS = "한전 전력량요금 단가 기준"
 
 
 def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
@@ -257,6 +264,48 @@ def _compute_summary(site_id: str, states: list[dict]) -> dict:
     }
 
 
+def _parse_solar_savings_period(raw: str | None) -> str:
+    period = (raw or "month").lower()
+    if period not in _SOLAR_SAVINGS_PERIODS:
+        abort(400, "period must be one of: today, month")
+    return period
+
+
+def _solar_savings_window(period: str, now: datetime | None = None) -> tuple[datetime, datetime]:
+    end_at = (now or datetime.now(_KST)).astimezone(_KST)
+    if period == "today":
+        start_at = end_at.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start_at = end_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return start_at, end_at
+
+
+def _build_solar_savings_payload(
+    site_id: str,
+    period: str,
+    start_at: datetime,
+    end_at: datetime,
+    solar_generation_kwh: float,
+    load_consumption_kwh: float,
+) -> dict:
+    avoided_grid_kwh = min(solar_generation_kwh, load_consumption_kwh) if load_consumption_kwh > 0 else solar_generation_kwh
+    savings_won = avoided_grid_kwh * SOLAR_SAVINGS_TARIFF_WON_PER_KWH
+    self_use_ratio_pct = (avoided_grid_kwh / solar_generation_kwh * 100.0) if solar_generation_kwh > 0 else 0.0
+    return {
+        "site_id": site_id,
+        "period": period,
+        "from": start_at.isoformat(),
+        "to": end_at.isoformat(),
+        "solar_generation_kwh": round(solar_generation_kwh, 3),
+        "avoided_grid_kwh": round(avoided_grid_kwh, 3),
+        "savings_won": round(savings_won),
+        "avg_tariff_won_per_kwh": SOLAR_SAVINGS_TARIFF_WON_PER_KWH,
+        "self_use_ratio_pct": round(self_use_ratio_pct, 2),
+        "tariff_basis": SOLAR_SAVINGS_TARIFF_BASIS,
+        "updated_at": end_at.isoformat(),
+    }
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     socketio.init_app(app)
@@ -415,6 +464,19 @@ def _register_routes(app: Flask) -> None:
         load_power_kw = fields.Float()
         diesel_power_kw = fields.Float()  # 프론트 DTO 외 추가 필드 — 호환성 OK.
         ess_soc_avg = fields.Float(allow_none=True)
+
+    class SolarSavingsPerformanceSchema(Schema):
+        site_id = fields.String()
+        period = fields.String()
+        from_time = fields.String(data_key="from", attribute="from")
+        to = fields.String()
+        solar_generation_kwh = fields.Float()
+        avoided_grid_kwh = fields.Float()
+        savings_won = fields.Float()
+        avg_tariff_won_per_kwh = fields.Float()
+        self_use_ratio_pct = fields.Float()
+        tariff_basis = fields.String(allow_none=True)
+        updated_at = fields.String(allow_none=True)
 
     class EssStatusSchema(Schema):
         ess_id = fields.String()
@@ -676,6 +738,68 @@ def _register_routes(app: Flask) -> None:
         def get(self, site_id):
             """Plant 전력 흐름 요약 — 대시보드 상단 숫자"""
             return _compute_summary(site_id, _get_site_states(site_id))
+
+    @blp.route("/plants/<string:site_id>/performance/solar-savings")
+    class PlantSolarSavingsPerformanceResource(MethodView):
+        @blp.response(200, SolarSavingsPerformanceSchema)
+        def get(self, site_id):
+            """실제 태양광 발전량 기반 한전 구매 대체 성과.
+
+            sensor_data 의 SOLAR p_avg(kW)를 1초 집계 row 기준으로 적분해 kWh 를 계산한다.
+            LOAD 데이터가 있으면 구매 대체량은 min(태양광 발전량, 부하 사용량) 으로 제한한다.
+            """
+            period = _parse_solar_savings_period(request.args.get("period"))
+            start_at, end_at = _solar_savings_window(period)
+
+            pool = get_db_pool()
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            COALESCE(
+                                SUM(
+                                    CASE
+                                        WHEN resource_type IN ('SOLAR', 'PV') AND p_avg IS NOT NULL
+                                            THEN GREATEST(p_avg, 0)
+                                        ELSE 0
+                                    END
+                                ) / 3600.0,
+                                0.0
+                            ) AS solar_generation_kwh,
+                            COALESCE(
+                                SUM(
+                                    CASE
+                                        WHEN resource_type = 'LOAD' AND p_avg IS NOT NULL
+                                            THEN ABS(p_avg)
+                                        ELSE 0
+                                    END
+                                ) / 3600.0,
+                                0.0
+                            ) AS load_consumption_kwh
+                        FROM sensor_data
+                        WHERE site_id = %s
+                          AND time >= %s
+                          AND time < %s
+                          AND resource_type IN ('SOLAR', 'PV', 'LOAD')
+                        """,
+                        (site_id, start_at, end_at),
+                    )
+                    row = cur.fetchone()
+            finally:
+                pool.putconn(conn)
+
+            solar_generation_kwh = float(row[0] or 0.0) if row else 0.0
+            load_consumption_kwh = float(row[1] or 0.0) if row else 0.0
+            return _build_solar_savings_payload(
+                site_id,
+                period,
+                start_at,
+                end_at,
+                solar_generation_kwh,
+                load_consumption_kwh,
+            )
 
     # ── 실시간 디바이스 상태 ────────────────────────────────────────────────
 
