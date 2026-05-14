@@ -33,7 +33,7 @@ def _build_isolated_events(flow: dict, states: dict) -> list[dict]:
             "device_id": device_id,
             "edge_id": state.get("edge_id"),
             "resource_type": state.get("resource_type"),
-            "message": f"자원 토폴로지 고립: {device_id} 가 LOAD 와 통전 가능한 경로 없음",
+            "message": f"토폴로지 고립 (LOAD 경로 없음)",
             "payload": {
                 "device_id": device_id,
                 "comms_health": state.get("comms_health"),
