@@ -10,4 +10,4 @@ COPY . .
 EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:${PORT}/health || exit 1
-CMD ["sh", "-c", "gunicorn -w 1 --threads ${GUNICORN_THREADS:-100} --access-logfile - --error-logfile - --log-level info -b 0.0.0.0:${PORT} app.main:app"]
+CMD ["sh", "-c", "gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 --access-logfile - --error-logfile - --log-level info -b 0.0.0.0:${PORT} app.main:app"]
