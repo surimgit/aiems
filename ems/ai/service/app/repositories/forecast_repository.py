@@ -21,6 +21,117 @@ class ForecastRepository:
 
         forecasts = result.get("forecasts") or []
         site_id = self._site_id(payload, forecasts)
+        issued_at = datetime.now(timezone.utc)
+        requested_run_id = payload.get("forecast_run_id") or result.get("forecast_run_id")
+        final_status = self._result_status(result)
+
+        with psycopg.connect(self._conninfo()) as conn:
+            with conn.cursor() as cur:
+                if requested_run_id:
+                    run_id = UUID(str(requested_run_id))
+                    result["forecast_run_id"] = str(run_id)
+                    cur.execute(
+                        """
+                        UPDATE public.ai_forecast_run
+                        SET
+                            site_id = %s,
+                            trigger_source = %s,
+                            horizon_hours = %s,
+                            model_name = %s,
+                            model_version = %s,
+                            runpod_endpoint_id = %s,
+                            status = %s,
+                            input_snapshot_json = %s,
+                            request_payload_json = %s,
+                            response_payload_json = %s,
+                            completed_at = now()
+                        WHERE forecast_run_id = %s
+                        """,
+                        (
+                            site_id,
+                            payload.get("trigger_source") or "api",
+                            self._horizon_hours(payload, forecasts),
+                            self._model_name(result),
+                            self._model_version(result),
+                            settings.runpod_endpoint_id,
+                            final_status,
+                            self._jsonb(self._input_snapshot(payload)),
+                            self._jsonb(payload),
+                            self._jsonb(result),
+                            run_id,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO public.ai_forecast_run (
+                            site_id,
+                            trigger_source,
+                            base_time,
+                            horizon_hours,
+                            model_name,
+                            model_version,
+                            runpod_endpoint_id,
+                            status,
+                            input_snapshot_json,
+                            request_payload_json,
+                            response_payload_json,
+                            started_at,
+                            completed_at
+                        )
+                        VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            now()
+                        )
+                        RETURNING forecast_run_id
+                        """,
+                        (
+                            site_id,
+                            payload.get("trigger_source") or "api",
+                            issued_at,
+                            self._horizon_hours(payload, forecasts),
+                            self._model_name(result),
+                            self._model_version(result),
+                            settings.runpod_endpoint_id,
+                            final_status,
+                            self._jsonb(self._input_snapshot(payload)),
+                            self._jsonb(payload),
+                            self._jsonb(result),
+                            issued_at,
+                        ),
+                    )
+                    run_id = cur.fetchone()[0]
+                    result["forecast_run_id"] = str(run_id)
+                self._insert_points(cur, run_id, site_id, forecasts)
+                self._replace_latest_24h(cur, run_id, site_id, forecasts, payload, result, issued_at)
+                self._insert_event(
+                    cur,
+                    run_id,
+                    "FORECAST_SAVED",
+                    "Forecast result saved",
+                    {"site_id": site_id, "rows": len(forecasts), "status": final_status},
+                )
+            conn.commit()
+        return str(run_id)
+
+    def start_forecast(self, payload: dict[str, Any]) -> str | None:
+        if not self.enabled:
+            return None
+
+        import psycopg
+
+        site_id = self._site_id(payload, [])
         started_at = datetime.now(timezone.utc)
 
         with psycopg.connect(self._conninfo()) as conn:
@@ -55,7 +166,7 @@ class ForecastRepository:
                         %s,
                         %s,
                         %s,
-                        now()
+                        %s
                     )
                     RETURNING forecast_run_id
                     """,
@@ -63,26 +174,31 @@ class ForecastRepository:
                         site_id,
                         payload.get("trigger_source") or "api",
                         started_at,
-                        self._horizon_hours(payload, forecasts),
-                        self._model_name(result),
-                        self._model_version(result),
+                        self._horizon_hours(payload, []),
+                        "forecast",
+                        payload.get("solar_model_version"),
                         settings.runpod_endpoint_id,
-                        "SUCCESS",
+                        "PARTIAL",
                         self._jsonb(self._input_snapshot(payload)),
                         self._jsonb(payload),
-                        self._jsonb(result),
+                        None,
                         started_at,
+                        None,
                     ),
                 )
                 run_id = cur.fetchone()[0]
-                self._insert_points(cur, run_id, site_id, forecasts)
-                self._replace_latest_24h(cur, run_id, site_id, forecasts, payload, result, started_at)
                 self._insert_event(
                     cur,
                     run_id,
-                    "FORECAST_SAVED",
-                    "Forecast result saved",
-                    {"site_id": site_id, "rows": len(forecasts)},
+                    "FORECAST_REQUESTED",
+                    "Forecast request accepted",
+                    {
+                        "site_id": site_id,
+                        "trigger_source": payload.get("trigger_source") or "api",
+                        "start_time": payload.get("start_time"),
+                        "periods": payload.get("periods"),
+                        "solar_backend": payload.get("solar_backend"),
+                    },
                 )
             conn.commit()
         return str(run_id)
@@ -102,6 +218,71 @@ class ForecastRepository:
         with psycopg.connect(self._conninfo()) as conn:
             with conn.cursor() as cur:
                 self._insert_event(cur, forecast_run_id, event_type, message, payload_json or {})
+            conn.commit()
+
+    def update_forecast_run(
+        self,
+        forecast_run_id: str | UUID | None,
+        *,
+        status: str,
+        response_payload_json: dict[str, Any] | None = None,
+        completed: bool = False,
+        event_type: str | None = None,
+        message: str | None = None,
+        payload_json: dict[str, Any] | None = None,
+    ) -> None:
+        if not self.enabled or not forecast_run_id:
+            return
+
+        import psycopg
+
+        with psycopg.connect(self._conninfo()) as conn:
+            with conn.cursor() as cur:
+                assignments = ["status = %s"]
+                params: list[Any] = [status]
+                if response_payload_json is not None:
+                    assignments.append("response_payload_json = %s")
+                    params.append(self._jsonb(response_payload_json))
+                if completed:
+                    assignments.append("completed_at = now()")
+                params.append(forecast_run_id)
+                cur.execute(
+                    f"""
+                    UPDATE public.ai_forecast_run
+                    SET {", ".join(assignments)}
+                    WHERE forecast_run_id = %s
+                    """,
+                    params,
+                )
+                if event_type:
+                    self._insert_event(cur, forecast_run_id, event_type, message, payload_json or {})
+            conn.commit()
+
+    def record_runpod_event(
+        self,
+        forecast_run_id: str | UUID | None,
+        event_type: str,
+        message: str,
+        payload_json: dict[str, Any],
+    ) -> None:
+        if not self.enabled or not forecast_run_id:
+            return
+
+        import psycopg
+
+        with psycopg.connect(self._conninfo()) as conn:
+            with conn.cursor() as cur:
+                job_id = payload_json.get("job_id")
+                if job_id and self._column_exists(cur, "ai_forecast_run", "runpod_job_id"):
+                    cur.execute(
+                        """
+                        UPDATE public.ai_forecast_run
+                        SET runpod_job_id = %s
+                        WHERE forecast_run_id = %s
+                        """,
+                        (job_id, forecast_run_id),
+                    )
+                self._insert_event(cur, forecast_run_id, event_type, message, payload_json)
             conn.commit()
 
     def save_actuals(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -545,7 +726,7 @@ class ForecastRepository:
                 completed_at
             FROM public.ai_forecast_run
             WHERE site_id = %s
-              AND status = 'SUCCESS'
+              AND status IN ('SUCCESS', 'FALLBACK')
             ORDER BY completed_at DESC NULLS LAST, created_at DESC
             LIMIT 1
             """,
@@ -802,6 +983,22 @@ class ForecastRepository:
         return Jsonb(value, dumps=lambda data: json.dumps(data, default=str, ensure_ascii=False))
 
     @staticmethod
+    def _column_exists(cur: Any, table_name: str, column_name: str) -> bool:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = %s
+                  AND column_name = %s
+            )
+            """,
+            (table_name, column_name),
+        )
+        return bool(cur.fetchone()[0])
+
+    @staticmethod
     def _site_id(payload: dict[str, Any], forecasts: list[dict[str, Any]]) -> str:
         site = payload.get("site") or {}
         if payload.get("site_id"):
@@ -837,6 +1034,15 @@ class ForecastRepository:
             if row.get("load_model_version"):
                 return str(row["load_model_version"])
         return None
+
+    @staticmethod
+    def _result_status(result: dict[str, Any]) -> str:
+        if not result.get("ok", True):
+            return "FAILED"
+        warnings = [str(item) for item in result.get("warnings") or []]
+        if any(item.startswith("live_satellite_failed:") for item in warnings):
+            return "FALLBACK"
+        return "SUCCESS"
 
     @staticmethod
     def _solar_backend(payload: dict[str, Any], result: dict[str, Any]) -> str | None:
