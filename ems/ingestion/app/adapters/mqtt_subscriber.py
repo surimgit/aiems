@@ -21,9 +21,13 @@ _TOPOLOGY_PREFIX = "ems:topology:"
 
 TOPICS = [
     f"{SITE_ID}/+/+/telemetry",
+    f"{SITE_ID}/+/+/+/telemetry",
     f"{SITE_ID}/+/+/event",
+    f"{SITE_ID}/+/+/+/event",
     f"{SITE_ID}/+/+/emergency",
+    f"{SITE_ID}/+/+/+/emergency",
     f"{SITE_ID}/+/+/ack",
+    f"{SITE_ID}/+/+/+/ack",
     f"{SITE_ID}/heartbeat",
     f"{SITE_ID}/simulator-manager/topology/structure/snapshot",
     f"{SITE_ID}/topology/line/+",
@@ -98,7 +102,11 @@ async def run(publisher: RedisPublisher) -> None:
                                     print(f"[ingestion] topology state 처리 실패: {e}")
                                 continue
 
-                            message_type = parts[3]
+                            if not _is_device_message_topic(parts):
+                                print(f"[ingestion] 지원하지 않는 topic 무시: {topic}")
+                                continue
+
+                            message_type = parts[-1]
                             if message_type == "ack":
                                 continue  # ACK는 control이 직접 처리, state stream 불필요
                             envelope = normalize(topic, message.payload)
@@ -132,6 +140,14 @@ def _is_topology_snapshot_topic(parts: list[str]) -> bool:
 
 def _is_topology_state_topic(parts: list[str]) -> bool:
     return len(parts) == 4 and parts[1] == "topology" and parts[2] in ("line", "switch")
+
+
+def _is_device_message_topic(parts: list[str]) -> bool:
+    if len(parts) == 4:
+        return parts[3] in ("telemetry", "event", "emergency", "ack")
+    if len(parts) == 5:
+        return parts[4] in ("telemetry", "event", "emergency", "ack")
+    return False
 
 
 async def _apply_topology_snapshot(redis, payload: dict) -> None:

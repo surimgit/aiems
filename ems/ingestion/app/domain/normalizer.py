@@ -5,16 +5,26 @@ from datetime import datetime, timezone
 
 def normalize(topic: str, raw_payload: bytes) -> dict:
     parts = topic.split("/")
-    site_id = parts[0]
-    resource_type = parts[1]
-    device_id = parts[2]
-    message_type = parts[3]
+    if len(parts) == 5:
+        site_id = parts[0]
+        topic_edge_id = parts[1]
+        resource_type = parts[2]
+        device_id = parts[3]
+        message_type = parts[4]
+    elif len(parts) == 4:
+        site_id = parts[0]
+        topic_edge_id = None
+        resource_type = parts[1]
+        device_id = parts[2]
+        message_type = parts[3]
+    else:
+        raise ValueError(f"unsupported topic format: {topic}")
 
     data = json.loads(raw_payload)
     payload = data.get("data", {})
     if not isinstance(payload, dict):
         payload = {}
-    edge_id = _extract_edge_id(device_id, data)
+    edge_id = _extract_edge_id(topic_edge_id, device_id, data)
     location = _extract_location(data)
 
     envelope = {
@@ -42,7 +52,9 @@ def normalize(topic: str, raw_payload: bytes) -> dict:
     return envelope
 
 
-def _extract_edge_id(topic_device_id: str, data: dict) -> str:
+def _extract_edge_id(topic_edge_id: str | None, topic_device_id: str, data: dict) -> str:
+    if topic_edge_id:
+        return topic_edge_id
     for source in (data, _as_dict(data.get("edge")), _as_dict(data.get("data"))):
         value = _first_present(source, ("edge_id", "edgeId", "edgeID", "device_id", "deviceId"))
         if value:

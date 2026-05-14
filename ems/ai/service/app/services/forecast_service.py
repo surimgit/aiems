@@ -34,6 +34,11 @@ class ForecastService:
         )
 
     def forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(payload)
+        forecast_run_id = self._start_forecast_run(payload)
+        if forecast_run_id:
+            payload["forecast_run_id"] = forecast_run_id
+
         solar_payload = dict(payload.get("solar") or {})
         load_payload = dict(payload.get("load") or {})
         site_profile = payload.get("site_profile")
@@ -54,6 +59,7 @@ class ForecastService:
                     warnings.extend(solar_result.get("warnings") or [])
                 except Exception as exc:
                     warnings.append(f"live_satellite_failed: {exc}; fallback=capacity_factor")
+                    self._mark_forecast_fallback(payload, exc)
                     solar_payload = self._build_solar_payload(payload)
             else:
                 solar_payload = self._build_solar_payload(payload)
@@ -123,6 +129,25 @@ class ForecastService:
         return {"ok": True, "task": "forecast_accuracy", **self.forecast_repository.forecast_accuracy(payload)}
 
     def _log_persistence_failure(self, payload: dict[str, Any], exc: Exception) -> None:
+        forecast_run_id = payload.get("forecast_run_id")
+        if forecast_run_id:
+            try:
+                self.forecast_repository.update_forecast_run(
+                    forecast_run_id,
+                    status="FAILED",
+                    response_payload_json={"error": str(exc), "phase": "persistence"},
+                    completed=True,
+                    event_type="FORECAST_SAVE_FAILED",
+                    message=str(exc),
+                    payload_json={
+                        "site_id": payload.get("site_id") or (payload.get("site") or {}).get("site_id"),
+                        "start_time": payload.get("start_time"),
+                        "periods": payload.get("periods"),
+                    },
+                )
+                return
+            except Exception:
+                return
         try:
             self.forecast_repository.save_event(
                 None,
@@ -134,6 +159,49 @@ class ForecastService:
                     "periods": payload.get("periods"),
                 },
             )
+        except Exception:
+            return
+
+    def _start_forecast_run(self, payload: dict[str, Any]) -> str | None:
+        if not self._is_horizon_request(payload):
+            return None
+        try:
+            return self.forecast_repository.start_forecast(payload)
+        except Exception:
+            return None
+
+    def _mark_forecast_fallback(self, payload: dict[str, Any], exc: Exception) -> None:
+        forecast_run_id = payload.get("forecast_run_id")
+        if not forecast_run_id:
+            return
+        try:
+            self.forecast_repository.update_forecast_run(
+                forecast_run_id,
+                status="FALLBACK",
+                event_type="FORECAST_FALLBACK",
+                message="Live satellite forecast failed; falling back to capacity factor model",
+                payload_json={
+                    "error": str(exc),
+                    "site_id": payload.get("site_id") or (payload.get("site") or {}).get("site_id"),
+                    "solar_backend": payload.get("solar_backend"),
+                    "start_time": payload.get("start_time"),
+                    "periods": payload.get("periods"),
+                },
+            )
+        except Exception:
+            return
+
+    def _record_runpod_event(
+        self,
+        forecast_run_id: str | None,
+        event_type: str,
+        message: str,
+        payload_json: dict[str, Any],
+    ) -> None:
+        if not forecast_run_id:
+            return
+        try:
+            self.forecast_repository.record_runpod_event(forecast_run_id, event_type, message, payload_json)
         except Exception:
             return
 
@@ -214,9 +282,50 @@ class ForecastService:
             "model_version": payload.get("solar_model_version"),
             "max_capacity_factor": payload.get("max_capacity_factor"),
         }
-        result = self.live_satellite_service.predict(
-            {key: value for key, value in request_payload.items() if value is not None}
+        runpod_payload = {key: value for key, value in request_payload.items() if value is not None}
+        forecast_run_id = payload.get("forecast_run_id")
+        self._record_runpod_event(
+            forecast_run_id,
+            "RUNPOD_REQUESTED",
+            "RunPod live satellite request submitted",
+            {
+                "endpoint_id": settings.runpod_endpoint_id,
+                "task": "predict_live_satellite_capacity_factor",
+                "site_id": site_id,
+                "targets": targets,
+                "request_payload": runpod_payload,
+            },
         )
+        try:
+            result = self.live_satellite_service.predict(runpod_payload)
+        except Exception as exc:
+            self._record_runpod_event(
+                forecast_run_id,
+                "RUNPOD_FAILED",
+                "RunPod live satellite request failed",
+                {
+                    "endpoint_id": settings.runpod_endpoint_id,
+                    "task": "predict_live_satellite_capacity_factor",
+                    "site_id": site_id,
+                    "error": str(exc),
+                    "targets": targets,
+                },
+            )
+            raise
+
+        runpod_metadata = result.get("_runpod") or {}
+        if runpod_metadata:
+            self._record_runpod_event(
+                forecast_run_id,
+                "RUNPOD_COMPLETED",
+                "RunPod live satellite request completed",
+                {
+                    **runpod_metadata,
+                    "site_id": site_id,
+                    "rows": result.get("rows"),
+                    "warnings": result.get("warnings") or [],
+                },
+            )
         warnings.extend(str(item) for item in (result.get("warnings") or []))
         live_predictions = result.get("predictions") or []
         if not live_predictions and result.get("prediction"):
