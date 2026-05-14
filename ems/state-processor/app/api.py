@@ -14,9 +14,12 @@ from .config import (
     CONTROL_DB_USER, CONTROL_DB_PASSWORD,
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, SITE_ID,
     SIMULATOR_TOPOLOGY_URL,
+    LOCAL_SIM_TOPOLOGY_MQTT_ENABLED,
 )
+from .extensions import socketio
 
 _KNOWN_SITES = [SITE_ID]
+_LOCAL_TOPOLOGY_CACHE_PREFIX = "ems:topology:"
 
 
 def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
@@ -33,6 +36,86 @@ def _fetch_simulator_topology(timeout_sec: float = 1.5) -> dict | None:
     except Exception as e:
         print(f"[state-processor][topology] simulator 응답 실패 (DB 만 사용): {e}")
         return None
+
+
+def _apply_live_state_to_topology(topology: dict, states: list[dict]) -> dict:
+    out = json.loads(json.dumps(topology))
+    state_by_device = {s.get("device_id"): s for s in states if s.get("device_id")}
+    state_by_switch = {
+        s.get("device_id"): s for s in states
+        if (s.get("resource_type") or "").upper() == "SWITCH"
+    }
+
+    def _node_status(device_id: str | None) -> str:
+        if not device_id:
+            return "NORMAL"
+        s = state_by_device.get(device_id) or {}
+        if s.get("emergency"):
+            return "EMERGENCY"
+        if (s.get("comms_health") or "") == "stale":
+            return "WARNING"
+        return "NORMAL"
+
+    node_device_map = {}
+    for node in out.get("nodes", []) or []:
+        resource_id = node.get("resource_id")
+        node_device_map[node.get("node_id")] = resource_id
+        node["status"] = _node_status(resource_id)
+        node.setdefault("position", {"x": 0.0, "y": 0.0})
+
+    switches_by_line: dict[str, list[dict]] = {}
+    for sw in out.get("switches", []) or []:
+        switch_id = sw.get("switch_id")
+        if switch_id:
+            live = state_by_switch.get(switch_id) or {}
+            reported = live.get("reported_state") or {}
+            if reported.get("switch_state"):
+                sw["position"] = reported["switch_state"]
+            if reported.get("interlock_blocked") is not None:
+                sw["interlock_blocked"] = bool(reported.get("interlock_blocked"))
+        if sw.get("line_id"):
+            switches_by_line.setdefault(sw["line_id"], []).append(sw)
+
+    def _line_flow_kw(from_node_id: str) -> float:
+        dev_id = node_device_map.get(from_node_id)
+        if not dev_id:
+            return 0.0
+        s = state_by_device.get(dev_id) or {}
+        p = (s.get("reported_state") or {}).get("P")
+        return float(p) if p is not None else 0.0
+
+    def _direction(flow_kw: float) -> str:
+        if flow_kw > 0.01:
+            return "FORWARD"
+        if flow_kw < -0.01:
+            return "REVERSE"
+        return "BIDIRECTIONAL"
+
+    for line in out.get("lines", []) or []:
+        flow = _line_flow_kw(line.get("from_node_id"))
+        line["flow_kw"] = round(flow, 2)
+        line["direction"] = _direction(flow)
+        sws = switches_by_line.get(line.get("line_id") or "", [])
+        if any((sw.get("position") or "").upper() == "OPEN" for sw in sws):
+            line["status"] = "OPEN"
+        else:
+            line["status"] = (line.get("status") or "NORMAL").upper()
+
+    return out
+
+
+def _get_local_topology_from_redis(redis_client: redis.Redis, site_id: str) -> dict | None:
+    raw = redis_client.get(f"{_LOCAL_TOPOLOGY_CACHE_PREFIX}{site_id}")
+    if not raw:
+        return None
+    try:
+        entry = json.loads(raw)
+    except Exception:
+        return None
+    topology = entry.get("topology")
+    if not isinstance(topology, dict):
+        return None
+    return topology
 
 # ── DTO 변환 헬퍼 (module-level) ──────────────────────────────────────────────
 # 시뮬레이터의 DIESEL → 프론트 enum DIESEL_GENERATOR 로 변환.
@@ -58,10 +141,14 @@ def _state_to_resource(state: dict) -> dict:
 
     out: dict = {
         "resource_id": state.get("device_id"),
+        "edge_id": state.get("edge_id"),
         "resource_type": rt,
         "name": state.get("device_id"),
         "status": status,
         "comms_health": comms,
+        "location": state.get("location"),
+        "latitude": state.get("latitude"),
+        "longitude": state.get("longitude"),
     }
 
     if rt == "SWITCH":
@@ -106,6 +193,7 @@ def _state_to_ess_status(state: dict) -> dict:
 
     return {
         "ess_id": state.get("device_id"),
+        "edge_id": state.get("edge_id"),
         "name": state.get("device_id"),
         "capacity_kwh": reported.get("capacity_kwh") or 0.0,
         "max_power_kw": reported.get("power_limit_kw") or 0.0,
@@ -113,6 +201,9 @@ def _state_to_ess_status(state: dict) -> dict:
         "soh": reported.get("SOH"),
         "status": status,
         "power_kw": p,
+        "location": state.get("location"),
+        "latitude": state.get("latitude"),
+        "longitude": state.get("longitude"),
         "updated_at": state.get("calculated_at") or state.get("timestamp"),
     }
 
@@ -168,6 +259,8 @@ def _compute_summary(site_id: str, states: list[dict]) -> dict:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    socketio.init_app(app)
+    from . import realtime  # noqa: F401  # Socket.IO event handlers registration.
     PrometheusMetrics(app, group_by="endpoint")
     app.config["API_TITLE"] = "State API"
     app.config["API_VERSION"] = "1.0"
@@ -317,6 +410,7 @@ def _register_routes(app: Flask) -> None:
 
     class EssStatusSchema(Schema):
         ess_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         name = fields.String(allow_none=True)
         capacity_kwh = fields.Float()
         max_power_kw = fields.Float()
@@ -324,6 +418,9 @@ def _register_routes(app: Flask) -> None:
         soh = fields.Float(allow_none=True)
         status = fields.String()  # 'idle' / 'charging' / 'discharging' / 'fault'
         power_kw = fields.Float(allow_none=True)
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         updated_at = fields.String(allow_none=True)
 
     class PlantStateSchema(Schema):
@@ -369,15 +466,20 @@ def _register_routes(app: Flask) -> None:
 
     class DeviceStateSchema(Schema):
         device_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         site_id = fields.String()
         resource_type = fields.String()
         timestamp = fields.String()
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         P = fields.Float(allow_none=True)
         SOC = fields.Float(allow_none=True)
         operating_mode = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
         emergency = fields.Boolean()
         interlock = fields.Boolean()
+        telemetry_window = fields.Dict(allow_none=True)
         desired_state = fields.Dict(allow_none=True)
         last_command_id = fields.String(allow_none=True)
 
@@ -398,12 +500,13 @@ def _register_routes(app: Flask) -> None:
 
     # 프론트 AlarmData 와 1:1 매칭 (common.ts).
     # 매핑: alarm_id, severity→level (소문자), event_type→code, time→timestamp,
-    #       device_id→ess_id (옵션 — ESS device 일 때만 의미).
+    #       device_id (범용 장치 ID), device_id→ess_id (옵션 — ESS device 일 때만 의미).
     class AlarmSchema(Schema):
         alarm_id = fields.String(allow_none=True)
         level = fields.String()  # 'info' / 'warning' / 'critical'
         code = fields.String()
         message = fields.String(allow_none=True)
+        device_id = fields.String(allow_none=True)
         ess_id = fields.String(allow_none=True)
         timestamp = fields.String()
         acknowledged = fields.Boolean(allow_none=True)
@@ -445,10 +548,14 @@ def _register_routes(app: Flask) -> None:
 
     class ResourceSchema(Schema):
         resource_id = fields.String()
+        edge_id = fields.String(allow_none=True)
         resource_type = fields.String()
         name = fields.String(allow_none=True)
         status = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
+        location = fields.Dict(allow_none=True)
+        latitude = fields.Float(allow_none=True)
+        longitude = fields.Float(allow_none=True)
         position = fields.String(allow_none=True)
         controllable = fields.Boolean(allow_none=True)
         interlock_blocked = fields.Boolean(allow_none=True)
@@ -478,6 +585,7 @@ def _register_routes(app: Flask) -> None:
             "level": _alarm_level(row[6]),
             "code": row[5],
             "message": row[7],
+            "device_id": row[3],
             # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
             "ess_id": row[3] if (row[4] or "").upper() == "ESS" else None,
             "timestamp": row[1].isoformat() if row[1] else None,
@@ -593,15 +701,20 @@ def _register_routes(app: Flask) -> None:
             return [
                 {
                     "device_id": s.get("device_id"),
+                    "edge_id": s.get("edge_id"),
                     "site_id": s.get("site_id"),
                     "resource_type": s.get("resource_type"),
                     "timestamp": s.get("calculated_at") or s.get("timestamp"),
+                    "location": s.get("location"),
+                    "latitude": s.get("latitude"),
+                    "longitude": s.get("longitude"),
                     "P": (s.get("reported_state") or {}).get("P"),
                     "SOC": (s.get("reported_state") or {}).get("SOC"),
                     "operating_mode": (s.get("reported_state") or {}).get("operating_mode"),
                     "comms_health": s.get("comms_health"),
                     "emergency": s.get("emergency", False),
                     "interlock": s.get("interlock", False),
+                    "telemetry_window": s.get("telemetry_window"),
                     "desired_state": s.get("desired_state"),
                     "last_command_id": s.get("last_command_id"),
                 }
@@ -624,6 +737,18 @@ def _register_routes(app: Flask) -> None:
         @blp.response(200, TopologySchema)
         def get(self, site_id):
             """Plant 토폴로지 — DB 정적 정보 + Redis state 로 status/flow 산출."""
+            states = _get_site_states(site_id)
+            if LOCAL_SIM_TOPOLOGY_MQTT_ENABLED:
+                cached = _get_local_topology_from_redis(get_redis(), site_id)
+                if cached is None:
+                    return {
+                        "site_id": site_id,
+                        "nodes": [],
+                        "lines": [],
+                        "switches": [],
+                    }
+                return _apply_live_state_to_topology(cached, states)
+
             pool = get_control_db_pool()
             conn = pool.getconn()
             try:
@@ -658,7 +783,6 @@ def _register_routes(app: Flask) -> None:
                 pool.putconn(conn)
 
             # Redis state 인덱스 (device_id → state) — 노드 status 산출용.
-            states = _get_site_states(site_id)
             state_by_device = {s.get("device_id"): s for s in states if s.get("device_id")}
             state_by_switch = {
                 s.get("device_id"): s for s in states
@@ -843,7 +967,13 @@ def _register_routes(app: Flask) -> None:
     class PlantEventResource(MethodView):
         @blp.response(200, EventLogSchema(many=True))
         def get(self, site_id):
-            """Plant 이벤트 로그 조회 — 프론트 EventDto 형식."""
+            """Plant 이벤트 로그 조회 — 프론트 EventDto 형식.
+
+            쿼리 파라미터 (모두 옵션):
+              - device_id: 특정 디바이스 필터
+              - severity: INFO/WARNING/ALARM/EMERGENCY
+              - limit: 기본 100, 최대 1000
+            """
             device_id = request.args.get("device_id")
             severity = request.args.get("severity")
             limit = min(int(request.args.get("limit", 100)), 1000)
@@ -903,7 +1033,13 @@ def _register_routes(app: Flask) -> None:
     class PlantAlarmListResource(MethodView):
         @blp.response(200, AlarmSchema(many=True))
         def get(self, site_id):
-            """알람 목록 조회 — WARNING 이상 이벤트. 프론트 AlarmData DTO 형식."""
+            """알람 목록 조회 — WARNING 이상 이벤트. 프론트 AlarmData DTO 형식.
+
+            쿼리 파라미터 (모두 옵션):
+              - acknowledged: true/false/미입력=전체
+              - severity: WARNING/CRITICAL/EMERGENCY
+              - limit: 기본 100, 최대 1000
+            """
             acknowledged = request.args.get("acknowledged")  # "true" / "false" / 미입력=전체
             severity = request.args.get("severity")          # info / warning / critical (프론트) 또는 WARNING / CRITICAL (DB)
             limit = min(int(request.args.get("limit", 100)), 1000)

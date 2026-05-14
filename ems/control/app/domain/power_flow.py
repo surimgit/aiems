@@ -64,7 +64,8 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
     ess_devices = []
     diesel_devices = []
 
-    for device_id, state in states.items():
+    for state_key, state in states.items():
+        device_id = state.get("device_id") or state_key
         resource_type = state.get("resource_type", "")
         reported = state.get("reported_state", {})
         p = reported.get("P") or 0.0
@@ -77,6 +78,8 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
             ess_p += p
             ess_devices.append({
                 "device_id": device_id,
+                "edge_id": state.get("edge_id"),
+                "location": state.get("location"),
                 "P": p,
                 "SOC": reported.get("SOC"),
                 "mode": reported.get("operating_mode", "standby"),
@@ -87,6 +90,8 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
             diesel_p += p
             diesel_devices.append({
                 "device_id": device_id,
+                "edge_id": state.get("edge_id"),
+                "location": state.get("location"),
                 "P": p,
                 "fuel_percent": reported.get("fuel_level_percent"),
                 "operating_mode": reported.get("operating_mode", ""),
@@ -109,7 +114,8 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
     if graph is not None:
         # 모든 발전/저장 자원 (SOLAR/DIESEL/ESS) 에 대해 isolation 체크.
         # LOAD 는 본인이 isolated 면 다른 처리 영역 (component_deficits) 이라 제외.
-        for device_id, state in states.items():
+        for state_key, state in states.items():
+            device_id = state.get("device_id") or state_key
             rt = (state.get("resource_type") or "").upper()
             if rt not in ("SOLAR", "DIESEL", "ESS"):
                 continue
@@ -156,7 +162,8 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
         return []
 
     results: list[dict] = []
-    for device_id, state in states.items():
+    for state_key, state in states.items():
+        device_id = state.get("device_id") or state_key
         if (state.get("resource_type") or "").upper() != "LOAD":
             continue
         load_kw = abs((state.get("reported_state") or {}).get("P") or 0.0)

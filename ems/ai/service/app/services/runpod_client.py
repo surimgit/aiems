@@ -43,11 +43,15 @@ class RunpodClient:
         if body.get("status") == "COMPLETED":
             output = body.get("output")
             if isinstance(output, dict):
+                output = dict(output)
+                output["_runpod"] = self._metadata(body)
                 return output
             raise RuntimeError(f"RunPod completed without object output: {body}")
 
         if "output" in body and isinstance(body["output"], dict) and body["output"].get("ok") is not None:
-            return body["output"]
+            output = dict(body["output"])
+            output["_runpod"] = self._metadata(body)
+            return output
 
         error = body.get("error") or body.get("output") or body
         raise RuntimeError(f"RunPod job did not complete successfully: {error}")
@@ -69,6 +73,18 @@ class RunpodClient:
                 return body
 
         raise TimeoutError(f"RunPod job timed out: {job_id}")
+
+    @staticmethod
+    def _metadata(body: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "endpoint_id": settings.runpod_endpoint_id,
+            "job_id": body.get("id"),
+            "status": body.get("status"),
+            "worker_id": body.get("workerId"),
+            "delay_time_ms": body.get("delayTime"),
+            "execution_time_ms": body.get("executionTime"),
+            "error": body.get("error"),
+        }
 
     @staticmethod
     def _env_secret(name: str) -> str | None:

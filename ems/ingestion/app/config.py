@@ -29,3 +29,7 @@ SITE_ID = os.getenv("SITE_ID", "PLANT-ALPHA")
 REDIS_NORMAL_STREAM = "mg:sensor:data"
 REDIS_EMERGENCY_STREAM = "mg:emergency:event"
 STREAM_MAXLEN = int(os.getenv("STREAM_MAXLEN", 10000))
+
+# Edge simulator가 더 짧은 주기로 telemetry를 보내도 EMS event bus는
+# 장치별 최신 telemetry를 1초 단위로 coalescing해서 발행한다.
+TELEMETRY_FLUSH_INTERVAL_SEC = float(os.getenv("TELEMETRY_FLUSH_INTERVAL_SEC", 1.0))

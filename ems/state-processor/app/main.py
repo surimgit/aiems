@@ -1,5 +1,14 @@
-# Flask 진입점 — `flask run` 으로 실행됨 (FLASK_APP=app.main:app).
+import os
+
 from .api import app
+from .extensions import socketio
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002, use_reloader=False)
+    port = int(os.getenv("PORT", 5002))
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )

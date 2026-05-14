@@ -131,6 +131,24 @@ class LoadPredictionResponseSchema(Schema):
 class ForecastRequestSchema(Schema):
     site_id = fields.String(load_default=None, allow_none=True)
     site = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=dict)
+    trigger_source = fields.String(load_default=None, allow_none=True)
+    solar_backend = fields.String(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(["capacity_factor", "lightgbm", "live_satellite", "satellite", "v10"]),
+    )
+    region = fields.String(load_default=None, allow_none=True)
+    latitude = fields.Float(load_default=None, allow_none=True)
+    longitude = fields.Float(load_default=None, allow_none=True)
+    dong_code = fields.String(load_default=None, allow_none=True)
+    installed_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    timezone = fields.String(load_default=None, allow_none=True)
+    weather_search_hours = fields.Integer(load_default=None, allow_none=True)
+    satellite_search_hours = fields.Integer(load_default=None, allow_none=True)
+    model_capacity_kw = fields.Float(load_default=None, allow_none=True)
+    max_capacity_factor = fields.Float(load_default=None, allow_none=True)
+    solar_model_path = fields.String(load_default=None, allow_none=True)
+    solar_model_version = fields.String(load_default=None, allow_none=True)
     start_time = fields.String(load_default=None, allow_none=True)
     periods = fields.Integer(load_default=None, allow_none=True)
     frequency_hours = fields.Float(load_default=None, allow_none=True)
@@ -147,14 +165,76 @@ class ForecastRequestSchema(Schema):
     net_load_high_threshold_kw = fields.Float(load_default=0.0)
 
 
+class ForecastActualUpsertRequestSchema(Schema):
+    site_id = fields.String(load_default=None, allow_none=True)
+    forecast_run_id = fields.String(load_default=None, allow_none=True)
+    actual_source = fields.String(load_default=None, allow_none=True)
+    actuals = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True, validate=validate.Length(min=1))
+
+
+class ForecastAccuracyQuerySchema(Schema):
+    site_id = fields.String(load_default=None, allow_none=True)
+    forecast_run_id = fields.String(load_default=None, allow_none=True)
+    from_time = fields.String(load_default=None, allow_none=True)
+    to_time = fields.String(load_default=None, allow_none=True)
+    limit = fields.Integer(load_default=100, validate=validate.Range(min=1, max=1000))
+    min_denominator_kw = fields.Float(load_default=1.0, validate=validate.Range(min=0.001))
+
+
+class ForecastLatestQuerySchema(Schema):
+    site_id = fields.String(required=True)
+
+
 class ForecastResponseSchema(Schema):
     ok = fields.Boolean(required=True)
     task = fields.String(required=True)
     rows = fields.Integer(required=True)
+    forecast_run_id = fields.String(allow_none=True)
+    persistence = fields.Raw(allow_none=True)
+    warnings = fields.List(fields.String(), load_default=list)
     forecasts = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     recommendations = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
     solar_result = fields.Raw(allow_none=True)
     load_result = fields.Raw(allow_none=True)
+
+
+class ForecastLatestResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(required=True)
+    found = fields.Boolean(required=True)
+    rows = fields.Integer(required=True)
+    forecast_run_id = fields.String(allow_none=True)
+    site_id = fields.String(allow_none=True)
+    trigger_source = fields.String(allow_none=True)
+    base_time = fields.String(allow_none=True)
+    horizon_hours = fields.Integer(allow_none=True)
+    model_name = fields.String(allow_none=True)
+    model_version = fields.String(allow_none=True)
+    status = fields.String(allow_none=True)
+    created_at = fields.String(allow_none=True)
+    completed_at = fields.String(allow_none=True)
+    issued_at = fields.String(allow_none=True)
+    warnings = fields.List(fields.String(), load_default=list)
+    forecasts = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
+    recommendations = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
+
+
+class ForecastActualUpsertResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(required=True)
+    matched = fields.Integer(required=True)
+    skipped = fields.Integer(required=True)
+    errors = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
+
+
+class ForecastAccuracyResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(required=True)
+    summary = fields.Dict(keys=fields.String(), values=fields.Raw(), required=True)
+    rows = fields.List(fields.Dict(keys=fields.String(), values=fields.Raw()), required=True)
 
 
 class PredictionModelStatusSchema(Schema):

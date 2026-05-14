@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from ..schemas.prediction_schema import (
     CapacityFactorPredictionRequestSchema,
+    ForecastAccuracyQuerySchema,
+    ForecastAccuracyResponseSchema,
+    ForecastActualUpsertRequestSchema,
+    ForecastActualUpsertResponseSchema,
+    ForecastLatestQuerySchema,
+    ForecastLatestResponseSchema,
     ForecastRequestSchema,
     ForecastResponseSchema,
     LiveSatelliteCapacityFactorPredictionRequestSchema,
@@ -24,6 +31,7 @@ from ..services.load_service import LoadService
 from ..services.model_service import ModelService
 from ..services.prediction_service import PredictionService
 from ..services.site_profile_service import SiteProfileService
+from ..config import settings
 
 
 blp = Blueprint("ai", "ai", url_prefix="/api/ai")
@@ -31,8 +39,12 @@ model_service = ModelService()
 prediction_service = PredictionService()
 site_profile_service = SiteProfileService()
 load_service = LoadService()
-forecast_service = ForecastService(prediction_service=prediction_service, load_service=load_service)
 live_satellite_service = LiveSatellitePredictionService(prediction_service=prediction_service)
+forecast_service = ForecastService(
+    prediction_service=prediction_service,
+    load_service=load_service,
+    live_satellite_service=live_satellite_service,
+)
 
 
 @blp.route("/models")
@@ -82,6 +94,39 @@ class ForecastResource(MethodView):
         return forecast_service.forecast(payload)
 
 
+@blp.route("/forecast/scheduled")
+class ForecastScheduledResource(MethodView):
+    @blp.arguments(ForecastRequestSchema)
+    @blp.response(200, ForecastResponseSchema)
+    def post(self, payload):
+        _require_schedule_token()
+        return forecast_service.scheduled_forecast(payload)
+
+
+@blp.route("/forecast/latest")
+class ForecastLatestResource(MethodView):
+    @blp.arguments(ForecastLatestQuerySchema, location="query")
+    @blp.response(200, ForecastLatestResponseSchema)
+    def get(self, payload):
+        return forecast_service.latest(payload)
+
+
+@blp.route("/forecast/actuals")
+class ForecastActualsResource(MethodView):
+    @blp.arguments(ForecastActualUpsertRequestSchema)
+    @blp.response(200, ForecastActualUpsertResponseSchema)
+    def post(self, payload):
+        return forecast_service.save_actuals(payload)
+
+
+@blp.route("/forecast/accuracy")
+class ForecastAccuracyResource(MethodView):
+    @blp.arguments(ForecastAccuracyQuerySchema, location="query")
+    @blp.response(200, ForecastAccuracyResponseSchema)
+    def get(self, payload):
+        return forecast_service.accuracy(payload)
+
+
 @blp.route("/site-profile/structure")
 class SiteProfileStructureResource(MethodView):
     @blp.arguments(SiteProfileRequestSchema)
@@ -96,3 +141,11 @@ class LoadPredictionResource(MethodView):
     @blp.response(200, LoadPredictionResponseSchema)
     def post(self, payload):
         return load_service.predict_load(payload)
+
+
+def _require_schedule_token() -> None:
+    if not settings.schedule_token:
+        return
+    supplied = request.headers.get("X-AI-Schedule-Token")
+    if supplied != settings.schedule_token:
+        raise PermissionError("invalid schedule token")

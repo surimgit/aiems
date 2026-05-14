@@ -32,6 +32,39 @@ _ACK_TIMEOUT_BY_TYPE: dict[str, float] = {
 }
 
 
+def _build_mqtt_command(command_id: str, command: dict) -> tuple[str, dict]:
+    device_id = command["device_id"]
+    resource_type = command["resource_type"]
+    command_type = command["command_type"]
+    timeout_sec = _ACK_TIMEOUT_BY_TYPE.get(command_type, _ACK_TIMEOUT_SEC)
+
+    if resource_type.lower() == "switch" and command_type in ("open", "close"):
+        return (
+            f"{SITE_ID}/simulator-manager/topology/command",
+            {
+                "command_id": command_id,
+                "target_type": "switch",
+                "target_id": device_id,
+                "command": "OPEN_SWITCH" if command_type == "open" else "CLOSE_SWITCH",
+                "source": command.get("issued_by", "rule"),
+                "expires_in_sec": command.get("expires_in_sec", timeout_sec),
+                "force": command.get("force", False),
+            },
+        )
+
+    return (
+        f"{SITE_ID}/{resource_type}/{device_id}/command",
+        {
+            "command_id": command_id,
+            "command_type": command_type,
+            "payload": command["payload"],
+            "source": command.get("issued_by", "rule"),
+            "expires_in_sec": command.get("expires_in_sec", timeout_sec),
+            "force": command.get("force", False),
+        },
+    )
+
+
 class MqttCommander:
     def __init__(self, db: ControlDBWriter, event_pub: EventPublisher,
                  pending_acks: dict | None = None, device_cooldown: dict | None = None):
@@ -78,17 +111,7 @@ class MqttCommander:
         device_id = command["device_id"]
         resource_type = command["resource_type"]
         command_id = str(uuid.uuid4())
-        command_type = command["command_type"]
-        topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
-        timeout_sec = _ACK_TIMEOUT_BY_TYPE.get(command_type, _ACK_TIMEOUT_SEC)
-        payload = {
-            "command_id": command_id,
-            "command_type": command_type,
-            "payload": command["payload"],
-            "source": command.get("issued_by", "rule"),
-            "expires_in_sec": command.get("expires_in_sec", timeout_sec),
-            "force": command.get("force", False),
-        }
+        topic, payload = _build_mqtt_command(command_id, command)
         # publish 전에 먼저 등록 — ACK가 publish await 중에 먼저 들어오는 race condition 방지
         self._pending_acks[command_id] = (time.monotonic(), device_id, resource_type)
         self._retry_counts[command_id] = (0, command)
@@ -101,11 +124,7 @@ class MqttCommander:
             "issued_by": command.get("issued_by", "rule"),
             "issued_at": time.time(),
         }
-        await self._redis.set(
-            f"desired:{SITE_ID}:{device_id}",
-            json.dumps(desired, ensure_ascii=False),
-            ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
-        )
+        await self._set_desired(command, desired)
 
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
         self._pending_verify[command_id] = (
@@ -132,6 +151,7 @@ class MqttCommander:
                     password=MQTT_PASSWORD,
                 ) as sub:
                     await sub.subscribe(f"{SITE_ID}/+/+/ack", qos=1)
+                    await sub.subscribe(f"{SITE_ID}/simulator-manager/topology/command/ack", qos=1)
                     print("[control][ack] ACK 구독 시작")
                     async for msg in sub.messages:
                         topic = str(msg.topic)
@@ -201,7 +221,7 @@ class MqttCommander:
     ) -> None:
         await asyncio.sleep(_VERIFY_DELAY_SEC)
         try:
-            state_raw = await self._redis.get(f"state:{SITE_ID}:{device_id}")
+            state_raw = await self._get_state(device_id)
             if not state_raw:
                 # 상태 자체가 없으면 TTL 초과 → safety 룰이 처리
                 return
@@ -227,6 +247,40 @@ class MqttCommander:
                 })
         except Exception as e:
             print(f"[control][verify] ERROR | {device_id} | {e}")
+
+    async def _get_state(self, device_id: str) -> str | None:
+        state_raw = await self._redis.get(f"state:{SITE_ID}:{device_id}")
+        if state_raw:
+            return state_raw
+
+        pattern = f"state:{SITE_ID}:*:{device_id}"
+        keys = [key async for key in self._redis.scan_iter(pattern)]
+        if not keys:
+            return None
+        values = await self._redis.mget(*keys)
+        states = [json.loads(value) for value in values if value]
+        if not states:
+            return None
+        latest = max(
+            states,
+            key=lambda state: state.get("calculated_at") or state.get("timestamp") or "",
+        )
+        return json.dumps(latest, ensure_ascii=False)
+
+    async def _set_desired(self, command: dict, desired: dict) -> None:
+        device_id = command["device_id"]
+        edge_id = command.get("edge_id")
+        value = json.dumps(desired, ensure_ascii=False)
+        keys = [f"desired:{SITE_ID}:{device_id}"]
+        if edge_id and edge_id != device_id:
+            keys.insert(0, f"desired:{SITE_ID}:{edge_id}:{device_id}")
+
+        for key in keys:
+            await self._redis.set(
+                key,
+                value,
+                ex=43200,  # 12시간 TTL — 재시작 후에도 desired 상태 유지
+            )
 
     async def _timeout_checker(self) -> None:
         while True:
@@ -258,16 +312,7 @@ class MqttCommander:
                         device_id,
                         resource_type,
                     ))
-                    cmd_type = original_cmd["command_type"]
-                    topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
-                    retry_payload = {
-                        "command_id": new_id,
-                        "command_type": cmd_type,
-                        "payload": original_cmd["payload"],
-                        "source": original_cmd.get("issued_by", "rule"),
-                        "expires_in_sec": _ACK_TIMEOUT_BY_TYPE.get(cmd_type, _ACK_TIMEOUT_SEC),
-                        "force": original_cmd.get("force", False),
-                    }
+                    topic, retry_payload = _build_mqtt_command(new_id, original_cmd)
                     try:
                         await self._pub_client.publish(topic, json.dumps(retry_payload, ensure_ascii=False))
                         await self._db.update_ack(command_id, "TIMEOUT")

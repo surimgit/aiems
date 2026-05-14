@@ -1,7 +1,0 @@
-{
-  "edge_id": "solar-edge-01",
-  "edge_type": "solar",
-  "plant_id": "PLANT-ALPHA",
-  "mqtt_broker_host": "host.docker.internal",
-  "mqtt_broker_port": 1883
-}

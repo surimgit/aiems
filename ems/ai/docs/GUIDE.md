@@ -6,6 +6,7 @@
 - [Baseline Solar Training Result](./ml/baseline-training-result.md)
 - [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
 - [Satellite v10 RunPod Live Inference - 2026-05-08](./ops/satellite-v10-runpod-live-inference-2026-05-08.md)
+- [AI Forecast Persistence And API Flow](./AI_FORECAST_PERSISTENCE_AND_API_FLOW.md)
 - [Load Profile And LLM Structuring](./ml/load-profile-and-llm.md)
 - [AI Code Map](./ops/ai-code-map.md)
 - [GK2A Download Ops Note](./ops/gk2a-download-ops-note.md)
@@ -22,10 +23,11 @@
 6. [Inference And Retraining](./ml/inference-and-retraining.md)
 7. [Satellite Image Training Handoff - 2026-05-06](./ml/satellite-image-training-handoff-2026-05-06.md)
 8. [Satellite v10 RunPod Live Inference - 2026-05-08](./ops/satellite-v10-runpod-live-inference-2026-05-08.md)
-9. [GPU Training Runbook](./ml/gpu-training-runbook.md)
-10. [LLM Role](./ml/llm-role.md)
-11. [Repo Structure](./ops/repo-structure.md)
-12. [Python Scripts](./python-scripts.md)
+9. [AI Forecast Persistence And API Flow](./AI_FORECAST_PERSISTENCE_AND_API_FLOW.md)
+10. [GPU Training Runbook](./ml/gpu-training-runbook.md)
+11. [LLM Role](./ml/llm-role.md)
+12. [Repo Structure](./ops/repo-structure.md)
+13. [Python Scripts](./python-scripts.md)
 
 ## Global Solar Training Plan
 
@@ -42,6 +44,7 @@
 - [Solar Forecast Problem](../../../../../IdeaProjects/S305/10-ai-contracts/solar-forecast-problem.md)
 - [Training Dataset Contract](../../../../../IdeaProjects/S305/10-ai-contracts/training-dataset.md)
 - [Forecast Contract](../../../../../IdeaProjects/S305/10-ai-contracts/forecast-contract.md)
+- [Forecast Persistence API Flow](../../../../../IdeaProjects/S305/10-ai-contracts/forecast-persistence-api-flow.md)
 
 ## Local AI Docs Map
 
@@ -78,6 +81,7 @@
 
 - [python-scripts.md](./python-scripts.md): 스크립트 카탈로그
 - [progress-summary.md](./progress-summary.md): 현재 AI 작업 진행 요약
+- [AI_FORECAST_PERSISTENCE_AND_API_FLOW.md](./AI_FORECAST_PERSISTENCE_AND_API_FLOW.md): forecast DB 저장, 실제값 매칭, 정확도 API, Redis/state 입력 규정
 - [jira/train.md](./jira/train.md): 학습 작업 체크리스트
 - [jira/data.md](./jira/data.md): 데이터 작업 체크리스트
 - [jira/infer.md](./jira/infer.md): 추론 작업 체크리스트

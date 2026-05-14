@@ -80,6 +80,7 @@ class ControlDBWriter:
             "kind": "command",
             "command_id": command_id,
             "site_id": command.get("site_id", "PLANT-ALPHA"),
+            "edge_id": command.get("edge_id"),
             "device_id": command["device_id"],
             "resource_type": command["resource_type"].upper(),
             "command_type": command["command_type"],
@@ -88,6 +89,7 @@ class ControlDBWriter:
             "issued_by": command.get("issued_by", "rule"),
             "ack_status": "PENDING",
         }
+        envelope = {key: value for key, value in envelope.items() if value is not None}
         await self._redis.xadd(STREAM_DB_WRITE, {"data": json.dumps(envelope, ensure_ascii=False)})
 
     async def update_ack(self, command_id: str, status: str) -> None:

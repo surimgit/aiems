@@ -73,6 +73,7 @@ def evaluate(flow: dict, policy) -> list[dict]:
 def _cmd(ess: dict, mode: str, target_kw: float, net: float, soc: float) -> dict:
     return {
         "device_id": ess["device_id"],
+        "edge_id": ess.get("edge_id"),
         "resource_type": "ess",
         "command_type": "ess_mode",
         "payload": {"mode": mode, "target_power_kw": target_kw},

@@ -58,7 +58,7 @@ done
 # 4. control_db 스키마 — control 서비스가 사용 (운영 데이터)
 #    - control_policy        : 운영자 조정 가능한 임계값
 #    - control_policy_history: 정책 변경 이력 (트리거로 자동 기록)
-#    - topology_nodes/lines/switches : 단선도 구성 정보
+#    - topology_nodes/lines/switches : legacy/manual 단선도 구성 정보
 #
 #    NOTE: control_history(=command_result)는 시계열 데이터로 분류되어
 #          TimescaleDB 로 이동 (init_timescale.sh 참조).
@@ -102,10 +102,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         AFTER UPDATE ON control_policy
         FOR EACH ROW EXECUTE FUNCTION log_policy_change();
 
-    -- ── topology (단선도 구성) ────────────────────────────────
-    -- EMS 가 토폴로지의 단일 진실 (Single Source of Truth).
-    -- simulator 는 시뮬레이션 도구일 뿐 — 실 운영에선 EMS DB 가 정답.
-    -- 운영자가 UI 로 노드/라인/스위치/좌표를 등록·수정한다.
+    -- ── topology (legacy/manual 단선도 구성) ──────────────────
+    -- 로컬 simulator topology 연동 모드에서는 ingestion 이 MQTT snapshot 을 받아
+    -- Redis cache 로 관리하고, state-processor 는 그 cache 를 조회한다.
+    -- 이 테이블은 MQTT topology 모드를 끈 개발/수동 운영 fallback 용으로 유지한다.
     CREATE TABLE IF NOT EXISTS topology_nodes (
         id          SERIAL          PRIMARY KEY,
         site_id     VARCHAR(64)     NOT NULL,
@@ -138,33 +138,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${CONTROL_DB}" <<-
         controllable    BOOLEAN         NOT NULL DEFAULT true,  -- 원격 제어 가능 여부
         UNIQUE (site_id, switch_id)
     );
-
-    -- ── PLANT-ALPHA 토폴로지 시드 (멱등) ──────────────────────────
-    -- ID 규약은 simulator topology 와 동일하게 유지 (호환성).
-    -- 좌표는 SVG 800×600 기준으로 배치.
-    --   solar-01 (좌상)        diesel-01 (우상)
-    --              \\          //
-    --              ess-01 (중앙, 저장)
-    --                  |
-    --              load-01 (하단)
-    INSERT INTO topology_nodes (site_id, node_id, node_type, device_id, label, x, y) VALUES
-        ('PLANT-ALPHA', 'node-solar-edge-01',  'GENERATION', 'solar-01',  '태양광 발전 #1', 200, 100),
-        ('PLANT-ALPHA', 'node-diesel-edge-01', 'GENERATION', 'diesel-01', '디젤 발전기 #1', 600, 100),
-        ('PLANT-ALPHA', 'node-ess-edge-01',    'STORAGE',    'ess-01',    'ESS #1',         400, 300),
-        ('PLANT-ALPHA', 'node-load-edge-01',   'LOAD',       'load-01',   '부하 #1',        400, 500)
-    ON CONFLICT (site_id, node_id) DO NOTHING;
-
-    INSERT INTO topology_lines (site_id, line_id, from_node_id, to_node_id, rating_kw) VALUES
-        ('PLANT-ALPHA', 'line-solar01-ess01',  'node-solar-edge-01',  'node-ess-edge-01',  150),
-        ('PLANT-ALPHA', 'line-diesel01-ess01', 'node-diesel-edge-01', 'node-ess-edge-01',  200),
-        ('PLANT-ALPHA', 'line-ess01-load01',   'node-ess-edge-01',    'node-load-edge-01', 100)
-    ON CONFLICT (site_id, line_id) DO NOTHING;
-
-    INSERT INTO topology_switches (site_id, switch_id, line_id, switch_type, is_closed, controllable) VALUES
-        ('PLANT-ALPHA', 'sw-solar01-ess01',  'line-solar01-ess01',  'CB', TRUE, TRUE),
-        ('PLANT-ALPHA', 'sw-diesel01-ess01', 'line-diesel01-ess01', 'CB', TRUE, TRUE),
-        ('PLANT-ALPHA', 'sw-ess01-load01',   'line-ess01-load01',   'CB', TRUE, TRUE)
-    ON CONFLICT (site_id, switch_id) DO NOTHING;
 
     -- ── 정책 seed (멱등) ──────────────────────────────────────
     INSERT INTO control_policy (key, value, unit, description) VALUES
@@ -235,7 +208,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${STATE_DB}" <<-EO
 EOSQL
 
 echo "===== init_postgres.sh 완료 ====="
-echo "  - control_db   : control_policy(+history) / topology_* + 정책 seed 19개"
+echo "  - control_db   : control_policy(+history) / topology_* schema + 정책 seed 19개"
 echo "  - state_write_db: device_meta / comms_health_log"
 echo "  - ai_db        : (AI 팀이 자체 스키마 추가 예정)"
 echo "  NOTE: 시계열(sensor_data/event_log/control_history)은 init_timescale.sh 참조"

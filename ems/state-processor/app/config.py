@@ -39,8 +39,26 @@ CONTROL_DB_NAME = os.getenv("CONTROL_DB", "control_db")
 CONTROL_DB_USER = os.getenv("CONTROL_USER", "control_user")
 CONTROL_DB_PASSWORD = os.getenv("CONTROL_PASSWORD", "")
 
-# ── Simulator Topology API ────────────────────────────────────────────────
-# 설계문서 §3 기준 토폴로지 master = simulator/topology 서비스.
-# state-processor 는 control_db (EMS 메타데이터) 와 이 API (런타임 토폴로지) 를
-# 합쳐서 응답한다. 운영자가 simulator UI 에서 라인을 추가하면 자동 반영.
+# ── Simulator Topology API (legacy/dev fallback) ───────────────────────────
+# LOCAL_SIM_TOPOLOGY_MQTT_ENABLED=false 인 개발 환경에서만 사용한다.
+# 서버 배포 기준 topology 구조 수신은 ingestion 의 MQTT subscriber 가 담당하고,
+# state-processor 는 Redis cache 만 조회한다.
 SIMULATOR_TOPOLOGY_URL = os.getenv("SIMULATOR_TOPOLOGY_URL", "http://host.docker.internal:8081")
+
+# ── Local simulator topology over MQTT ─────────────────────────────────────
+# true 이면 control_db 기본 topology 와 simulator HTTP fallback 을 쓰지 않고,
+# simulator-manager 가 MQTT 로 발행한 snapshot cache 를 프론트 조회 API의 정본으로 사용한다.
+LOCAL_SIM_TOPOLOGY_MQTT_ENABLED = os.getenv(
+    "LOCAL_SIM_TOPOLOGY_MQTT_ENABLED",
+    "true",
+).lower() in ("1", "true", "yes", "on")
+
+# ── Socket.IO ──────────────────────────────────────────────────────────────
+# 로컬 프론트/게이트웨이 개발 편의를 위해 기본은 전체 허용.
+# 운영에서 별도 도메인으로 제한하려면 쉼표 구분 문자열로 지정한다.
+_socketio_origins = os.getenv("SOCKETIO_CORS_ALLOWED_ORIGINS", "*")
+SOCKETIO_CORS_ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _socketio_origins.split(",") if origin.strip()]
+    if _socketio_origins != "*"
+    else "*"
+)

@@ -20,8 +20,18 @@ class StateReader:
         states = {}
         for key, value in zip(keys, values):
             if value:
-                device_id = key.split(":")[-1]
-                states[device_id] = json.loads(value)
+                state = json.loads(value)
+                device_id = state.get("device_id") or key.split(":")[-1]
+                edge_id = state.get("edge_id")
+                previous = states.get(device_id)
+                if previous and previous.get("edge_id") != edge_id:
+                    print(
+                        "[control][state] duplicate device_id across edges: "
+                        f"device={device_id} prev_edge={previous.get('edge_id')} edge={edge_id}. "
+                        "Control command topic requires device_id to be unique per site."
+                    )
+                state.setdefault("state_key", key)
+                states[device_id] = state
         return states
 
     async def close(self) -> None:
