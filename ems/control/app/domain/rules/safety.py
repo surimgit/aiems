@@ -224,8 +224,9 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
         else:
             await event_pub.clear_alert(f"{device_id}:EVT-N-011")
 
-        # 급감: 이전 대비 50% 이상 감소 (주간에만)
-        if prev_p is not None and prev_p > _SOLAR_DAYTIME_MIN_P:
+        # 급감: 이전 대비 50% 이상 감소 (주간에만, curtailment 제어 중 제외)
+        is_curtailed = bool(await redis.exists(f"ems:curtailed:{device_id}"))
+        if prev_p is not None and prev_p > _SOLAR_DAYTIME_MIN_P and not is_curtailed:
             if current_p < prev_p * (1 - _SOLAR_DROP_RATIO):
                 key = f"{device_id}:EVT-N-012"
                 if not await event_pub.is_alerted(key):
