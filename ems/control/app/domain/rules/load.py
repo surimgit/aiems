@@ -111,10 +111,7 @@ def _evaluate_soc_threshold_shed(flow: dict, policy, states: dict) -> list[dict]
             "device_id": device_id,
             "edge_id": state.get("edge_id"),
             "resource_type": "load",
-            "message": (
-                f"부하 차단 검토 (선제): ESS 평균 SOC={avg_soc:.1f}% <= {triggered_threshold}% "
-                f"({triggered_key}), 등급={grade}({grade_label})"
-            ),
+            "message": f"부하 차단 권고 — SOC {avg_soc:.0f}% ({grade_label} 등급)",
             "payload": {
                 "trigger": "soc_threshold",
                 "avg_soc": round(avg_soc, 2),
@@ -211,10 +208,7 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
             "device_id": device_id,
             "edge_id": state.get("edge_id"),
             "resource_type": "load",
-            "message": (
-                f"부하 차단 검토 필요: deficit={deficit:.1f}kW, ESS/Diesel 불가, "
-                f"등급={grade}({grade_label}), 권고차단율={reduction_ratio:.1%}"
-            ),
+            "message": f"부하 차단 권고 — 부족 {deficit:.0f}kW ({grade_label} 등급)",
             "payload": {
                 "deficit_kw": round(deficit, 2),
                 "reduction_ratio": reduction_ratio,
@@ -233,8 +227,7 @@ def _restore_event(device_id: str, net_power: float, held_sec: float) -> dict:
         "device_id": device_id,
         "resource_type": "load",
         "message": (
-            f"부하 복구 검토 가능: net={net_power:.1f}kW 잉여, "
-            f"차단 유지 {held_sec:.0f}s 경과"
+            f"부하 복구 검토 가능 (잉여 {net_power:.0f}kW)"
         ),
         "payload": {"net_power_kw": round(net_power, 2), "held_sec": round(held_sec, 0)},
         "_is_event": True,
