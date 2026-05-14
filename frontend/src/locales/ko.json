@@ -124,13 +124,17 @@
     }
   },
   "aiPerformance": {
-    "title": "AI 성과",
-    "target": "목표",
-    "achievementRate": "달성률",
+    "title": "AI 절감 성과",
+    "savingLabel": "한전 구매비 대체",
+    "solarOffset": "실제 구매 대체",
+    "avgUnitPrice": "평균 적용단가",
+    "selfUseRate": "자가소비 반영률",
+    "ariaLabel": "실제 태양광 비용 절감 게이지",
+    "loading": "절감 성과를 불러오는 중입니다.",
     "meta": {
-      "highPriority": "고우선 추천 {count}건",
-      "avgConfidence": "평균 신뢰도",
-      "modelStatus": "모델 상태"
+      "formula": "DB 집계 기준 · 실제 태양광 {solar} 중 현장 사용 {offset}",
+      "tariff": "한전 전력량요금 기준",
+      "empty": "DB 집계 성과 데이터가 아직 없습니다."
     }
   },
   "powerBalance": {

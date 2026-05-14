@@ -1,79 +1,86 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useAiStore } from '@/stores/ai/ai.store'
+import { usePerformanceStore } from '@/stores/performance/performance.store'
 import { useI18n } from 'vue-i18n'
 
-const aiStore = useAiStore()
-const { recommendations, modelStatus } = storeToRefs(aiStore)
-const { t } = useI18n()
+const PERFORMANCE_REFRESH_MS = 60000
 
-const highPriorityCount = computed(() => recommendations.value.filter((item) => item.priority === 'high').length)
-const avgConfidence = computed(() => {
-  if (recommendations.value.length === 0) return null
-  const total = recommendations.value.reduce((sum, rec) => sum + rec.confidence, 0)
-  return total / recommendations.value.length
-})
+const performanceStore = usePerformanceStore()
+const { solarSavings, loading } = storeToRefs(performanceStore)
+const { t, locale } = useI18n()
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
 
-const parseEffectWon = (text: string): number | null => {
-  const normalized = text.replace(/,/g, '').replace(/\s/g, '')
-  const matched = normalized.match(/(-?\d+(?:\.\d+)?)\s*(원|만원|천원)?/)
-  if (!matched) return null
-
-  const numeric = Number(matched[1])
-  if (!Number.isFinite(numeric)) return null
-
-  const unit = matched[2]
-  if (unit === '만원') return numeric * 10000
-  if (unit === '천원') return numeric * 1000
-  return numeric
+const safeNumber = (value: number | null | undefined): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
+  return value
 }
 
-const estimatedSavingWon = computed(() => {
-  const fromExpectedEffect = recommendations.value
-    .map((item) => parseEffectWon(item.expected_effect))
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+const formatNumber = (value: number, maximumFractionDigits = 0): string => {
+  const resolvedLocale = locale.value.startsWith('en') ? 'en-US' : 'ko-KR'
+  return value.toLocaleString(resolvedLocale, { maximumFractionDigits })
+}
 
-  if (fromExpectedEffect.length > 0) {
-    return Math.round(fromExpectedEffect.reduce((sum, current) => sum + current, 0))
-  }
+const savingsWon = computed(() => Math.round(safeNumber(solarSavings.value?.savings_won)))
+const solarGenerationKwh = computed(() => safeNumber(solarSavings.value?.solar_generation_kwh))
+const avoidedGridKwh = computed(() => safeNumber(solarSavings.value?.avoided_grid_kwh))
+const avgTariffWonPerKwh = computed(() => safeNumber(solarSavings.value?.avg_tariff_won_per_kwh))
 
-  if (avgConfidence.value !== null && recommendations.value.length > 0) {
-    const fallback = avgConfidence.value * recommendations.value.length * 800000
-    return Math.round(fallback)
-  }
-
-  return 0
+const selfUseRate = computed(() => {
+  const explicitRate = safeNumber(solarSavings.value?.self_use_ratio_pct)
+  if (explicitRate > 0) return explicitRate
+  if (solarGenerationKwh.value <= 0) return 0
+  return (avoidedGridKwh.value / solarGenerationKwh.value) * 100
 })
 
-const targetWon = computed(() => {
-  if (estimatedSavingWon.value <= 0) return 1850000
-  const derivedTarget = estimatedSavingWon.value * 0.75
-  return Math.round(derivedTarget)
+const hasPerformanceData = computed(() => {
+  return savingsWon.value > 0 || solarGenerationKwh.value > 0 || avoidedGridKwh.value > 0
 })
 
-const achievementRate = computed(() => {
-  if (targetWon.value <= 0) return 0
-  return (estimatedSavingWon.value / targetWon.value) * 100
-})
-
-const gaugeRate = computed(() => clamp(achievementRate.value, 0, 150))
+const gaugeRate = computed(() => clamp(selfUseRate.value, 0, 100))
 
 const gaugeArc = computed(() => {
   const radius = 82
   const circumference = Math.PI * radius
-  const offset = circumference * (1 - gaugeRate.value / 150)
+  const offset = circumference * (1 - gaugeRate.value / 100)
   return { circumference, offset }
 })
 
-const formattedSaving = computed(() => `${estimatedSavingWon.value.toLocaleString('ko-KR')} 원`)
-const formattedTarget = computed(() => `${targetWon.value.toLocaleString('ko-KR')} 원`)
+const formattedSaving = computed(() => `${formatNumber(savingsWon.value)} ${t('kpi.units.won')}`)
+const formattedSolarGeneration = computed(() => `${formatNumber(solarGenerationKwh.value, 1)} kWh`)
+const formattedAvoidedGrid = computed(() => `${formatNumber(avoidedGridKwh.value, 1)} kWh`)
+const formattedAvgTariff = computed(() => `${formatNumber(avgTariffWonPerKwh.value, 1)} ${t('kpi.units.won')}/kWh`)
+const formattedSelfUseRate = computed(() => `${formatNumber(gaugeRate.value, 1)}%`)
 
-const modelStatusText = computed(() => {
-  if (modelStatus.value?.status) return modelStatus.value.status
-  return 'UNKNOWN'
+const tariffBasisText = computed(() => {
+  return solarSavings.value?.tariff_basis || t('aiPerformance.meta.tariff')
+})
+
+const metaText = computed(() => {
+  if (loading.value && !hasPerformanceData.value) return t('aiPerformance.loading')
+  if (!hasPerformanceData.value) return t('aiPerformance.meta.empty')
+  return t('aiPerformance.meta.formula', {
+    solar: formattedSolarGeneration.value,
+    offset: formattedAvoidedGrid.value
+  })
+})
+
+let refreshTimer: ReturnType<typeof window.setInterval> | null = null
+
+const refreshPerformance = (): void => {
+  void performanceStore.fetchSolarSavings(undefined, 'month')
+}
+
+onMounted(() => {
+  refreshPerformance()
+  refreshTimer = window.setInterval(refreshPerformance, PERFORMANCE_REFRESH_MS)
+})
+
+onUnmounted(() => {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer)
+  }
 })
 </script>
 
@@ -82,7 +89,7 @@ const modelStatusText = computed(() => {
     <h3 class="title">{{ t('aiPerformance.title') }} <span class="sub-title">({{ t('common.thisMonth') }})</span></h3>
 
     <div class="gauge-card">
-      <div class="gauge-wrap" role="img" aria-label="AI 성과 달성률 게이지">
+      <div class="gauge-wrap" role="img" :aria-label="t('aiPerformance.ariaLabel')">
         <svg viewBox="0 0 220 140" class="gauge-svg" preserveAspectRatio="xMidYMid meet">
           <path class="track" d="M 28 112 A 82 82 0 0 1 192 112" />
           <path
@@ -95,22 +102,28 @@ const modelStatusText = computed(() => {
 
         <div class="gauge-center">
           <p class="amount">{{ formattedSaving }}</p>
+          <p class="amount-label">{{ t('aiPerformance.savingLabel') }}</p>
         </div>
       </div>
 
       <div class="gauge-footer">
         <div class="footer-item">
-          <p class="footer-label">{{ t('aiPerformance.target') }}</p>
-          <p class="footer-value">{{ formattedTarget }}</p>
+          <p class="footer-label">{{ t('aiPerformance.solarOffset') }}</p>
+          <p class="footer-value">{{ formattedAvoidedGrid }}</p>
         </div>
         <div class="footer-item align-right">
-          <p class="footer-label">{{ t('aiPerformance.achievementRate') }}</p>
-          <p class="footer-value">{{ achievementRate.toFixed(1) }}%</p>
+          <p class="footer-label">{{ t('aiPerformance.avgUnitPrice') }}</p>
+          <p class="footer-value">{{ formattedAvgTariff }}</p>
         </div>
       </div>
     </div>
 
-    <p class="meta">{{ t('aiPerformance.meta.highPriority', { count: highPriorityCount }) }} · {{ t('aiPerformance.meta.avgConfidence') }} {{ avgConfidence === null ? 'N/A' : `${(avgConfidence * 100).toFixed(1)}%` }} · {{ t('aiPerformance.meta.modelStatus') }} {{ modelStatusText }}</p>
+    <p class="meta">
+      {{ metaText }}
+      <template v-if="hasPerformanceData">
+        · {{ t('aiPerformance.selfUseRate') }} {{ formattedSelfUseRate }} · {{ tariffBasisText }}
+      </template>
+    </p>
   </section>
 </template>
 
@@ -155,11 +168,15 @@ const modelStatusText = computed(() => {
 }
 
 .gauge-center {
-  @apply pointer-events-none absolute inset-0 flex items-center justify-center;
+  @apply pointer-events-none absolute inset-0 flex flex-col items-center justify-center;
 }
 
 .amount {
   @apply text-lg font-semibold text-cyan-200;
+}
+
+.amount-label {
+  @apply mt-1 text-[10px] text-slate-400;
 }
 
 .gauge-footer {

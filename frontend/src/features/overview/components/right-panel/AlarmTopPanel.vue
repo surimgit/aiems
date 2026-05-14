@@ -54,13 +54,7 @@ const extractMetric = (message: string): string | null => {
   return `${matched[1]}${matched[2] === '%' ? '%' : ` ${matched[2]}`}`
 }
 
-const stripMetricFromMessage = (message: string): string => {
-  return message.replace(/\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)\s*(kW|kWh|°C|%|V|A|Hz)$/i, '').trim()
-}
-
 const toMetricText = (message: string): string => extractMetric(message) ?? '-'
-
-const toTitleText = (message: string): string => stripMetricFromMessage(message)
 
 const toTimeText = (timestamp: string): string => {
   const parsed = new Date(timestamp)
@@ -115,12 +109,19 @@ const openResource = (alarm: AlarmData) => {
         :class="{ critical: isCritical(alarm.level), clickable: !!resolveResourceId(alarm) }"
         @click="openResource(alarm)"
       >
-        <div class="left-block">
-          <span class="level-icon" :class="{ critical: isCritical(alarm.level) }">!</span>
-          <p class="title" :class="{ critical: isCritical(alarm.level) }">{{ toTitleText(alarm.message) }}</p>
+        <div class="alarm-body">
+          <div class="alarm-top">
+            <span class="level-icon" :class="{ critical: isCritical(alarm.level) }">!</span>
+            <p class="alarm-message" :class="{ critical: isCritical(alarm.level) }">{{ alarm.message }}</p>
+          </div>
+          <div class="alarm-meta">
+            <span class="meta-item">{{ alarm.device_id ?? alarm.ess_id ?? '-' }}</span>
+            <span class="meta-sep">·</span>
+            <span class="meta-item">{{ toMetricText(alarm.message) }}</span>
+            <span class="meta-sep">·</span>
+            <span class="meta-item">{{ toTimeText(alarm.timestamp) }}</span>
+          </div>
         </div>
-        <p class="metric" :class="{ critical: isCritical(alarm.level) }">{{ toMetricText(alarm.message) }}</p>
-        <p class="time">{{ toTimeText(alarm.timestamp) }}</p>
         <button class="ack-btn" type="button" @click.stop="acknowledge(alarm.alarm_id)">{{ t('alarmPanel.ack') }}</button>
       </li>
     </ul>
@@ -148,19 +149,39 @@ const openResource = (alarm: AlarmData) => {
 }
 
 .alarm-row {
-  @apply grid grid-cols-[minmax(0,1fr)_4rem_5rem_3.5rem] items-center gap-2 rounded border border-slate-700 bg-slate-900/50 px-3 py-2 text-xs;
+  @apply flex items-stretch gap-2 rounded border border-slate-700 bg-slate-900/50 px-3 py-2 text-xs;
 }
 
 .alarm-row.clickable {
   @apply cursor-pointer hover:bg-slate-800/60;
 }
 
-.ack-btn {
-  @apply rounded border border-slate-600 px-2 py-0.5 text-[11px] text-slate-400 hover:border-slate-400 hover:text-slate-200;
+.alarm-body {
+  @apply flex min-w-0 flex-1 flex-col gap-1;
 }
 
-.left-block {
+.alarm-top {
   @apply flex min-w-0 items-center gap-2;
+}
+
+.alarm-message {
+  @apply min-w-0 truncate font-semibold text-slate-100;
+}
+
+.alarm-message.critical {
+  @apply text-red-300;
+}
+
+.alarm-meta {
+  @apply flex items-center gap-1 text-[11px] text-slate-400;
+}
+
+.meta-item {
+  @apply truncate;
+}
+
+.meta-sep {
+  @apply flex-shrink-0 text-slate-600;
 }
 
 .level-icon {
@@ -171,24 +192,8 @@ const openResource = (alarm: AlarmData) => {
   @apply bg-red-400/20 text-red-300;
 }
 
-.title {
-  @apply break-words whitespace-normal font-semibold text-slate-100;
-}
-
-.title.critical {
-  @apply text-red-300;
-}
-
-.metric {
-  @apply border-l border-slate-700 pl-3 text-xs text-slate-200 text-right;
-}
-
-.metric.critical {
-  @apply text-red-300;
-}
-
-.time {
-  @apply border-l border-slate-700 pl-3 text-xs text-slate-300 text-center;
+.ack-btn {
+  @apply flex-shrink-0 self-stretch rounded border border-slate-600 px-2 text-[11px] text-slate-400 hover:border-slate-400 hover:text-slate-200;
 }
 
 .empty-text {

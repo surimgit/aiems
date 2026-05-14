@@ -124,13 +124,17 @@
     }
   },
   "aiPerformance": {
-    "title": "AI Performance",
-    "target": "Target",
-    "achievementRate": "Achievement",
+    "title": "AI Savings Performance",
+    "savingLabel": "Avoided grid purchase",
+    "solarOffset": "Actual grid offset",
+    "avgUnitPrice": "Avg. tariff",
+    "selfUseRate": "Self-use rate",
+    "ariaLabel": "Actual solar cost savings gauge",
+    "loading": "Loading savings performance...",
     "meta": {
-      "highPriority": "High-priority recommendations {count}",
-      "avgConfidence": "Average confidence",
-      "modelStatus": "Model status"
+      "formula": "DB aggregate · {offset} used on-site from {solar} actual solar",
+      "tariff": "KEPCO energy charge basis",
+      "empty": "DB-backed performance data is not available yet."
     }
   },
   "powerBalance": {

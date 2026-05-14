@@ -117,16 +117,11 @@ const alarmSignature = computed(() => {
     .join('||')
 })
 
-const controlRetryPattern = /명령 전달\s*\d+회\s*재시도\s*후\s*최종\s*실패/i
+const controlRetryPattern = /명령 전달 실패/i
 
 const parseControlRetryFailure = (message: string): { resourceId: string | null; causeMessage: string } | null => {
   if (!controlRetryPattern.test(message)) return null
-  const idMatch = message.match(/실패\s*:\s*([\w-]+)/i)
-  const resourceId = idMatch?.[1] ?? null
-  const causeMessage = resourceId
-    ? `${resourceId} 제어 채널 전달 실패 (edge 또는 MQTT 연결 상태 확인 필요)`
-    : '제어 채널 전달 실패 (edge 또는 MQTT 연결 상태 확인 필요)'
-  return { resourceId, causeMessage }
+  return { resourceId: null, causeMessage: '제어 채널 전달 실패 (edge 또는 MQTT 연결 상태 확인 필요)' }
 }
 
 watch(
