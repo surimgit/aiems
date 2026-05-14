@@ -328,6 +328,8 @@ def _register_error_handlers(app: Flask) -> None:
 
 def _start_worker() -> None:
     import asyncio
+    import threading
+    import traceback
     from .adapters.stream_consumer import run
     from .adapters.state_publisher import StatePublisher
 
@@ -339,10 +341,15 @@ def _start_worker() -> None:
             await publisher.close()
 
     def _worker_entry() -> None:
-        asyncio.run(_run())
+        try:
+            asyncio.run(_run())
+        except Exception:
+            print("[state-processor] stream worker 오류", flush=True)
+            traceback.print_exc()
 
-    socketio.start_background_task(_worker_entry)
-    print("[state-processor] stream worker 시작")
+    thread = threading.Thread(target=_worker_entry, name="state-stream-worker", daemon=True)
+    thread.start()
+    print("[state-processor] stream worker 시작", flush=True)
 
 
 def _register_routes(app: Flask) -> None:
