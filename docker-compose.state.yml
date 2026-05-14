@@ -13,6 +13,8 @@ services:
     environment:
       FLASK_APP: app.main:app
       LOCAL_SIM_TOPOLOGY_MQTT_ENABLED: ${LOCAL_SIM_TOPOLOGY_MQTT_ENABLED:-true}
+      STATE_CONSUMER_GROUP: ${STATE_CONSUMER_GROUP:-state-group-${STATE_PORT:-5002}}
+      STATE_CONSUMER_NAME: ${STATE_CONSUMER_NAME:-state-processor-${STATE_PORT:-5002}}
     restart: always
     extra_hosts:
       - "redis:172.31.45.48"
