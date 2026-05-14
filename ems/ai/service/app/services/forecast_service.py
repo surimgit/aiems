@@ -13,6 +13,7 @@ from .load_service import LoadService
 from .prediction_service import PredictionService
 from ..config import settings
 from ..repositories.forecast_repository import ForecastRepository
+from ..repositories.site_load_profile_repository import SiteLoadProfileRepository
 
 
 LIVE_SATELLITE_BACKENDS = {"live_satellite", "satellite", "v10"}
@@ -25,16 +26,20 @@ class ForecastService:
         load_service: LoadService | None = None,
         forecast_repository: ForecastRepository | None = None,
         live_satellite_service: LiveSatellitePredictionService | None = None,
+        site_load_profile_repository: SiteLoadProfileRepository | None = None,
     ) -> None:
         self.prediction_service = prediction_service or PredictionService()
         self.load_service = load_service or LoadService()
         self.forecast_repository = forecast_repository or ForecastRepository()
+        self.site_load_profile_repository = site_load_profile_repository or SiteLoadProfileRepository()
         self.live_satellite_service = live_satellite_service or LiveSatellitePredictionService(
             prediction_service=self.prediction_service
         )
 
     def forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = dict(payload)
+        warnings: list[str] = []
+        payload = self._inject_stored_site_profile(payload, warnings)
         forecast_run_id = self._start_forecast_run(payload)
         if forecast_run_id:
             payload["forecast_run_id"] = forecast_run_id
@@ -42,7 +47,6 @@ class ForecastService:
         solar_payload = dict(payload.get("solar") or {})
         load_payload = dict(payload.get("load") or {})
         site_profile = payload.get("site_profile")
-        warnings: list[str] = []
         solar_result = None
         solar_target_times: list[str] | None = None
         solar_backend = self._solar_backend(payload)
@@ -169,6 +173,27 @@ class ForecastService:
             return self.forecast_repository.start_forecast(payload)
         except Exception:
             return None
+
+    def _inject_stored_site_profile(self, payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+        if payload.get("site_profile"):
+            return payload
+        site = payload.get("site") or {}
+        site_id = payload.get("site_id") or site.get("site_id")
+        if not site_id:
+            return payload
+        try:
+            current = self.site_load_profile_repository.latest(str(site_id))
+        except Exception as exc:
+            warnings.append(f"site_load_profile_lookup_failed: {exc}")
+            return payload
+        if not current or not current.get("profile_json"):
+            return payload
+        return {
+            **payload,
+            "site_profile": current["profile_json"],
+            "site_profile_source": "ai_site_load_profile",
+            "site_profile_prompt_hash": current.get("prompt_hash"),
+        }
 
     def _mark_forecast_fallback(self, payload: dict[str, Any], exc: Exception) -> None:
         forecast_run_id = payload.get("forecast_run_id")
