@@ -44,7 +44,8 @@ pipeline {
         //  2. 변경 감지 (폴더별 CI/CD)
         //     - MR 이벤트 : origin/<target>...HEAD (3-dot) 로 MR 전체 변경사항 감지
         //                   → MR 내 모든 커밋의 변경사항을 빠짐없이 잡음
-        //     - Push 이벤트 : HEAD~1..HEAD (직전 커밋) 로 변경사항 감지
+        //     - Push 이벤트 : gitlabBefore..gitlabAfter (push 전체 범위) 로 감지
+        //                     gitlabBefore 가 없거나 새 브랜치(00000...) 이면 HEAD~1..HEAD 로 fallback
         //     - 감지 결과에 따라 Build/Test/Deploy stage 는 when 조건으로 필터링됨
         // ──────────────────────────────────────
         stage('Detect Changes') {
@@ -62,11 +63,26 @@ pipeline {
                             returnStdout: true
                         ).trim()
                     } else {
-                        echo "=== 변경 감지 방식: Push diff (HEAD~1..HEAD) ==="
-                        changes = sh(
-                            script: "git diff --name-only HEAD~1 HEAD || echo '.'",
-                            returnStdout: true
-                        ).trim()
+                        def beforeSha = env.gitlabBefore ?: ''
+                        def zeroSha = '0000000000000000000000000000000000000000'
+                        def hasValidBefore = beforeSha && beforeSha != zeroSha && sh(
+                            script: "git cat-file -e ${beforeSha}^{commit} 2>/dev/null",
+                            returnStatus: true
+                        ) == 0
+
+                        if (hasValidBefore) {
+                            echo "=== 변경 감지 방식: Push diff (${beforeSha}..HEAD) ==="
+                            changes = sh(
+                                script: "git diff --name-only ${beforeSha} HEAD || echo '.'",
+                                returnStdout: true
+                            ).trim()
+                        } else {
+                            echo "=== 변경 감지 방식: Push diff fallback (HEAD~1..HEAD) — gitlabBefore 없음/무효 ==="
+                            changes = sh(
+                                script: "git diff --name-only HEAD~1 HEAD || echo '.'",
+                                returnStdout: true
+                            ).trim()
+                        }
                     }
                     echo "=== 변경된 파일 ===\n${changes}"
 
