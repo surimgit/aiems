@@ -26,7 +26,7 @@ from .state_publisher import StatePublisher
 async def _ensure_group(client: aioredis.Redis, stream: str) -> None:
     try:
         await client.xgroup_create(stream, CONSUMER_GROUP, id="0", mkstream=True)
-        print(f"[state-processor] consumer group 생성: {CONSUMER_GROUP} / {stream}", flush=True)
+        print(f"[state-processor] consumer group 생성: {CONSUMER_GROUP} / {stream}")
     except Exception as e:
         if "BUSYGROUP" in str(e):
             pass
@@ -64,9 +64,9 @@ async def _consume_normal(client: aioredis.Redis, publisher: StatePublisher) -> 
                     # 2) mg:state:result 로 발행 — db-writer 가 받아서 sensor_data 집계 + device_meta upsert
                     await publisher.publish(snapshot)
                     await client.xack(REDIS_NORMAL_STREAM, CONSUMER_GROUP, msg_id)
-                    print(f"[state-processor] {snapshot['device_id']} ({snapshot['resource_type']}) → {REDIS_STATE_STREAM}", flush=True)
+                    print(f"[state-processor] {snapshot['device_id']} ({snapshot['resource_type']}) → {REDIS_STATE_STREAM}")
                 except Exception as e:
-                    print(f"[state-processor] 처리 실패 id={msg_id} error={e}", flush=True)
+                    print(f"[state-processor] 처리 실패 id={msg_id} error={e}")
 
 
 async def run(publisher: StatePublisher) -> None:

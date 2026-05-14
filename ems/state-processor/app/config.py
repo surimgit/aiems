@@ -18,10 +18,9 @@ REDIS_NORMAL_STREAM = "mg:sensor:data"
 REDIS_EMERGENCY_STREAM = "mg:emergency:event"
 REDIS_STATE_STREAM = "mg:state:result"
 
-# dev/app state-processor가 같은 Redis stream을 동시에 볼 수 있으므로
-# 배포 환경별로 consumer group/name을 분리할 수 있게 둔다.
-CONSUMER_GROUP = os.getenv("STATE_CONSUMER_GROUP", "state-group")
-CONSUMER_NAME = os.getenv("STATE_CONSUMER_NAME", "state-processor-1")
+# 인프라 init_streams.py가 미리 만들어둔 group 이름과 일치시킴
+CONSUMER_GROUP = "state-group"
+CONSUMER_NAME = "state-processor-1"
 
 # ── DB (TimescaleDB) ──────────────────────────────────────────────────────
 # 시계열 (sensor_data / event_log / control_history) 조회용.
