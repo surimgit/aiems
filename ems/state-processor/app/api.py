@@ -500,12 +500,13 @@ def _register_routes(app: Flask) -> None:
 
     # 프론트 AlarmData 와 1:1 매칭 (common.ts).
     # 매핑: alarm_id, severity→level (소문자), event_type→code, time→timestamp,
-    #       device_id→ess_id (옵션 — ESS device 일 때만 의미).
+    #       device_id (범용 장치 ID), device_id→ess_id (옵션 — ESS device 일 때만 의미).
     class AlarmSchema(Schema):
         alarm_id = fields.String(allow_none=True)
         level = fields.String()  # 'info' / 'warning' / 'critical'
         code = fields.String()
         message = fields.String(allow_none=True)
+        device_id = fields.String(allow_none=True)
         ess_id = fields.String(allow_none=True)
         timestamp = fields.String()
         acknowledged = fields.Boolean(allow_none=True)
@@ -584,6 +585,7 @@ def _register_routes(app: Flask) -> None:
             "level": _alarm_level(row[6]),
             "code": row[5],
             "message": row[7],
+            "device_id": row[3],
             # ESS device 인 경우만 ess_id 채움. 그 외엔 device_id 를 ess_id 자리에 넣지 않고 None.
             "ess_id": row[3] if (row[4] or "").upper() == "ESS" else None,
             "timestamp": row[1].isoformat() if row[1] else None,
