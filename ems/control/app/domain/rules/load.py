@@ -25,6 +25,9 @@ import time as _time
 
 PRIORITY = 20  # ESS/Diesel보다 낮음. 극단 상황에서만 동작.
 
+# 반응적 룰 최소 부족 임계 — 이 값 이상 부족해야 차단 권고 (노이즈 제거)
+_REACTIVE_DEFICIT_MIN_KW = 5.0
+
 # device_id → 차단 권고 발행 시각 (monotonic)
 _shed_recommended_at: dict[str, float] = {}
 
@@ -148,8 +151,8 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
         # SoC 임계 이벤트가 있으면 함께 반환, 없으면 복구 이벤트만.
         return events
 
-    # 부족 없음 → 반응적 룰 비동작 (SoC 임계 이벤트만 있을 수 있음)
-    if net_power >= 0 or load_p <= 0:
+    # 부족 없음 또는 미미한 부족 → 반응적 룰 비동작 (SoC 임계 이벤트만 있을 수 있음)
+    if net_power >= -_REACTIVE_DEFICIT_MIN_KW or load_p <= 0:
         return events
 
     soc_low = policy.get("SOC_LOW")
