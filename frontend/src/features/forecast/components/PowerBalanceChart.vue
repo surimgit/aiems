@@ -21,6 +21,11 @@ const { t, locale } = useI18n()
 const chartCanvasRef = ref<HTMLCanvasElement | null>(null)
 const chartInstance = shallowRef<Chart<'line'> | null>(null)
 
+const destroyChart = () => {
+  chartInstance.value?.destroy()
+  chartInstance.value = null
+}
+
 const toFiniteNumberOrNull = (value: unknown): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
   return value
@@ -148,12 +153,25 @@ const toTimeLabel = (isoTimestamp: string): string => {
   })
 }
 
+const build6hPinRadii = (points: PowerPoint[], defaultRadius: number): number[] =>
+  points.map((point) => {
+    const h = new Date(point.ts).getHours()
+    return h % 6 === 0 ? defaultRadius : 0
+  })
+
 const createOrUpdateChart = () => {
+  if (!hasForecastData.value) {
+    destroyChart()
+    return
+  }
+
   if (!chartCanvasRef.value) return
 
   const points = normalizedSeries.value
   const labels = points.map((point) => toTimeLabel(point.ts))
   const range = buildYAxisRange(points)
+  const pinRadii = build6hPinRadii(points, 4)
+  const pinHoverRadii = build6hPinRadii(points, 5)
 
   const datasets = [
     {
@@ -163,8 +181,9 @@ const createOrUpdateChart = () => {
       backgroundColor: 'rgba(125, 211, 252, 0.15)',
       borderWidth: 2,
       spanGaps: true,
-      pointRadius: 0,
-      pointHoverRadius: 3,
+      pointRadius: pinRadii,
+      pointHoverRadius: pinHoverRadii,
+      pointBackgroundColor: '#7dd3fc',
       tension: 0.25
     },
     {
@@ -175,8 +194,9 @@ const createOrUpdateChart = () => {
       borderWidth: 2,
       borderDash: [6, 4],
       spanGaps: true,
-      pointRadius: 0,
-      pointHoverRadius: 3,
+      pointRadius: pinRadii,
+      pointHoverRadius: pinHoverRadii,
+      pointBackgroundColor: '#a5b4fc',
       tension: 0.25
     },
     {
@@ -186,8 +206,9 @@ const createOrUpdateChart = () => {
       backgroundColor: 'rgba(110, 231, 183, 0.15)',
       borderWidth: 2,
       spanGaps: true,
-      pointRadius: 0,
-      pointHoverRadius: 3,
+      pointRadius: pinRadii,
+      pointHoverRadius: pinHoverRadii,
+      pointBackgroundColor: '#6ee7b7',
       tension: 0.25
     }
   ]
@@ -286,11 +307,12 @@ onMounted(() => {
 
 watch([normalizedSeries, locale], () => {
   createOrUpdateChart()
+}, {
+  flush: 'post'
 })
 
 onBeforeUnmount(() => {
-  chartInstance.value?.destroy()
-  chartInstance.value = null
+  destroyChart()
 })
 </script>
 

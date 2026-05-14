@@ -56,22 +56,13 @@ const toggleMode = (mode: RightPanelMode) => {
       >
         {{ t('topbar.countryLanguage') }}
       </button>
-      <button
-        type="button"
-        class="icon-btn"
-        :class="{ active: panelOpen && currentMode === 'control' }"
-        data-testid="icon-settings"
-        @click="toggleMode('control')"
-      >
-        {{ t('topbar.settings') }}
-      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .topbar-kpi-strip {
-  @apply flex items-center justify-between gap-3 rounded border border-slate-700 bg-slate-900/80 p-3;
+  @apply flex min-h-[72px] items-center justify-between gap-3 rounded border border-slate-700 bg-slate-900/80 p-3;
 }
 
 .left-area {
@@ -87,7 +78,7 @@ const toggleMode = (mode: RightPanelMode) => {
 }
 
 .right-area {
-  @apply flex flex-wrap items-center justify-end gap-2;
+  @apply flex flex-nowrap items-center justify-end gap-2 overflow-x-auto;
 }
 
 .icon-btn {

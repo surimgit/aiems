@@ -46,7 +46,8 @@ interface ControlActions {
   approveAiRecommendation(recommendationId: string, reason?: string): Promise<ControlResult>
   rejectAiRecommendation(recommendationId: string, reason?: string): Promise<ControlResult>
   fetchCommandStatus(commandId: string): Promise<ControlResult>
-  fetchCommandHistory(): Promise<ControlResult[]>
+  updateCommandStatus(result: ControlResult): void
+  fetchCommandHistory(options?: { page?: number; page_size?: number; issued_by?: string }): Promise<ControlResult[]>
 }
 
 export const useControlStore = defineStore('control', {
@@ -168,12 +169,30 @@ export const useControlStore = defineStore('control', {
       }
     },
 
-    async fetchCommandHistory(): Promise<ControlResult[]> {
+    updateCommandStatus(result: ControlResult): void {
+      const index = this.pendingCommands.findIndex((cmd) => cmd.command_id === result.command_id)
+      if (index >= 0) {
+        this.pendingCommands[index] = {
+          command_id: result.command_id,
+          status: result.status,
+          target_resource_id: result.target_resource_id ?? result.device_id,
+          action: result.action,
+          created_at: result.created_at
+        }
+      }
+    },
+
+    async fetchCommandHistory(options?: { page?: number; page_size?: number; issued_by?: string }): Promise<ControlResult[]> {
       this.loading = true
       this.error = null
 
       try {
-        const history = await listCommands({ site_id: this.siteId, limit: 100, offset: 0 })
+        const history = await listCommands({
+          site_id: this.siteId,
+          page: options?.page ?? 1,
+          page_size: options?.page_size ?? 50,
+          ...(options?.issued_by ? { issued_by: options.issued_by } : {})
+        })
         this.commandHistory = Array.isArray(history) ? history : []
         return this.commandHistory
       } catch (error) {

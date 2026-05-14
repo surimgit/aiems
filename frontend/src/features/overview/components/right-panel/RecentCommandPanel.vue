@@ -1,17 +1,45 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useControlStore } from '@/stores/control/control.store'
 import { useI18n } from 'vue-i18n'
 import { useResourceAlias } from '@/features/overview/composables/useResourceAlias'
 import type { LocaleType } from '@/app/i18n'
+import { resolveDashboardLayoutMode } from '@/features/overview/layoutPresets'
 import ControlHistoryTable from './ControlHistoryTable.vue'
 
+const emit = defineEmits<{
+  (e: 'open-resource', resourceId: string): void
+}>()
+
 const controlStore = useControlStore()
-const { pendingCommands, commandHistory, loading, error } = storeToRefs(controlStore)
+const { commandHistory, loading, error, operatorId } = storeToRefs(controlStore)
 const { t, locale } = useI18n()
 const { getDisplayName } = useResourceAlias()
-const viewMode = ref<'summary' | 'table'>('summary')
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
+const tablePage = ref(1)
+
+const tablePageSize = computed(() => {
+  const mode = resolveDashboardLayoutMode(viewportWidth.value)
+  if (mode === 'tablet') return 5
+  if (mode === 'wall') return 10
+  return 8
+})
+
+const operatorCommandHistory = computed(() =>
+  commandHistory.value.filter((item) => item.issued_by !== 'rule')
+)
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(operatorCommandHistory.value.length / tablePageSize.value))
+)
+
+const hasNextPage = computed(() => tablePage.value < totalPages.value)
+
+const visibleCommandHistory = computed(() => {
+  const start = (tablePage.value - 1) * tablePageSize.value
+  return operatorCommandHistory.value.slice(start, start + tablePageSize.value)
+})
 
 const statusToneMap: Record<string, 'success' | 'fail' | 'neutral'> = {
   ACCEPTED: 'success',
@@ -25,24 +53,43 @@ const statusToneMap: Record<string, 'success' | 'fail' | 'neutral'> = {
   TIMED_OUT: 'fail'
 }
 
-const displayedItems = computed(() => {
-  return [...pendingCommands.value]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 8)
+const loadTablePage = async (page: number) => {
+  tablePage.value = Math.max(1, page)
+  try {
+    await controlStore.fetchCommandHistory({ page: 1, page_size: 200 })
+  } catch {
+    // error state is handled by store
+  }
+}
+
+const movePrevPage = async () => {
+  if (tablePage.value <= 1 || loading.value) return
+  await loadTablePage(tablePage.value - 1)
+}
+
+const moveNextPage = async () => {
+  if (!hasNextPage.value || loading.value) return
+  await loadTablePage(tablePage.value + 1)
+}
+
+const pageLabel = computed(() => `${tablePage.value}`)
+
+const onResize = () => {
+  viewportWidth.value = window.innerWidth
+}
+
+onMounted(async () => {
+  window.addEventListener('resize', onResize)
+  await loadTablePage(1)
 })
 
-watch(
-  () => viewMode.value,
-  async (mode) => {
-    if (mode === 'table' && commandHistory.value.length === 0 && !loading.value) {
-      try {
-        await controlStore.fetchCommandHistory()
-      } catch {
-        // error state is handled by store
-      }
-    }
-  }
-)
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+})
+
+watch(tablePageSize, () => {
+  tablePage.value = 1
+})
 
 const resolveDisplayResourceName = (resourceId: string): string =>
   getDisplayName(resourceId, resourceId, locale.value as LocaleType)
@@ -64,29 +111,24 @@ const toResult = (status: string) => {
   <div class="panel-content">
     <div class="header-row">
       <p class="title">{{ t('recentPanel.title') }}</p>
-      <button class="view-all-btn" type="button" @click="viewMode = viewMode === 'summary' ? 'table' : 'summary'">
-        {{ viewMode === 'summary' ? t('recentPanel.viewAll') : t('recentPanel.viewSummary') }}
-      </button>
     </div>
 
-    <ul v-if="viewMode === 'summary' && displayedItems.length > 0" class="result-list">
-      <li v-for="item in displayedItems" :key="item.command_id" class="result-row">
-        <p class="command-text">{{ resolveDisplayResourceName(item.target_resource_id) }} {{ item.action }}</p>
-        <div class="right-meta">
-          <span class="status" :class="toResult(item.status).tone">{{ toResult(item.status).label }}</span>
-          <span class="time">{{ item.created_at }}</span>
-        </div>
-      </li>
-    </ul>
-
-    <p v-else-if="viewMode === 'summary'" class="empty-text">{{ t('recentPanel.empty') }}</p>
-
     <ControlHistoryTable
-      v-else
-      :items="commandHistory"
+      :items="visibleCommandHistory"
       :loading="loading"
       :error="error"
+      @open-resource="emit('open-resource', $event)"
     />
+
+    <div class="pager-row">
+      <button class="pager-btn" type="button" :disabled="tablePage <= 1 || loading" @click="movePrevPage">
+        이전
+      </button>
+      <span class="pager-index">{{ pageLabel }}</span>
+      <button class="pager-btn" type="button" :disabled="!hasNextPage || loading" @click="moveNextPage">
+        다음
+      </button>
+    </div>
   </div>
 </template>
 
@@ -96,54 +138,22 @@ const toResult = (status: string) => {
 }
 
 .header-row {
-  @apply mb-2 flex items-center justify-between;
+  @apply mb-2 flex items-center justify-start;
 }
 
 .title {
   @apply text-sm font-semibold text-slate-100;
 }
 
-.view-all-btn {
-  @apply rounded border border-slate-700 px-2 py-1 text-xs text-slate-300;
+.pager-row {
+  @apply mt-3 flex items-center justify-center gap-2;
 }
 
-.result-list {
-  @apply space-y-1.5;
+.pager-btn {
+  @apply rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 disabled:cursor-not-allowed disabled:opacity-40;
 }
 
-.result-row {
-  @apply grid grid-cols-[minmax(0,1fr)_auto] items-center rounded border border-slate-800 bg-slate-900/60 px-2 py-2;
-}
-
-.command-text {
-  @apply truncate pr-2 text-xs text-slate-100;
-}
-
-.right-meta {
-  @apply grid grid-cols-[4.5rem_4.5rem] items-center justify-items-end gap-1 text-xs;
-}
-
-.status {
-  @apply inline-block w-[4.5rem] text-right;
-}
-
-.status.success {
-  @apply text-emerald-300;
-}
-
-.status.fail {
-  @apply text-red-300;
-}
-
-.status.neutral {
-  @apply text-slate-300;
-}
-
-.time {
-  @apply inline-block w-[4.5rem] text-right text-slate-400;
-}
-
-.empty-text {
-  @apply rounded border border-slate-700 bg-slate-900/50 px-3 py-3 text-xs text-slate-400;
+.pager-index {
+  @apply min-w-14 text-center text-xs text-slate-300;
 }
 </style>

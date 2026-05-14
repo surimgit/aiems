@@ -14,16 +14,18 @@ export interface RecommendationDecisionRequest {
 export interface ListCommandsQuery {
   site_id?: string
   device_id?: string
-  limit?: number
-  offset?: number
+  issued_by?: string
+  page?: number
+  page_size?: number
 }
 
 const queryString = (query: ListCommandsQuery): string => {
   const params = new URLSearchParams()
   if (query.site_id) params.set('site_id', query.site_id)
   if (query.device_id) params.set('device_id', query.device_id)
-  if (query.limit !== undefined) params.set('limit', String(query.limit))
-  if (query.offset !== undefined) params.set('offset', String(query.offset))
+  if (query.issued_by) params.set('issued_by', query.issued_by)
+  if (query.page !== undefined) params.set('page', String(query.page))
+  if (query.page_size !== undefined) params.set('page_size', String(query.page_size))
   const encoded = params.toString()
   return encoded.length > 0 ? `?${encoded}` : ''
 }

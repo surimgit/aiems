@@ -9,6 +9,8 @@
 
 import { defineStore } from 'pinia'
 import { DEFAULT_SITE_ID } from '@/app/config'
+import type { DeviceStateSnapshot, StateUpdateEvent } from '@/realtime/types'
+import type { ResourceType, TopologySwitchPosition } from '@/types/api-contracts'
 import type {
   DashboardData,
   ESSStatus,
@@ -23,9 +25,179 @@ import {
   getEventList,
   getPowerSummary,
   getResources,
-  getTopology,
-  startPowerPolling
+  getTopology
 } from '@/api/dashboard.client'
+
+const round2 = (value: number): number => Math.round(value * 100) / 100
+
+const numberOrUndefined = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+const stringOrUndefined = (value: unknown): string | undefined => {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+const booleanOrUndefined = (value: unknown): boolean | undefined => {
+  return typeof value === 'boolean' ? value : undefined
+}
+
+const normalizeResourceType = (value: string | undefined): ResourceType | null => {
+  const upper = (value ?? '').toUpperCase()
+  if (upper === 'DIESEL') return 'DIESEL_GENERATOR'
+  if (['LOAD', 'SOLAR', 'ESS', 'DIESEL_GENERATOR', 'SWITCH', 'LINE', 'GRID'].includes(upper)) {
+    return upper as ResourceType
+  }
+  return null
+}
+
+const normalizeSwitchPosition = (value: unknown): TopologySwitchPosition | 'UNKNOWN' => {
+  const upper = typeof value === 'string' ? value.toUpperCase() : ''
+  return upper === 'OPEN' || upper === 'CLOSED' ? upper : 'UNKNOWN'
+}
+
+const snapshotStatus = (snapshot: DeviceStateSnapshot): string => {
+  if (snapshot.emergency) return 'EMERGENCY'
+  if (snapshot.comms_health === 'stale') return 'OFFLINE'
+  return 'NORMAL'
+}
+
+const snapshotTimestamp = (snapshot: DeviceStateSnapshot, fallback?: string): string => {
+  return snapshot.calculated_at ?? snapshot.timestamp ?? fallback ?? new Date().toISOString()
+}
+
+const mapSnapshotToResource = (snapshot: DeviceStateSnapshot): ResourceInfo | null => {
+  if (!snapshot.device_id) return null
+
+  const reported = snapshot.reported_state ?? {}
+  const resourceType = normalizeResourceType(snapshot.resource_type)
+  if (!resourceType) return null
+
+  if (resourceType === 'SWITCH') {
+    return {
+      resource_id: snapshot.device_id,
+      edge_id: snapshot.edge_id,
+      resource_type: resourceType,
+      name: snapshot.device_id,
+      status: snapshotStatus(snapshot),
+      comms_health: snapshot.comms_health,
+      location: snapshot.location,
+      latitude: snapshot.latitude,
+      longitude: snapshot.longitude,
+      position: normalizeSwitchPosition(reported.switch_state),
+      controllable: booleanOrUndefined(reported.controllable),
+      interlock_blocked: booleanOrUndefined(reported.interlock_blocked)
+    }
+  }
+
+  const telemetry = {
+    p_kw: numberOrUndefined(reported.P),
+    q_kvar: numberOrUndefined(reported.Q),
+    v_volt: numberOrUndefined(reported.V),
+    f_hz: numberOrUndefined(reported.f),
+    pf: numberOrUndefined(reported.PF),
+    soc: numberOrUndefined(reported.SOC),
+    operating_mode: stringOrUndefined(reported.operating_mode)
+  }
+
+  return {
+    resource_id: snapshot.device_id,
+    edge_id: snapshot.edge_id,
+    resource_type: resourceType,
+    name: snapshot.device_id,
+    status: snapshotStatus(snapshot),
+    comms_health: snapshot.comms_health,
+    location: snapshot.location,
+    latitude: snapshot.latitude,
+    longitude: snapshot.longitude,
+    telemetry: Object.fromEntries(
+      Object.entries(telemetry).filter(([, value]) => value !== undefined)
+    ) as ResourceInfo['telemetry']
+  }
+}
+
+const mapSnapshotToEss = (snapshot: DeviceStateSnapshot, fallbackTimestamp?: string): ESSStatus | null => {
+  if (!snapshot.device_id || normalizeResourceType(snapshot.resource_type) !== 'ESS') return null
+
+  const reported = snapshot.reported_state ?? {}
+  const powerKw = numberOrUndefined(reported.P) ?? 0
+  const soc = numberOrUndefined(reported.SOC) ?? 0
+  const mode = String(reported.operating_mode ?? '').toLowerCase()
+  const status: ESSStatus['status'] = snapshot.emergency
+    ? 'fault'
+    : mode === 'charge' || powerKw < 0
+      ? 'charging'
+      : mode === 'discharge' || powerKw > 0
+        ? 'discharging'
+        : 'idle'
+
+  return {
+    ess_id: snapshot.device_id,
+    edge_id: snapshot.edge_id,
+    name: snapshot.device_id,
+    capacity_kwh: numberOrUndefined(reported.capacity_kwh) ?? 0,
+    max_power_kw: numberOrUndefined(reported.power_limit_kw) ?? 0,
+    soc,
+    soh: numberOrUndefined(reported.SOH),
+    status,
+    power_kw: powerKw,
+    location: snapshot.location,
+    latitude: snapshot.latitude,
+    longitude: snapshot.longitude,
+    updated_at: snapshotTimestamp(snapshot, fallbackTimestamp)
+  }
+}
+
+const computeSummaryFromResources = (
+  siteId: string,
+  resources: ResourceInfo[],
+  timestamp: string
+): PowerSummary => {
+  let pvPower = 0
+  let essPower = 0
+  let loadPower = 0
+  let dieselPower = 0
+
+  resources.forEach((resource) => {
+    const power = resource.telemetry?.p_kw ?? 0
+    if (resource.resource_type === 'SOLAR') {
+      pvPower += power
+    } else if (resource.resource_type === 'ESS') {
+      essPower += power
+    } else if (resource.resource_type === 'LOAD') {
+      loadPower += Math.abs(power)
+    } else if (resource.resource_type === 'DIESEL_GENERATOR') {
+      dieselPower += power
+    }
+  })
+
+  return {
+    timestamp,
+    net_power_kw: round2(pvPower + essPower + dieselPower - loadPower),
+    pv_power_kw: round2(pvPower),
+    ess_power_kw: round2(essPower),
+    grid_power_kw: 0,
+    load_power_kw: round2(loadPower)
+  }
+}
+
+const upsertById = <T>(items: T[], nextItem: T, idOf: (item: T) => string): T[] => {
+  const targetId = idOf(nextItem)
+  const index = items.findIndex((item) => idOf(item) === targetId)
+  if (index === -1) return [...items, nextItem]
+
+  const nextItems = [...items]
+  nextItems[index] = {
+    ...items[index],
+    ...nextItem
+  }
+  return nextItems
+}
 
 interface DashboardState {
   siteId: string
@@ -64,6 +236,7 @@ interface DashboardActions {
   fetchTopology(siteId?: string): Promise<void>
   fetchEvents(siteId?: string): Promise<void>
   fetchDashboardData(siteId?: string): Promise<void>
+  applyRealtimeStateUpdate(event: StateUpdateEvent): void
   startPolling(interval?: number): void
   stopPolling(): void
   selectEss(essId: string | null): void
@@ -268,22 +441,35 @@ export const useDashboardStore = defineStore(
           this.loading = false
         }
       },
-      
-      startPolling(interval?: number): void {
-        const intervalMs = interval ?? this.pollingInterval
-        
-        startPowerPolling(
+
+      applyRealtimeStateUpdate(event: StateUpdateEvent): void {
+        const snapshot = event.data
+        if (!snapshot) return
+        if (snapshot.site_id && snapshot.site_id !== this.siteId) return
+
+        const resource = mapSnapshotToResource(snapshot)
+        if (!resource) return
+
+        this.resources = upsertById(this.resources, resource, (item) => item.resource_id)
+        this.resourcesLastFetchedAt = Date.now()
+        this.resourcesFetchFailStreak = 0
+
+        const ess = mapSnapshotToEss(snapshot, event.timestamp)
+        if (ess) {
+          this.essList = upsertById(this.essList, ess, (item) => item.ess_id)
+        }
+
+        this.powerSummary = computeSummaryFromResources(
           this.siteId,
-          intervalMs,
-          (data) => {
-            this.powerSummary = data
-          },
-          (error) => {
-            console.error('[DashboardStore] Polling error:', error)
-          }
+          this.resources,
+          snapshotTimestamp(snapshot, event.timestamp)
         )
       },
-      
+
+      startPolling(interval?: number): void {
+        console.warn('[DashboardStore] startPolling is deprecated. Use overview realtime source instead.', interval)
+      },
+
       stopPolling(): void {
         // TODO: Polling 정지 로직 구현
       }

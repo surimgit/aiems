@@ -9,7 +9,7 @@
   },
   "rightPanel": {
     "defaultTitle": "패널",
-    "alarmTop3": "알람 (Top 5)",
+    "alarmTop3": "알람",
     "recentCommand": "최근 명령 결과",
     "countryLanguage": "국가 선택",
     "selectedResource": "선택된 장비 정보",

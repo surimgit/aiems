@@ -2,40 +2,39 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAlarmStore } from '@/stores/alarm/alarm.store'
+import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useI18n } from 'vue-i18n'
+import { resolveDashboardLayoutMode } from '@/features/overview/layoutPresets'
+import type { AlarmData } from '@/types/common'
+
+const emit = defineEmits<{
+  (e: 'open-resource', resourceId: string): void
+}>()
 
 const alarmStore = useAlarmStore()
+const dashboardStore = useDashboardStore()
 const { activeAlarms } = storeToRefs(alarmStore)
 const { t } = useI18n()
 
-const isFullView = ref(false)
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
+const alarmPage = ref(1)
 
-const toTimestampNumber = (value: string): number => {
-  const date = new Date(value)
-  const time = date.getTime()
-  return Number.isFinite(time) ? time : 0
-}
-
-const sortedActiveAlarms = computed(() => {
-  return [...activeAlarms.value].sort((a, b) => {
-    return toTimestampNumber(b.timestamp) - toTimestampNumber(a.timestamp)
-  })
+const pageSize = computed(() => {
+  const mode = resolveDashboardLayoutMode(viewportWidth.value)
+  if (mode === 'tablet') return 5
+  if (mode === 'wall') return 10
+  return 8
 })
 
-const dedupedActiveAlarms = computed(() => {
-  const bySignature = new Map<string, (typeof sortedActiveAlarms.value)[number]>()
-  for (const alarm of sortedActiveAlarms.value) {
-    const signature = `${alarm.level}|${alarm.code}|${alarm.message}`
-    if (!bySignature.has(signature)) {
-      bySignature.set(signature, alarm)
-    }
-  }
-  return Array.from(bySignature.values())
-})
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(activeAlarms.value.length / pageSize.value))
+)
+
+const hasNextPage = computed(() => alarmPage.value < totalPages.value)
 
 const visibleAlarms = computed(() => {
-  if (isFullView.value) return dedupedActiveAlarms.value
-  return dedupedActiveAlarms.value.slice(0, 5)
+  const start = (alarmPage.value - 1) * pageSize.value
+  return activeAlarms.value.slice(start, start + pageSize.value)
 })
 
 const toLevelLabel = (value: string): string => {
@@ -82,28 +81,56 @@ const acknowledge = async (alarmId?: string) => {
   if (!alarmId) return
   await alarmStore.acknowledgeAlarm(alarmId)
 }
+
+const resolveResourceId = (alarm: AlarmData): string | null => {
+  if (alarm.device_id) return alarm.device_id
+  if (alarm.ess_id) return alarm.ess_id
+  if (alarm.resource_type) {
+    const match = dashboardStore.resources.find(
+      (r) => r.resource_type === alarm.resource_type
+    )
+    return match?.resource_id ?? null
+  }
+  return null
+}
+
+const openResource = (alarm: AlarmData) => {
+  const resourceId = resolveResourceId(alarm)
+  if (!resourceId) return
+  emit('open-resource', resourceId)
+}
 </script>
 
 <template>
   <div class="panel-content">
     <div class="header-row">
       <p class="title">{{ t('rightPanel.alarmTop3') }}</p>
-      <button type="button" class="toggle-btn" @click="isFullView = !isFullView">
-        {{ isFullView ? t('alarmPanel.viewTop5') : t('alarmPanel.viewAll') }}
-      </button>
     </div>
 
     <ul v-if="visibleAlarms.length > 0" class="space-y-2">
-      <li v-for="alarm in visibleAlarms" :key="alarm.alarm_id" class="alarm-row" :class="{ critical: isCritical(alarm.level) }">
+      <li
+        v-for="alarm in visibleAlarms"
+        :key="alarm.alarm_id"
+        class="alarm-row"
+        :class="{ critical: isCritical(alarm.level), clickable: !!resolveResourceId(alarm) }"
+        @click="openResource(alarm)"
+      >
         <div class="left-block">
           <span class="level-icon" :class="{ critical: isCritical(alarm.level) }">!</span>
           <p class="title" :class="{ critical: isCritical(alarm.level) }">{{ toTitleText(alarm.message) }}</p>
         </div>
         <p class="metric" :class="{ critical: isCritical(alarm.level) }">{{ toMetricText(alarm.message) }}</p>
         <p class="time">{{ toTimeText(alarm.timestamp) }}</p>
+        <button class="ack-btn" type="button" @click.stop="acknowledge(alarm.alarm_id)">{{ t('alarmPanel.ack') }}</button>
       </li>
     </ul>
     <p v-else class="empty-text">{{ t('alarmPanel.empty') }}</p>
+
+    <div class="pager-row">
+      <button class="pager-btn" type="button" :disabled="alarmPage <= 1" @click="alarmPage--">이전</button>
+      <span class="pager-index">{{ alarmPage }}</span>
+      <button class="pager-btn" type="button" :disabled="!hasNextPage" @click="alarmPage++">다음</button>
+    </div>
   </div>
 </template>
 
@@ -120,12 +147,16 @@ const acknowledge = async (alarmId?: string) => {
   @apply text-sm font-semibold text-slate-100;
 }
 
-.toggle-btn {
-  @apply rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300;
+.alarm-row {
+  @apply grid grid-cols-[minmax(0,1fr)_4rem_5rem_3.5rem] items-center gap-2 rounded border border-slate-700 bg-slate-900/50 px-3 py-2 text-xs;
 }
 
-.alarm-row {
-  @apply grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded border border-slate-700 bg-slate-900/50 px-3 py-2 text-xs;
+.alarm-row.clickable {
+  @apply cursor-pointer hover:bg-slate-800/60;
+}
+
+.ack-btn {
+  @apply rounded border border-slate-600 px-2 py-0.5 text-[11px] text-slate-400 hover:border-slate-400 hover:text-slate-200;
 }
 
 .left-block {
@@ -149,7 +180,7 @@ const acknowledge = async (alarmId?: string) => {
 }
 
 .metric {
-  @apply border-l border-slate-700 pl-3 text-xs text-slate-200;
+  @apply border-l border-slate-700 pl-3 text-xs text-slate-200 text-right;
 }
 
 .metric.critical {
@@ -157,10 +188,22 @@ const acknowledge = async (alarmId?: string) => {
 }
 
 .time {
-  @apply border-l border-slate-700 pl-3 text-xs text-slate-300;
+  @apply border-l border-slate-700 pl-3 text-xs text-slate-300 text-center;
 }
 
 .empty-text {
   @apply rounded border border-slate-700 bg-slate-900/50 px-3 py-3 text-xs text-slate-400;
+}
+
+.pager-row {
+  @apply mt-3 flex items-center justify-center gap-2;
+}
+
+.pager-btn {
+  @apply rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.pager-index {
+  @apply min-w-14 text-center text-xs text-slate-300;
 }
 </style>

@@ -17,8 +17,7 @@ import type {
   Recommendation
 } from '@/types/common'
 import { 
-  getGenerationForecast, 
-  getDemandForecast, 
+  getForecastSeries,
   getRecommendations, 
   requestInference,
   getAiModelStatus 
@@ -43,8 +42,7 @@ interface AiGetters {
 
 interface AiActions {
   setSiteId(siteId: string): void
-  fetchGenerationForecast(siteId?: string): Promise<void>
-  fetchDemandForecast(siteId?: string): Promise<void>
+  fetchForecasts(siteId?: string): Promise<void>
   fetchRecommendations(siteId?: string): Promise<void>
   fetchModelStatus(): Promise<void>
   requestAiInference(request: InferenceRequest): Promise<InferenceAcceptedResponse>
@@ -89,29 +87,20 @@ export const useAiStore = defineStore(
         this.siteId = siteId
       },
 
-      async fetchGenerationForecast(siteId?: string): Promise<void> {
+      async fetchForecasts(siteId?: string): Promise<void> {
         this.loading = true
         this.error = null
-        
+
+        const targetSiteId = siteId ?? this.siteId
+        this.siteId = targetSiteId
+
         try {
-          this.generationForecast = await getGenerationForecast(siteId ?? this.siteId)
+          const { generationForecast, demandForecast } = await getForecastSeries(targetSiteId)
+          this.generationForecast = generationForecast
+          this.demandForecast = demandForecast
         } catch (error) {
           this.error = (error as Error).message
-          console.error('[AiStore] Fetch generation forecast error:', error)
-        } finally {
-          this.loading = false
-        }
-      },
-      
-      async fetchDemandForecast(siteId?: string): Promise<void> {
-        this.loading = true
-        this.error = null
-        
-        try {
-          this.demandForecast = await getDemandForecast(siteId ?? this.siteId)
-        } catch (error) {
-          this.error = (error as Error).message
-          console.error('[AiStore] Fetch demand forecast error:', error)
+          console.error('[AiStore] Fetch forecast series error:', error)
         } finally {
           this.loading = false
         }

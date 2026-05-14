@@ -28,10 +28,7 @@ export const useForecastFeature = (): UseForecastFeature => {
   
   const fetchForecasts = async (siteId: string = DEFAULT_SITE_ID) => {
     aiStore.setSiteId(siteId)
-    await Promise.all([
-      aiStore.fetchGenerationForecast(siteId),
-      aiStore.fetchDemandForecast(siteId)
-    ])
+    await aiStore.fetchForecasts(siteId)
   }
   
   return {

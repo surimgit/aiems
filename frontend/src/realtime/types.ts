@@ -46,6 +46,7 @@ export interface RealtimeAlarm {
 export type RealtimeEventType = 
   | 'power_update'
   | 'ess_status'
+  | 'state_update'
   | 'alarm'
   | 'command_result'
   | 'forecast_update'
@@ -59,6 +60,37 @@ export interface RealtimeEvent<T = unknown> {
   data: T
 }
 
+export interface DeviceStateSnapshot {
+  site_id?: string
+  edge_id?: string
+  device_id?: string
+  resource_type?: string
+  timestamp?: string
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
+  reported_state?: Record<string, unknown>
+  desired_state?: Record<string, unknown> | null
+  last_command_id?: string | null
+  comms_health?: string
+  emergency?: boolean
+  interlock?: boolean
+  calculated_at?: string
+}
+
+export interface StateUpdateEvent {
+  type: 'state_update'
+  timestamp?: string
+  site_id?: string
+  edge_id?: string
+  device_id?: string
+  resource_type?: string
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
+  data: DeviceStateSnapshot
+}
+
 /**
  * 연결 상태
  */
@@ -67,6 +99,6 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnecting' | 'di
 /**
  * 데이터 소스 유형
  */
-export type DataSourceType = 'polling' | 'websocket'
+export type DataSourceType = 'polling' | 'websocket' | 'socketio'
 
 // Types are already exported above.

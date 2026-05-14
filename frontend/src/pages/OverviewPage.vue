@@ -21,17 +21,20 @@ import AlarmTopPanel from '@/features/overview/components/right-panel/AlarmTopPa
 import RecentCommandPanel from '@/features/overview/components/right-panel/RecentCommandPanel.vue'
 import CountryLanguagePanel from '@/features/overview/components/right-panel/CountryLanguagePanel.vue'
 import SelectedResourceIntegratedPanel from '@/features/overview/components/right-panel/SelectedResourceIntegratedPanel.vue'
-import ControlPanel from '@/features/overview/components/right-panel/ControlPanel.vue'
 import LoadUsagePanel from '@/features/overview/components/right-panel/LoadUsagePanel.vue'
 import { useRightPanelState } from '@/features/overview/composables/useRightPanelState'
 import { useDashboardLayout } from '@/features/overview/composables/useDashboardLayout'
 import { useOverviewPolling } from '@/features/overview/composables/useOverviewPolling'
+import { useForecastFeature } from '@/features/forecast'
+import { useCommandStatusPoller } from '@/features/overview/composables/useCommandStatusPoller'
 import type { RightPanelMode } from '@/features/overview/types'
 
 const { powerSummary, activeAlarms, resources, initialize } = useOverviewFeature()
 const { t } = useI18n()
 const topologyFeature = useTopologyFeature()
 const overviewPolling = useOverviewPolling()
+const forecastFeature = useForecastFeature()
+useCommandStatusPoller()
 const dashboardStore = useDashboardStore()
 const route = useRoute()
 const kpiItems = computed(() => buildKpiSummary(powerSummary.value, resources.value, activeAlarms.value.length))
@@ -60,7 +63,26 @@ const handleTopbarMode = (nextMode: RightPanelMode) => {
 }
 
 const handleSelectNode = (nodeId: string) => {
+  if (!nodeId) {
+    dashboardStore.selectEss(null)
+    if (rightPanel.mode.value === 'selected-resource') {
+      rightPanel.close()
+    }
+    return
+  }
   topologyFeature.selectNode(nodeId)
+  rightPanel.open('selected-resource')
+}
+
+const handleSelectLine = (lineId: string) => {
+  if (!lineId) {
+    dashboardStore.selectEss(null)
+    if (rightPanel.mode.value === 'selected-resource') {
+      rightPanel.close()
+    }
+    return
+  }
+  topologyFeature.selectLine(lineId)
   rightPanel.open('selected-resource')
 }
 
@@ -83,13 +105,16 @@ const rightPanelTitle = computed(() => {
     'recent-command': t('rightPanel.recentCommand'),
     'country-language': t('rightPanel.countryLanguage'),
     'selected-resource': t('rightPanel.selectedResource'),
-    control: t('rightPanel.control'),
     'load-usage': t('rightPanel.loadUsage')
   }
 
   if (!rightPanel.mode.value) return t('rightPanel.defaultTitle')
   return titleMap[rightPanel.mode.value]
 })
+
+// AI 예측은 최초 1회 + 10분 주기 갱신 (100ms 폴링에 넣으면 요청 폭탄)
+const FORECAST_INTERVAL_MS = 10 * 60 * 1000
+let forecastIntervalId: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   window.addEventListener('resize', onResize)
@@ -101,10 +126,20 @@ onMounted(async () => {
     rightPanel.open('alarm')
   }
   overviewPolling.start()
+
+  // AI 예측 최초 1회 호출 (비동기 - 실패해도 페이지 초기화 지연 없음)
+  forecastFeature.fetchForecasts()
+  forecastIntervalId = setInterval(() => {
+    forecastFeature.fetchForecasts()
+  }, FORECAST_INTERVAL_MS)
 })
 
 onUnmounted(() => {
   overviewPolling.stop()
+  if (forecastIntervalId !== null) {
+    clearInterval(forecastIntervalId)
+    forecastIntervalId = null
+  }
   window.removeEventListener('resize', onResize)
   window.removeEventListener('keydown', onKeydown)
 })
@@ -140,6 +175,7 @@ onUnmounted(() => {
             :resources-fetch-fail-streak="dashboardStore.resourcesFetchFailStreak"
             :topology-fetch-fail-streak="dashboardStore.topologyFetchFailStreak"
             @select-node="handleSelectNode"
+            @select-line="handleSelectLine"
           >
             <template #svg>
               <TopologyLineLayer :lines="topologyFeature.topology.value?.lines ?? []" />
@@ -174,11 +210,10 @@ onUnmounted(() => {
 
       <template #right-panel>
         <RightPanelShell :title="rightPanelTitle" @close="rightPanel.close">
-          <AlarmTopPanel v-if="rightPanel.mode.value === 'alarm'" />
-          <RecentCommandPanel v-else-if="rightPanel.mode.value === 'recent-command'" />
+          <AlarmTopPanel v-if="rightPanel.mode.value === 'alarm'" @open-resource="handleOpenResourceFromBanner" />
+          <RecentCommandPanel v-else-if="rightPanel.mode.value === 'recent-command'" @open-resource="handleOpenResourceFromBanner" />
           <CountryLanguagePanel v-else-if="rightPanel.mode.value === 'country-language'" />
           <SelectedResourceIntegratedPanel v-else-if="rightPanel.mode.value === 'selected-resource'" />
-          <ControlPanel v-else-if="rightPanel.mode.value === 'control'" />
           <LoadUsagePanel v-else-if="rightPanel.mode.value === 'load-usage'" />
         </RightPanelShell>
       </template>

@@ -88,6 +88,7 @@
       :connections="connections"
       :is-edit-mode="isEditMode"
       :is-add-armed="isAddArmed"
+      :selected-equipment-id="selectedEquipmentId"
       :selected-line-id="selectedLineId"
       @update-positions="(value) => (uiPositions = value)"
       @zoom-change="handleZoomChange"
@@ -228,6 +229,7 @@ const isEditMode = ref(false)
 const isControlCollapsed = ref(true)
 const defaultAddType = ref<MapEquipment['type']>('LOAD')
 const isAddArmed = ref(false)
+const selectedEquipmentId = ref<string | null>(null)
 const selectedLineId = ref<string | null>(null)
 const isUiVisible = ref(true)
 const mapZoom = ref(16)
@@ -359,8 +361,8 @@ const applyCommandToLineStatus = (lineId: string, fromResourceId: string, toReso
   return applyUnintendedDisconnectStatus(baseStatus)
 }
 
-const BASE_LNG = 129.0755
-const BASE_LAT = 35.1785
+const DEFAULT_BASE_LNG = 129.0755
+const DEFAULT_BASE_LAT = 35.1785
 
 const hasValidLngLat = (lng: number, lat: number) => {
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false
@@ -368,18 +370,65 @@ const hasValidLngLat = (lng: number, lat: number) => {
   return lng >= -180 && lng <= 180 && lat >= -85 && lat <= 85
 }
 
-const buildTopologyCoordinateMapper = (nodes: TopologyData['nodes']) => {
+const resolveAnchorLngLat = (
+  resources: ResourceInfo[],
+  nodes: TopologyData['nodes']
+): [number, number] => {
+  const resourceCoords = resources
+    .map((resource) => resolveResourceLngLat(resource))
+    .filter((value): value is [number, number] => value !== null)
+
+  if (resourceCoords.length > 0) {
+    const sum = resourceCoords.reduce(
+      (acc, [lng, lat]) => {
+        acc.lng += lng
+        acc.lat += lat
+        return acc
+      },
+      { lng: 0, lat: 0 }
+    )
+    return [sum.lng / resourceCoords.length, sum.lat / resourceCoords.length]
+  }
+
+  const nodeLngLat = nodes
+    .map((node) => [toNumber(node.position?.x), toNumber(node.position?.y)] as const)
+    .filter((coords): coords is [number, number] => {
+      const [lng, lat] = coords
+      return lng !== undefined && lat !== undefined && hasValidLngLat(lng, lat)
+    })
+
+  if (nodeLngLat.length > 0) {
+    const sum = nodeLngLat.reduce(
+      (acc, [lng, lat]) => {
+        acc.lng += lng
+        acc.lat += lat
+        return acc
+      },
+      { lng: 0, lat: 0 }
+    )
+    return [sum.lng / nodeLngLat.length, sum.lat / nodeLngLat.length]
+  }
+
+  return [DEFAULT_BASE_LNG, DEFAULT_BASE_LAT]
+}
+
+const buildTopologyCoordinateMapper = (nodes: TopologyData['nodes'], anchor: [number, number]) => {
   const rawPositions = nodes
     .map((node) => ({ x: node.position?.x, y: node.position?.y }))
     .filter((position): position is { x: number; y: number } => Number.isFinite(position.x) && Number.isFinite(position.y))
 
   if (rawPositions.length === 0) {
-    return (_x: number, _y: number): [number, number] | null => null
+    return (_x?: number, _y?: number): [number, number] | null => null
   }
 
   const allAreLngLat = rawPositions.every((position) => hasValidLngLat(position.x, position.y))
   if (allAreLngLat) {
-    return (x: number, y: number): [number, number] | null => (hasValidLngLat(x, y) ? [x, y] : null)
+    return (x?: number, y?: number): [number, number] | null => {
+      const lng = toNumber(x)
+      const lat = toNumber(y)
+      if (lng === undefined || lat === undefined) return null
+      return hasValidLngLat(lng, lat) ? [lng, lat] : null
+    }
   }
 
   const xs = rawPositions.map((position) => position.x)
@@ -394,20 +443,22 @@ const buildTopologyCoordinateMapper = (nodes: TopologyData['nodes']) => {
   const targetWidth = 0.0032
   const targetHeight = 0.0024
 
-  return (x: number, y: number): [number, number] | null => {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-    const normalizedX = (x - minX) / spanX
-    const normalizedY = (y - minY) / spanY
+  return (x?: number, y?: number): [number, number] | null => {
+    const sourceX = toNumber(x)
+    const sourceY = toNumber(y)
+    if (sourceX === undefined || sourceY === undefined) return null
+    const normalizedX = (sourceX - minX) / spanX
+    const normalizedY = (sourceY - minY) / spanY
 
-    const lng = BASE_LNG + (normalizedX - 0.5) * targetWidth
-    const lat = BASE_LAT + (0.5 - normalizedY) * targetHeight
+    const lng = anchor[0] + (normalizedX - 0.5) * targetWidth
+    const lat = anchor[1] + (0.5 - normalizedY) * targetHeight
     return [lng, lat]
   }
 }
 
-const fallbackPositionByType = (type: MapEquipment['type'], index: number): [number, number] => {
-  const baseLng = BASE_LNG
-  const baseLat = BASE_LAT
+const fallbackPositionByType = (type: MapEquipment['type'], index: number, anchor: [number, number]): [number, number] => {
+  const baseLng = anchor[0]
+  const baseLat = anchor[1]
 
   if (type === 'GENERATOR') {
     return [baseLng - 0.0016, baseLat + 0.0007 - index * 0.0008]
@@ -420,7 +471,37 @@ const fallbackPositionByType = (type: MapEquipment['type'], index: number): [num
 
 const toNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
   return undefined
+}
+
+const resolveResourceLngLat = (resource?: ResourceInfo): [number, number] | null => {
+  if (!resource) return null
+  const lng = toNumber(resource.longitude)
+  const lat = toNumber(resource.latitude)
+  if (lng !== undefined && lat !== undefined && hasValidLngLat(lng, lat)) return [lng, lat]
+
+  const location = resource.location ?? undefined
+  if (!location || typeof location !== 'object') return null
+
+  const locationRecord = location as Record<string, unknown>
+  const locationLng = toNumber(locationRecord.longitude) ?? toNumber(locationRecord.lng) ?? toNumber(locationRecord.x)
+  const locationLat = toNumber(locationRecord.latitude) ?? toNumber(locationRecord.lat) ?? toNumber(locationRecord.y)
+  if (locationLng !== undefined && locationLat !== undefined && hasValidLngLat(locationLng, locationLat)) {
+    return [locationLng, locationLat]
+  }
+
+  return null
+}
+
+const switchPositionToLineStatus = (position?: string): MapConnection['status'] | null => {
+  const upper = (position ?? '').toUpperCase()
+  if (upper === 'OPEN') return 'stopped'
+  if (upper === 'CLOSED') return 'normal'
+  return null
 }
 
 const applyTopologyData = () => {
@@ -430,9 +511,10 @@ const applyTopologyData = () => {
   const resources = props.resources ?? []
   const resourceById = new Map(resources.map((resource) => [resource.resource_id.toLowerCase(), resource]))
   const hasTopologyNodes = Boolean(props.topology && props.topology.nodes.length > 0)
+  const anchor = resolveAnchorLngLat(resources, props.topology?.nodes ?? [])
 
   if (hasTopologyNodes && props.topology) {
-    const mapTopologyPosition = buildTopologyCoordinateMapper(props.topology.nodes)
+    const mapTopologyPosition = buildTopologyCoordinateMapper(props.topology.nodes, anchor)
     const flowByNodeId = new Map<string, number>()
     props.topology.lines.forEach((line) => {
       const value = Math.abs(line.flow_kw ?? 0)
@@ -454,10 +536,11 @@ const applyTopologyData = () => {
       const powerKw = flowByNodeId.get(node.node_id) ?? toNumber(linkedResource?.telemetry?.p_kw) ?? 0
       const fallbackIndex = typeCounts[type]
       typeCounts[type] += 1
-      const fallback = fallbackPositionByType(type, fallbackIndex)
-      const mappedPosition = mapTopologyPosition(node.position.x, node.position.y)
-      const lng = mappedPosition?.[0] ?? fallback[0]
-      const lat = mappedPosition?.[1] ?? fallback[1]
+      const fallback = fallbackPositionByType(type, fallbackIndex, anchor)
+      const mappedPosition = mapTopologyPosition(node.position?.x, node.position?.y)
+      const resourcePosition = resolveResourceLngLat(linkedResource)
+      const lng = resourcePosition?.[0] ?? mappedPosition?.[0] ?? fallback[0]
+      const lat = resourcePosition?.[1] ?? mappedPosition?.[1] ?? fallback[1]
 
       const equipmentStatus = applyCommandToEquipmentStatus(
         node.resource_id,
@@ -483,15 +566,26 @@ const applyTopologyData = () => {
     })
 
     const nodeToResourceId = new Map(props.topology.nodes.map((node) => [node.node_id, node.resource_id]))
+    const switchByLineId = new Map((props.topology.switches ?? []).map((item) => [item.line_id, item]))
     const topologyLines: MapConnection[] = props.topology.lines.map((line) => {
       const fromResourceId = nodeToResourceId.get(line.from_node_id) ?? line.from_node_id
       const toResourceId = nodeToResourceId.get(line.to_node_id) ?? line.to_node_id
+      const switchInfo = switchByLineId.get(line.line_id)
+      const switchResource = switchInfo
+        ? resourceById.get(switchInfo.switch_id.toLowerCase()) ?? resourceById.get(switchInfo.line_id.toLowerCase())
+        : undefined
+      const switchDrivenStatus = switchPositionToLineStatus(switchResource?.position)
       return {
         id: line.line_id,
         fromEquipmentId: line.from_node_id,
         toEquipmentId: line.to_node_id,
         direction: line.direction,
-        status: applyCommandToLineStatus(line.line_id, fromResourceId, toResourceId, lineToStatus(line.status))
+        status: applyCommandToLineStatus(
+          line.line_id,
+          fromResourceId,
+          toResourceId,
+          switchDrivenStatus ?? lineToStatus(line.status)
+        )
       }
     })
 
@@ -515,7 +609,7 @@ const applyTopologyData = () => {
 
   const fallbackEquipments: MapEquipment[] = filteredResources.map((resource) => {
     const type = resourceTypeToEquipmentType(resource.resource_type) as MapEquipment['type']
-    const fallback = fallbackPositionByType(type, typeCounts[type])
+    const fallback = fallbackPositionByType(type, typeCounts[type], anchor)
     typeCounts[type] += 1
     const powerKw = Math.abs(toNumber(resource.telemetry?.p_kw) ?? 0)
     return {
@@ -681,12 +775,28 @@ const handleEquipClick = (id: string) => {
     openEditModal(id)
     return
   }
+  if (selectedEquipmentId.value === id) {
+    selectedEquipmentId.value = null
+    selectedLineId.value = null
+    emit('select-node', '')
+    return
+  }
 
+  selectedEquipmentId.value = id
+  selectedLineId.value = null
   emit('select-node', resolveResourceIdFromMapEquipment(id))
 }
 
 const handleLineClick = (lineId: string) => {
+  if (selectedLineId.value === lineId) {
+    selectedLineId.value = null
+    selectedEquipmentId.value = null
+    emit('select-line', '')
+    return
+  }
+
   selectedLineId.value = lineId
+  selectedEquipmentId.value = null
   emit('select-line', lineId)
 }
 

@@ -9,7 +9,7 @@
   },
   "rightPanel": {
     "defaultTitle": "Panel",
-    "alarmTop3": "Alarms (Top 5)",
+    "alarmTop3": "Alarms",
     "recentCommand": "Recent Command Results",
     "countryLanguage": "Country Selection",
     "selectedResource": "Selected Equipment",

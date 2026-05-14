@@ -41,10 +41,14 @@ export interface PlantSummaryDto {
 
 export interface ResourceDto {
   resource_id: string
+  edge_id?: string
   resource_type: ResourceType
   name?: string
   status?: string
   comms_health?: string
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
   position?: TopologySwitchPosition | 'UNKNOWN'
   controllable?: boolean
   interlock_blocked?: boolean
@@ -69,6 +73,7 @@ export interface ResourceDto {
 
 export interface EssStatusDto {
   ess_id: string
+  edge_id?: string
   name?: string
   capacity_kwh: number
   max_power_kw: number
@@ -76,6 +81,9 @@ export interface EssStatusDto {
   soh?: number
   status: 'idle' | 'charging' | 'discharging' | 'fault'
   power_kw?: number
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
   created_at?: string
   updated_at?: string
 }

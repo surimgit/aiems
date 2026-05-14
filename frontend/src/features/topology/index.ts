@@ -29,6 +29,7 @@ export interface UseTopologyFeature {
   links: ComputedRef<TopologyLink[]>
   initialize: () => Promise<void>
   selectNode: (nodeId: string) => void
+  selectLine: (lineId: string) => void
 }
 
 export const useTopologyFeature = (): UseTopologyFeature => {
@@ -97,12 +98,70 @@ export const useTopologyFeature = (): UseTopologyFeature => {
     dashboardStore.selectEss(selectedResourceId)
   }
 
+  const selectLine = (lineId: string) => {
+    const topology = dashboardStore.topology
+    const matchedSwitch = topology?.switches.find((item) => item.line_id === lineId)
+    if (matchedSwitch) {
+      const directSwitchResource = dashboardStore.resources.find(
+        (resource) => resource.resource_type === 'SWITCH' && resource.resource_id === matchedSwitch.switch_id
+      )
+      if (directSwitchResource) {
+        dashboardStore.selectEss(directSwitchResource.resource_id)
+        return
+      }
+
+      const byLineResource = dashboardStore.resources.find(
+        (resource) => resource.resource_type === 'SWITCH' && resource.resource_id === matchedSwitch.line_id
+      )
+      if (byLineResource) {
+        dashboardStore.selectEss(byLineResource.resource_id)
+        return
+      }
+
+      dashboardStore.selectEss(matchedSwitch.switch_id)
+      return
+    }
+
+    const matchedLine = topology?.lines.find((line) => line.line_id === lineId)
+    if (matchedLine) {
+      const byNodes = dashboardStore.resources.find((resource) => {
+        if (resource.resource_type !== 'SWITCH') return false
+        const from = resource.from_node
+        const to = resource.to_node
+        if (!from || !to) return false
+        const forward = from === matchedLine.from_node_id && to === matchedLine.to_node_id
+        const reverse = from === matchedLine.to_node_id && to === matchedLine.from_node_id
+        return forward || reverse
+      })
+      if (byNodes) {
+        dashboardStore.selectEss(byNodes.resource_id)
+        return
+      }
+    }
+
+    const byConvention = `sw-${lineId.replace(/^line-/, '')}`
+    const conventionMatched = dashboardStore.resources.find((resource) => resource.resource_id === byConvention)
+    if (conventionMatched) {
+      dashboardStore.selectEss(conventionMatched.resource_id)
+      return
+    }
+
+    const lineResource = dashboardStore.resources.find((resource) => resource.resource_id === lineId)
+    if (lineResource) {
+      dashboardStore.selectEss(lineId)
+      return
+    }
+
+    dashboardStore.selectEss(lineId)
+  }
+
   return {
     topology,
     nodes,
     links,
     initialize,
-    selectNode
+    selectNode,
+    selectLine
   }
 }
 

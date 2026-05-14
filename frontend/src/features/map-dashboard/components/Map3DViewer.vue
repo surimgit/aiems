@@ -17,6 +17,7 @@ const props = defineProps<{
   connections: MapConnection[];
   isEditMode: boolean;
   isAddArmed: boolean;
+  selectedEquipmentId?: string | null;
   selectedLineId?: string | null;
 }>();
 
@@ -35,12 +36,16 @@ const mapContainer = ref<HTMLElement | null>(null);
 let map: maplibregl.Map | null = null;
 let animationId: number | null = null;
 let hasAutoCentered = false;
+let lastAutoCenter: [number, number] | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let resizeRaf: number | null = null;
+let windowResizeHandler: (() => void) | null = null;
 
 const toPointFeatureCollection = () => ({
   type: "FeatureCollection",
   features: props.equipmentData.map((e) => ({
     type: "Feature",
-    properties: { id: e.id },
+    properties: { id: e.id, status: e.status },
     geometry: { type: "Point", coordinates: e.lngLat },
   })),
 });
@@ -48,7 +53,7 @@ const toPointFeatureCollection = () => ({
 const toBoxFeatureCollection = () => ({
   type: "FeatureCollection",
   features: props.equipmentData.map((e) => {
-    const size = 0.00016;
+    const size = 0.00085;
     const [lng, lat] = e.lngLat;
     return {
       type: "Feature",
@@ -136,15 +141,42 @@ const centerMapToEquipments = () => {
   props.equipmentData.forEach((item) => bounds.extend(item.lngLat));
 
   if (props.equipmentData.length === 1) {
-    map.easeTo({ center: props.equipmentData[0].lngLat, zoom: 16, duration: 600 });
+    map.easeTo({ center: props.equipmentData[0].lngLat, zoom: 13.2, duration: 600 });
     return;
   }
 
+  const lngSpan = Math.abs(bounds.getEast() - bounds.getWest());
+  const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+  const isVeryTightCluster = lngSpan < 0.004 && latSpan < 0.004;
+  const isWideSpread = lngSpan > 0.2 || latSpan > 0.2;
+
   map.fitBounds(bounds, {
-    padding: { top: 120, right: 80, bottom: 120, left: 80 },
+    padding: isWideSpread
+      ? { top: 90, right: 90, bottom: 90, left: 90 }
+      : { top: 140, right: 120, bottom: 140, left: 120 },
     duration: 700,
-    maxZoom: 16,
+    maxZoom: isWideSpread ? 11.8 : isVeryTightCluster ? 13.6 : 14.2,
   });
+};
+
+const getEquipmentCentroid = (): [number, number] | null => {
+  if (props.equipmentData.length === 0) return null;
+  const sum = props.equipmentData.reduce(
+    (acc, item) => {
+      acc.lng += item.lngLat[0];
+      acc.lat += item.lngLat[1];
+      return acc;
+    },
+    { lng: 0, lat: 0 },
+  );
+  return [sum.lng / props.equipmentData.length, sum.lat / props.equipmentData.length];
+};
+
+const hasMeaningfulCenterShift = (nextCenter: [number, number], prevCenter: [number, number] | null): boolean => {
+  if (!prevCenter) return true;
+  const lngDelta = Math.abs(nextCenter[0] - prevCenter[0]);
+  const latDelta = Math.abs(nextCenter[1] - prevCenter[1]);
+  return lngDelta > 0.02 || latDelta > 0.02;
 };
 
 const startAnimation = () => {
@@ -206,16 +238,30 @@ onMounted(() => {
     style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     center: [129.0755, 35.1785],
     zoom: 16,
-    minZoom: 11,
+    minZoom: 2,
     maxZoom: 18,
     pitch: 60,
     bearing: -15,
     renderWorldCopies: false,
-    maxBounds: [
-      [128.6, 34.8],
-      [129.6, 35.6],
-    ],
   });
+
+  const requestMapResize = () => {
+    if (!map) return;
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      if (!map) return;
+      map.resize();
+    });
+  };
+
+  if (typeof ResizeObserver !== "undefined" && mapContainer.value) {
+    resizeObserver = new ResizeObserver(() => {
+      requestMapResize();
+    });
+    resizeObserver.observe(mapContainer.value);
+  }
+  windowResizeHandler = requestMapResize;
+  window.addEventListener("resize", windowResizeHandler);
 
   map.on("zoom", () => {
     if (!map) return;
@@ -229,8 +275,8 @@ onMounted(() => {
       type: "geojson",
       data: toPointFeatureCollection() as any,
       cluster: true,
-      clusterRadius: 50,
-      clusterMaxZoom: 16,
+      clusterRadius: 64,
+      clusterMaxZoom: 8,
     });
     map.addSource("3d-boxes-source", {
       type: "geojson",
@@ -246,7 +292,7 @@ onMounted(() => {
       type: "circle",
       source: "points-source",
       filter: ["has", "point_count"],
-      maxzoom: 12.2,
+      maxzoom: 8,
       paint: {
         "circle-color": "#3b82f6",
         "circle-radius": 20,
@@ -259,48 +305,86 @@ onMounted(() => {
       type: "symbol",
       source: "points-source",
       filter: ["has", "point_count"],
-      maxzoom: 12.2,
+      maxzoom: 8,
       layout: { "text-field": "{point_count}", "text-size": 14 },
       paint: { "text-color": "#ffffff" },
+    });
+    map.addLayer({
+      id: "points-unclustered",
+      type: "circle",
+      source: "points-source",
+      filter: ["!", ["has", "point_count"]],
+      minzoom: 7.5,
+      paint: {
+        "circle-color": [
+          "match",
+          ["get", "status"],
+          "error",
+          "#ef4444",
+          "stopped",
+          "#9ca3af",
+          "#f8fafc",
+        ],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 4, 10, 6, 13, 8],
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": "#0f172a",
+      },
+    });
+    map.addLayer({
+      id: "points-label",
+      type: "symbol",
+      source: "points-source",
+      filter: ["!", ["has", "point_count"]],
+      minzoom: 8,
+      layout: {
+        "text-field": ["get", "id"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10, 12, 12],
+        "text-offset": [0, 1.2],
+      },
+      paint: {
+        "text-color": "#e2e8f0",
+        "text-halo-color": "#020617",
+        "text-halo-width": 1,
+      },
     });
 
     map.addLayer({
       id: "lines-glow-normal",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "normal"],
       paint: {
         "line-color": "#ffffff",
-        "line-width": 8,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 8, 3.4, 12, 5.4],
         "line-opacity": 0.18,
-        "line-blur": 4,
+        "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 10, 3.2],
       },
     });
     map.addLayer({
       id: "lines-glow-error",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "error"],
       paint: {
         "line-color": "#ef4444",
-        "line-width": 10,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.6, 8, 3.8, 12, 6],
         "line-opacity": 0.45,
-        "line-blur": 6,
+        "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 1.4, 10, 3.8],
       },
     });
     map.addLayer({
       id: "lines-glow-stopped",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "stopped"],
       paint: {
         "line-color": "#9ca3af",
-        "line-width": 6,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 8, 3, 12, 4.4],
         "line-opacity": 0.14,
-        "line-blur": 2,
+        "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 0.8, 10, 2.2],
       },
     });
 
@@ -308,11 +392,11 @@ onMounted(() => {
       id: "lines-main-normal",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "normal"],
       paint: {
         "line-color": "#ffffff",
-        "line-width": 3,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 1.8, 12, 2.8],
         "line-dasharray": [2, 2],
       },
     });
@@ -320,11 +404,11 @@ onMounted(() => {
       id: "lines-main-error",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "error"],
       paint: {
         "line-color": "#ef4444",
-        "line-width": 3,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 1.8, 12, 2.8],
         "line-dasharray": [2, 2],
       },
     });
@@ -332,16 +416,16 @@ onMounted(() => {
       id: "lines-main-stopped",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "status"], "stopped"],
-      paint: { "line-color": "#9ca3af", "line-width": 2 },
+      paint: { "line-color": "#9ca3af", "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1, 8, 1.4, 12, 2.2] },
     });
 
     map.addLayer({
       id: "lines-hit-area",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       paint: {
         "line-color": "#000000",
         "line-width": 16,
@@ -353,7 +437,7 @@ onMounted(() => {
       id: "line-selected-highlight",
       type: "line",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       filter: ["==", ["get", "id"], "__none__"],
       paint: {
         "line-color": "#60a5fa",
@@ -365,7 +449,7 @@ onMounted(() => {
       id: "lines-direction",
       type: "symbol",
       source: "power-lines-source",
-      minzoom: 11.8,
+      minzoom: 4,
       layout: {
         "symbol-placement": "line",
         "text-field": ["get", "arrow"],
@@ -379,7 +463,7 @@ onMounted(() => {
       id: "boxes-base",
       type: "fill-extrusion",
       source: "3d-boxes-source",
-      minzoom: 11.8,
+      minzoom: 7.5,
       filter: ["!=", ["get", "status"], "error"],
       paint: {
         "fill-extrusion-color": [
@@ -393,20 +477,32 @@ onMounted(() => {
         ],
         "fill-extrusion-height": ["get", "height"],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": 0.9,
+        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.72, 10, 0.88],
       },
     });
     map.addLayer({
       id: "boxes-error",
       type: "fill-extrusion",
       source: "3d-boxes-source",
-      minzoom: 11.8,
+      minzoom: 7.5,
       filter: ["==", ["get", "status"], "error"],
       paint: {
         "fill-extrusion-color": "#ef4444",
         "fill-extrusion-height": ["get", "height"],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": 0.9,
+        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.72, 10, 0.88],
+      },
+    });
+    map.addLayer({
+      id: "boxes-selected-highlight",
+      type: "line",
+      source: "3d-boxes-source",
+      minzoom: 7.5,
+      filter: ["==", ["get", "id"], "__none__"],
+      paint: {
+        "line-color": "#22d3ee",
+        "line-width": 4,
+        "line-opacity": 0.95,
       },
     });
 
@@ -423,7 +519,7 @@ onMounted(() => {
     map.on("click", (event) => {
       if (!map) return;
       const features = map.queryRenderedFeatures(event.point, {
-        layers: ["boxes-base", "boxes-error"],
+        layers: ["boxes-base", "boxes-error", "points-unclustered"],
       });
       if (features.length > 0) {
         const id = features[0].properties?.id;
@@ -462,6 +558,14 @@ onMounted(() => {
       if (!map || props.isAddArmed) return;
       map.getCanvas().style.cursor = "";
     });
+    map.on("mouseenter", "points-unclustered", () => {
+      if (!map || props.isAddArmed) return;
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "points-unclustered", () => {
+      if (!map || props.isAddArmed) return;
+      map.getCanvas().style.cursor = "";
+    });
 
     startAnimation();
   });
@@ -469,6 +573,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (animationId) cancelAnimationFrame(animationId);
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+  if (resizeObserver) resizeObserver.disconnect();
+  if (windowResizeHandler) window.removeEventListener("resize", windowResizeHandler);
   if (map) map.remove();
 });
 
@@ -476,13 +583,27 @@ watch(() => props.equipmentData, refreshMapSources, { deep: true });
 watch(
   () => props.equipmentData,
   (items) => {
-    if (hasAutoCentered || items.length === 0) return;
+    if (items.length === 0) return;
+    const nextCenter = getEquipmentCentroid();
+    const shouldRecenter = !hasAutoCentered || (nextCenter !== null && hasMeaningfulCenterShift(nextCenter, lastAutoCenter));
+    if (!shouldRecenter) return;
     centerMapToEquipments();
     hasAutoCentered = true;
+    if (nextCenter) lastAutoCenter = nextCenter;
   },
   { deep: true, immediate: true },
 );
 watch(() => props.connections, refreshMapSources, { deep: true });
+watch(
+  () => props.selectedEquipmentId,
+  (equipmentId) => {
+    if (!map || !map.getLayer("boxes-selected-highlight")) return;
+    const targetId = equipmentId ?? "__none__";
+    map.setFilter("boxes-selected-highlight", ["==", ["get", "id"], targetId]);
+  },
+  { immediate: true },
+);
+
 watch(
   () => props.selectedLineId,
   (lineId) => {

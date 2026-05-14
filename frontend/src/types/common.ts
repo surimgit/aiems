@@ -29,6 +29,7 @@ export interface PowerData extends PowerSummary {}
 
 export interface ESSStatus {
   ess_id: string
+  edge_id?: string
   name?: string
   capacity_kwh: number
   max_power_kw: number
@@ -36,6 +37,9 @@ export interface ESSStatus {
   soh?: number
   status: 'idle' | 'charging' | 'discharging' | 'fault'
   power_kw?: number
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
   created_at?: string
   updated_at?: string
 }
@@ -60,10 +64,14 @@ export interface ResourceMetrics {
 
 export interface ResourceInfo {
   resource_id: string
+  edge_id?: string
   resource_type: ResourceType
   name?: string
   status?: string
   comms_health?: string
+  location?: Record<string, unknown> | null
+  latitude?: number | null
+  longitude?: number | null
   position?: TopologySwitchPosition | 'UNKNOWN'
   controllable?: boolean
   interlock_blocked?: boolean
@@ -144,6 +152,8 @@ export interface AlarmData {
   code: string
   message: string
   ess_id?: string
+  device_id?: string
+  resource_type?: ResourceType
   timestamp: string
   acknowledged?: boolean
 }
@@ -202,6 +212,7 @@ export interface ControlResult {
   target_resource_id: string
   action: CommandAction
   created_at: string
+  issued_by?: string | null
 }
 
 // ============ AI ============

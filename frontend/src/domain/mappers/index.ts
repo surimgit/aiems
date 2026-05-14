@@ -30,12 +30,16 @@ export const mapResourceDto = (dto: ResourceDto): ResourceInfo => ({
   // - DIESEL -> DIESEL_GENERATOR
   // - lowercase types/status -> uppercase
   resource_id: dto.resource_id,
+  edge_id: dto.edge_id,
   resource_type: ((dto.resource_type ?? '').toUpperCase() === 'DIESEL'
     ? 'DIESEL_GENERATOR'
     : (dto.resource_type ?? '').toUpperCase()) as ResourceInfo['resource_type'],
   name: dto.name,
   status: dto.status ? dto.status.toUpperCase() : dto.status,
   comms_health: dto.comms_health,
+  location: dto.location,
+  latitude: dto.latitude,
+  longitude: dto.longitude,
   position: dto.position,
   controllable: dto.controllable,
   interlock_blocked: dto.interlock_blocked,

@@ -3,7 +3,6 @@ export type RightPanelMode =
   | 'recent-command'
   | 'country-language'
   | 'selected-resource'
-  | 'control'
   | 'load-usage'
 
 export type RightPanelState = 'closed' | 'opening' | 'open' | 'switching' | 'closing'

@@ -69,8 +69,17 @@ const socLabel = computed(() => selectedResource.value?.telemetry?.soc ?? select
 const imageFallback = ref(false)
 
 const equipmentImageSrc = computed(() => {
-  const type = (selectedResource.value?.resource_type ?? 'unknown').toLowerCase()
-  return `/images/equipment/${type}.png`
+  const type = (selectedResource.value?.resource_type ?? 'UNKNOWN').toUpperCase()
+  const fileByType: Record<string, string> = {
+    ESS: 'ess.png',
+    LOAD: 'load.png',
+    SOLAR: 'solar.png',
+    DIESEL_GENERATOR: 'diesel_generator.png',
+    DIESEL: 'diesel_generator.png',
+    SWITCH: 'switch.png'
+  }
+  const file = fileByType[type] ?? 'unknown.svg'
+  return `/images/equipment/${file}`
 })
 
 const equipmentImageAlt = computed(() => {
@@ -125,7 +134,7 @@ const saveEdit = () => {
           :alt="equipmentImageAlt"
           @error="imageFallback = true"
         />
-        <div v-else class="equipment-image-fallback">{{ selectedResource.resource_type }}</div>
+        <div v-else class="equipment-image-fallback">UNKNOWN</div>
       </div>
 
       <div v-if="editing" class="edit-wrap">
@@ -187,7 +196,7 @@ const saveEdit = () => {
 }
 
 .equipment-image-fallback {
-  @apply flex h-20 w-full items-center justify-center rounded bg-slate-950/60 text-xs text-slate-400;
+  @apply flex h-20 w-full items-center justify-center rounded bg-black text-xs tracking-wide text-slate-300;
 }
 
 .edit-input {

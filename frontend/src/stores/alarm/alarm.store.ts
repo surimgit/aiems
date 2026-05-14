@@ -72,24 +72,23 @@ export const useAlarmStore = defineStore(
     
     getters: {
       activeAlarms(): AlarmData[] {
-        if (!Array.isArray(this.alarms)) {
-          return []
+        if (!Array.isArray(this.alarms)) return []
+        const unacked = this.alarms.filter((alarm) => !alarm.acknowledged)
+        const sorted = [...unacked].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        const bySignature = new Map<string, AlarmData>()
+        for (const alarm of sorted) {
+          const key = `${alarm.level}|${alarm.code}|${alarm.message}`
+          if (!bySignature.has(key)) bySignature.set(key, alarm)
         }
-        return this.alarms.filter((alarm) => !alarm.acknowledged)
+        return Array.from(bySignature.values())
       },
-      
+
       criticalAlarms(): AlarmData[] {
-        if (!Array.isArray(this.alarms)) {
-          return []
-        }
-        return this.alarms.filter((alarm) => alarm.level === 'critical' && !alarm.acknowledged)
+        return this.activeAlarms.filter((alarm) => alarm.level === 'critical')
       },
-      
+
       unacknowledgedCount(): number {
-        if (!Array.isArray(this.alarms)) {
-          return 0
-        }
-        return this.alarms.filter((alarm) => !alarm.acknowledged).length
+        return this.activeAlarms.length
       },
       
       hasActiveAlarm(): boolean {

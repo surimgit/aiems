@@ -11,6 +11,10 @@ const props = defineProps<{
   error?: string | null
 }>()
 
+const emit = defineEmits<{
+  (e: 'open-resource', resourceId: string): void
+}>()
+
 const { t, locale } = useI18n()
 const { getDisplayName } = useResourceAlias()
 
@@ -67,8 +71,8 @@ const toTargetName = (resourceId: string): string =>
 
 <template>
   <div class="table-wrap">
-    <p v-if="loading" class="state-text">{{ t('recentPanel.loading') }}</p>
-    <p v-else-if="error" class="state-text error">{{ t('recentPanel.error') }}</p>
+    <p v-if="loading && sortedItems.length === 0" class="state-text">{{ t('recentPanel.loading') }}</p>
+    <p v-else-if="error && sortedItems.length === 0" class="state-text error">{{ t('recentPanel.error') }}</p>
     <p v-else-if="sortedItems.length === 0" class="state-text">{{ t('recentPanel.empty') }}</p>
 
     <table v-else class="history-table">
@@ -81,7 +85,12 @@ const toTargetName = (resourceId: string): string =>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="item in sortedItems" :key="item.command_id">
+        <tr
+          v-for="item in sortedItems"
+          :key="item.command_id"
+          class="clickable-row"
+          @click="emit('open-resource', item.target_resource_id)"
+        >
           <td>{{ toTimeText(item.created_at) }}</td>
           <td>
             <span class="status" :class="toStatus(item.status).tone">{{ toStatus(item.status).label }}</span>
@@ -113,6 +122,10 @@ const toTargetName = (resourceId: string): string =>
 
 .history-table tbody tr:last-child td {
   @apply border-b-0;
+}
+
+.clickable-row {
+  @apply cursor-pointer hover:bg-slate-800/60;
 }
 
 .status.success {

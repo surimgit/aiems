@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard/dashboard.store'
 import { useI18n } from 'vue-i18n'
-import { useResourceAlias } from '@/features/overview/composables/useResourceAlias'
 import SelectedResourceInfoPanel from './SelectedResourceInfoPanel.vue'
 import ControlPanel from './ControlPanel.vue'
 import LoadUsagePanel from './LoadUsagePanel.vue'
@@ -11,7 +10,6 @@ import LoadUsagePanel from './LoadUsagePanel.vue'
 const dashboardStore = useDashboardStore()
 const { selectedResource } = storeToRefs(dashboardStore)
 const { t } = useI18n()
-const { hasPendingChanges, commitDraft } = useResourceAlias()
 
 const showLoadUsage = computed(() => selectedResource.value?.resource_type === 'LOAD')
 </script>
@@ -33,11 +31,6 @@ const showLoadUsage = computed(() => selectedResource.value?.resource_type === '
       <LoadUsagePanel :top-only="true" />
     </div>
 
-    <div class="save-wrap">
-      <button type="button" class="save-btn" :disabled="!hasPendingChanges" @click="commitDraft">
-        {{ t('selectedResource.alias.saveAll') }}
-      </button>
-    </div>
   </section>
 </template>
 
@@ -54,11 +47,4 @@ const showLoadUsage = computed(() => selectedResource.value?.resource_type === '
   @apply text-xs font-semibold text-slate-300;
 }
 
-.save-wrap {
-  @apply flex justify-end;
-}
-
-.save-btn {
-  @apply rounded border border-cyan-500 bg-cyan-600/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 disabled:opacity-40;
-}
 </style>

@@ -187,7 +187,7 @@ const newestTargetResourceId = computed(() => {
   const latest = sorted[0]
   const parsed = parseControlRetryFailure(latest?.message ?? '')
   if (parsed?.resourceId) return parsed.resourceId
-  return latest?.ess_id || null
+  return latest?.device_id || latest?.ess_id || null
 })
 
 const bannerText = computed(() => {
@@ -272,7 +272,7 @@ const closeBanner = () => {
 }
 
 .title {
-  @apply text-base font-semibold;
+  @apply truncate text-base font-semibold;
 }
 
 .right-wrap {
