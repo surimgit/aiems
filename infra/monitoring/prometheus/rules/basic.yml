@@ -30,13 +30,13 @@ groups:
           description: "메모리 사용 > 90% ({{ $value | printf \"%.1f\" }}%)"
 
       - alert: DiskAlmostFull
-        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 90
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: "디스크 사용률 높음: {{ $labels.instance }} {{ $labels.mountpoint }}"
-          description: "디스크 사용 > 85% ({{ $value | printf \"%.1f\" }}%)"
+          description: "디스크 사용 > 90% ({{ $value | printf \"%.1f\" }}%)"
 
       - alert: ContainerRestarting
         expr: increase(container_start_time_seconds{name!=""}[10m]) > 2
