@@ -327,7 +327,7 @@ class MqttCommander:
                         "resource_type": resource_type,
                         "event_type": "EVT-E-005",
                         "severity": "CRITICAL",
-                        "message": f"명령 전달 {_MAX_RETRIES}회 재시도 후 최종 실패: {device_id}",
+                        "message": f"명령 전달 실패",
                         "payload": {"command_id": command_id, "retries": _MAX_RETRIES},
                     })
 
