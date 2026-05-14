@@ -103,6 +103,42 @@ class SiteProfileResponseSchema(Schema):
     profile = fields.Dict(keys=fields.String(), values=fields.Raw(), required=True)
 
 
+class SiteLoadProfileUpsertRequestSchema(Schema):
+    site_id = fields.String(required=True)
+    site = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=dict)
+    prompt_text = fields.String(load_default=None, allow_none=True)
+    text = fields.String(load_default=None, allow_none=True)
+    profile = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=None, allow_none=True)
+    use_openai = fields.Boolean(load_default=None, allow_none=True)
+    auth_env = fields.String(load_default=None, allow_none=True)
+    model = fields.String(load_default=None, allow_none=True)
+    reasoning_effort = fields.String(load_default=None, allow_none=True)
+    max_output_tokens = fields.Integer(load_default=1600)
+    force = fields.Boolean(load_default=False)
+
+
+class SiteLoadProfileQuerySchema(Schema):
+    site_id = fields.String(required=True)
+
+
+class SiteLoadProfileResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    changed = fields.Boolean(load_default=None, allow_none=True)
+    enabled = fields.Boolean(load_default=None, allow_none=True)
+    found = fields.Boolean(load_default=None, allow_none=True)
+    status = fields.String(load_default=None, allow_none=True)
+    site_id = fields.String(required=True)
+    prompt_text = fields.String(load_default=None, allow_none=True)
+    prompt_hash = fields.String(load_default=None, allow_none=True)
+    source = fields.String(load_default=None, allow_none=True)
+    model_name = fields.String(load_default=None, allow_none=True)
+    profile_version = fields.String(load_default=None, allow_none=True)
+    profile = fields.Raw(load_default=None, allow_none=True)
+    created_at = fields.String(load_default=None, allow_none=True)
+    updated_at = fields.String(load_default=None, allow_none=True)
+
+
 class LoadPredictionRequestSchema(Schema):
     site_id = fields.String(load_default=None, allow_none=True)
     site = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=dict)
