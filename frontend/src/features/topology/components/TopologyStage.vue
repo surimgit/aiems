@@ -533,7 +533,7 @@ const applyTopologyData = () => {
       const type = nodeTypeToEquipmentType(node.node_type)
       if (!type) return
       const linkedResource = resourceById.get(node.resource_id.toLowerCase())
-      const powerKw = flowByNodeId.get(node.node_id) ?? toNumber(linkedResource?.telemetry?.p_kw) ?? 0
+      const powerKw = toNumber(linkedResource?.telemetry?.p_kw) ?? flowByNodeId.get(node.node_id) ?? 0
       const fallbackIndex = typeCounts[type]
       typeCounts[type] += 1
       const fallback = fallbackPositionByType(type, fallbackIndex, anchor)
