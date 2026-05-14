@@ -67,7 +67,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "ess", "EVT-E-001", "CRITICAL",
-                    f"ESS SOC 긴급 하한 도달: {soc}% <= {soc_critical}%",
+                    f"ESS SOC 긴급 — 즉시 방전 중단 필요 ({soc:.0f}%)",
                     {"SOC": soc},
                 ))
         else:
@@ -79,7 +79,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "ess", "EVT-N-001", "WARNING",
-                    f"ESS SOC 하한 경고: {soc}% <= {soc_low}%",
+                    f"ESS SOC 하한 경고 ({soc:.0f}%)",
                     {"SOC": soc},
                 ))
         else:
@@ -98,7 +98,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "diesel", "EVT-E-002", "CRITICAL",
-                    f"디젤 연료 긴급 하한 도달: {fuel}% <= {fuel_critical}%",
+                    f"디젤 연료 긴급 — 즉시 보충 필요 ({fuel:.0f}%)",
                     {"fuel_percent": fuel},
                 ))
         else:
@@ -110,7 +110,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "diesel", "EVT-N-002", "WARNING",
-                    f"디젤 연료 부족 경고: {fuel}% <= {fuel_low}%",
+                    f"디젤 연료 부족 경고 ({fuel:.0f}%)",
                     {"fuel_percent": fuel},
                 ))
         else:
@@ -125,7 +125,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "diesel", "EVT-E-003", "CRITICAL",
-                    f"디젤 냉각수 과열: {coolant_temp:.1f}°C > {coolant_max:.1f}°C",
+                    f"디젤 냉각수 과열 ({coolant_temp:.0f}°C)",
                     {"coolant_temp": coolant_temp, "threshold": coolant_max},
                 ))
         else:
@@ -143,7 +143,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                     await event_pub.set_alerted(key)
                     events.append(_evt(
                         device_id, "diesel", "EVT-E-004", "CRITICAL",
-                        f"디젤 RPM 이상: {rpm:.0f}rpm (정상 범위 {rpm_min:.0f}~{rpm_max:.0f})",
+                        f"디젤 RPM 이상 ({rpm:.0f}rpm)",
                         {"rpm": rpm, "rpm_min": rpm_min, "rpm_max": rpm_max},
                     ))
             else:
@@ -166,7 +166,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                     await event_pub.set_alerted(key)
                     events.append(_evt(
                         device_id, "load", "EVT-N-008", "WARNING",
-                        f"부하 급증 감지: {prev_p:.1f}→{current_p:.1f}kW (+{(current_p/prev_p-1)*100:.0f}%)",
+                        f"부하 급증 감지 ({current_p:.0f}kW)",
                         {"prev_kw": prev_p, "current_kw": current_p},
                     ))
             else:
@@ -179,7 +179,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                     await event_pub.set_alerted(key)
                     events.append(_evt(
                         device_id, "load", "EVT-N-009", "WARNING",
-                        f"부하 소실 감지: {prev_p:.1f}kW → {current_p:.1f}kW",
+                        f"부하 소실 감지 (0kW)",
                         {"prev_kw": prev_p, "current_kw": current_p},
                     ))
             else:
@@ -193,7 +193,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "load", "EVT-N-010", "WARNING",
-                    f"부하 과부하 감지: {current_p:.1f}kW > {overload_kw:.1f}kW",
+                    f"부하 과부하 감지 ({current_p:.0f}kW)",
                     {"current_kw": current_p, "threshold_kw": overload_kw},
                 ))
         else:
@@ -218,7 +218,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(key)
                 events.append(_evt(
                     device_id, "solar", "EVT-N-011", "WARNING",
-                    f"주간 태양광 발전량 0 감지: {now_local.hour}시(KST) 기준 낮 시간대, P={current_p:.1f}kW",
+                    f"태양광 발전 없음 ({now_local.hour}시)",
                     {"hour_local": now_local.hour, "current_kw": current_p},
                 ))
         else:
@@ -232,7 +232,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                     await event_pub.set_alerted(key)
                     events.append(_evt(
                         device_id, "solar", "EVT-N-012", "WARNING",
-                        f"태양광 급감 감지: {prev_p:.1f}→{current_p:.1f}kW ({(1-current_p/prev_p)*100:.0f}% 감소)",
+                        f"태양광 급감 ({current_p:.0f}kW)",
                         {"prev_kw": prev_p, "current_kw": current_p},
                     ))
             else:
@@ -253,7 +253,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
             await event_pub.set_alerted(key)
             events.append(_evt(
                 "system", "system", "EVT-N-003", "WARNING",
-                f"전력 부족 {_DEFICIT_THRESHOLD}회 연속: net={flow['net_power']:.1f}kW",
+                f"전력 부족 지속 ({flow['net_power']:.0f}kW)",
                 {"net_power": flow["net_power"], "count": deficit_count},
             ))
     else:
@@ -275,7 +275,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                         await event_pub.set_alerted(key)
                         events.append(_evt(
                             device_id, resource_type, "EVT-N-004", "WARNING",
-                            f"STATE_TTL 초과: {device_id} 마지막 갱신 {age:.0f}초 전",
+                            f"장치 응답 없음 ({age:.0f}초)",
                             {"age_seconds": round(age)},
                         ))
                     # TTL 초과 장치는 상태를 알 수 없으므로 standby 강제 진입
@@ -313,7 +313,7 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
                 await event_pub.set_alerted(evt_key)
                 events.append(_evt(
                     device_id, resource_type, "EVT-N-013", "WARNING",
-                    f"heartbeat 두절: {device_id} 30초 이상 응답 없음",
+                    f"통신 두절",
                     {"device_id": device_id},
                     edge_id=edge_id,
                     location=state.get("location"),
