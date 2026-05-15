@@ -171,15 +171,14 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
 
         # LOAD 에 직접 연결된(1홉) 발전/저장 자원만 supply 로 계산.
         # mesh 토폴로지에서 우회 경로를 통한 과다 계산 방지.
-        supply_resources = graph.direct_supply_resources(device_id)
+        direct_supply = graph.direct_supply_resources(device_id)
         supply_kw = 0.0
-        for r_id in supply_resources:
+        for r_id in direct_supply:
             r_state = states.get(r_id)
             if not r_state:
                 continue
             r_type = (r_state.get("resource_type") or "").upper()
             r_p = (r_state.get("reported_state") or {}).get("P") or 0.0
-            # SOLAR / DIESEL: P > 0 만 공급, ESS: 방전 (P > 0) 시 공급으로 계산.
             if r_type in ("SOLAR", "DIESEL", "ESS") and r_p > 0:
                 supply_kw += r_p
 
@@ -192,5 +191,6 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             "supply_kw": round(supply_kw, 2),
             "deficit_kw": round(deficit_kw, 2),
             "reachable_resources": sorted(reachable),
+            "direct_supply_ids": sorted(direct_supply),
         })
     return results

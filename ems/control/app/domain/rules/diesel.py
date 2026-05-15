@@ -90,20 +90,17 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
             zone_deficit = _diesel_zone_deficit(diesel, flow, states)
             zone_net = _diesel_zone_net(diesel, flow, states)
 
-            # 이 디젤이 연결된 구역의 dispatchable ESS 가 방전 가능한지 확인
+            # 이 디젤이 연결된 load 구역에 직접(1홉) 연결된 dispatchable ESS 가 있는지 확인.
+            # reachable_resources(BFS 전체) 대신 direct_supply_ids(1홉) 사용.
             zone_ess_can_discharge = False
             for comp in flow.get("component_deficits", []):
                 if device_id not in comp.get("reachable_resources", []):
                     continue
-                load_id = comp.get("load_id")
+                direct_ids = set(comp.get("direct_supply_ids", []))
                 for e in flow.get("dispatchable_ess_devices", []):
-                    e_id = e["device_id"]
-                    e_state = states.get(e_id, {})
-                    # 이 ESS 가 같은 구역 load 에 도달 가능한지는 reachable_resources 에서 확인
-                    for c2 in flow.get("component_deficits", []):
-                        if c2.get("load_id") == load_id and e_id in c2.get("reachable_resources", []):
-                            if (e["SOC"] or 0) > diesel_start_soc:
-                                zone_ess_can_discharge = True
+                    if e["device_id"] in direct_ids and (e["SOC"] or 0) > diesel_start_soc:
+                        zone_ess_can_discharge = True
+                        break
 
             # 2. 구역 부족 + 구역 ESS 방전 불가 → 기동
             if not running and zone_deficit > 0 and not zone_ess_can_discharge:
