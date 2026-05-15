@@ -151,29 +151,80 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
         # SoC 임계 이벤트가 있으면 함께 반환, 없으면 복구 이벤트만.
         return events
 
-    # 부족 없음 또는 미미한 부족 → 반응적 룰 비동작 (SoC 임계 이벤트만 있을 수 있음)
+    soc_low = policy.get("SOC_LOW")
+    fuel_critical = policy.get("DIESEL_FUEL_CRITICAL")
+    component_deficits = flow.get("component_deficits", [])
+
+    if component_deficits:
+        # 토폴로지 기반: load별 구역 deficit 으로 반응적 룰 판단
+        for comp in component_deficits:
+            load_id = comp.get("load_id")
+            deficit_kw = comp.get("deficit_kw", 0.0)
+
+            if deficit_kw < _REACTIVE_DEFICIT_MIN_KW:
+                continue
+
+            state = states.get(load_id)
+            if not state:
+                continue
+
+            # 이 load 구역에 도달 가능한 dispatchable ESS/Diesel 이 있으면 skip
+            reachable = set(comp.get("reachable_resources", []))
+
+            zone_ess_can = any(
+                (e["SOC"] or 0) > soc_low
+                for e in flow.get("dispatchable_ess_devices", [])
+                if e["device_id"] in reachable
+            )
+            if zone_ess_can:
+                continue
+
+            zone_diesel_can = any(
+                (d.get("fuel_percent") is None or d.get("fuel_percent", 0) > fuel_critical)
+                for d in flow.get("dispatchable_diesel_devices", [])
+                if d["device_id"] in reachable
+            )
+            if zone_diesel_can:
+                continue
+
+            if load_id in _shed_recommended_at:
+                continue
+
+            _shed_recommended_at[load_id] = now
+            grade = _load_priority(load_id, policy)
+            grade_label = {4: "지연가능", 3: "일반", 2: "중요", 1: "필수"}.get(grade, str(grade))
+            events.append({
+                "event_type": "EVT-N-006",
+                "severity": "WARNING",
+                "device_id": load_id,
+                "edge_id": state.get("edge_id"),
+                "resource_type": "load",
+                "message": f"부하 차단 권고 — 부족 {deficit_kw:.0f}kW ({grade_label} 등급)",
+                "payload": {
+                    "deficit_kw": round(deficit_kw, 2),
+                    "grade": grade,
+                    "trigger": "zone_deficit",
+                },
+                "_is_event": True,
+            })
+        return events
+
+    # fallback: 토폴로지 없을 때 전역 net_power 기준
     if net_power >= -_REACTIVE_DEFICIT_MIN_KW or load_p <= 0:
         return events
 
-    soc_low = policy.get("SOC_LOW")
-    fuel_critical = policy.get("DIESEL_FUEL_CRITICAL")
-
-    # task_018 §4.4 와 동일한 버그를 load 룰에서도 수정.
-    # SOC 만 보지 말고 dispatchable 여부로 판단해야, 고립된 ESS 가
-    # "처리 가능"으로 잘못 인식돼 shedding 이 막히는 문제 방지.
     dispatchable_ess = flow.get("dispatchable_ess_devices", [])
     if dispatchable_ess:
         any_can_discharge = any((e["SOC"] or 0) > soc_low for e in dispatchable_ess)
         if any_can_discharge:
-            return []
+            return events
 
-    # Diesel 도 dispatchable 한 것만 본다 (토폴로지 고립된 디젤은 못 도와줌).
     dispatchable_diesel = flow.get("dispatchable_diesel_devices", [])
     for d in dispatchable_diesel:
         fuel = d.get("fuel_percent")
         has_fuel = fuel is None or fuel > fuel_critical
         if has_fuel:
-            return []
+            return events
 
     deficit = abs(net_power)
 
@@ -199,7 +250,6 @@ def evaluate(flow: dict, policy, states: dict) -> list[dict]:
             reduction_ratio = 1.0
             remaining_deficit -= device_p
 
-        # 동일 장치에 중복 권고 방지 (hold_sec 이내)
         if device_id in _shed_recommended_at:
             continue
 
