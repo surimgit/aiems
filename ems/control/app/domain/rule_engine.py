@@ -56,10 +56,6 @@ async def run(states: dict, policy, event_pub, *, topology_graph=None) -> tuple[
     flow = compute_flow(states, graph=topology_graph, soc_low=soc_low)
     redis = event_pub._redis
 
-    # 디버그: deficit 있는 구역만 출력 (임시)
-    for comp in flow.get("component_deficits", []):
-        if comp.get("deficit_kw", 0) > 0:
-            print(f"[debug][deficit] {comp['load_id']} deficit={comp['deficit_kw']}kW supply={comp['supply_kw']}kW direct={comp.get('direct_supply_ids', [])}")
 
     candidates: list[dict] = []
     rule_events: list[dict] = []
