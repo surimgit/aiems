@@ -139,6 +139,39 @@ class SiteLoadProfileResponseSchema(Schema):
     updated_at = fields.String(load_default=None, allow_none=True)
 
 
+class SiteMetadataUpsertRequestSchema(Schema):
+    site_id = fields.String(required=True)
+    region = fields.String(required=True)
+    model_region = fields.String(load_default=None, allow_none=True)
+    dong_code = fields.String(load_default=None, allow_none=True)
+    latitude = fields.Float(required=True)
+    longitude = fields.Float(required=True)
+    installed_capacity_kw = fields.Float(required=True)
+    timezone = fields.String(load_default="Asia/Seoul")
+    model_capacity_kw = fields.Float(load_default=None, allow_none=True)
+
+
+class SiteMetadataQuerySchema(Schema):
+    site_id = fields.String(required=True)
+
+
+class SiteMetadataSyncRequestSchema(Schema):
+    site_id = fields.String(required=True)
+
+
+class SiteMetadataResponseSchema(Schema):
+    ok = fields.Boolean(required=True)
+    task = fields.String(required=True)
+    enabled = fields.Boolean(load_default=None, allow_none=True)
+    found = fields.Boolean(required=True)
+    source = fields.String(load_default=None, allow_none=True)
+    site_id = fields.String(required=True)
+    site = fields.Raw(load_default=None, allow_none=True)
+    status = fields.String(load_default=None, allow_none=True)
+    created_at = fields.String(load_default=None, allow_none=True)
+    updated_at = fields.String(load_default=None, allow_none=True)
+
+
 class LoadPredictionRequestSchema(Schema):
     site_id = fields.String(load_default=None, allow_none=True)
     site = fields.Dict(keys=fields.String(), values=fields.Raw(), load_default=dict)
