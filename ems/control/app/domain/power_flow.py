@@ -76,6 +76,7 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
             load_p += p
         elif resource_type == "ESS":
             ess_p += p
+            resource_spec = state.get("resource_spec") or {}
             ess_devices.append({
                 "device_id": device_id,
                 "edge_id": state.get("edge_id"),
@@ -83,7 +84,7 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
                 "P": p,
                 "SOC": reported.get("SOC"),
                 "mode": reported.get("operating_mode", "standby"),
-                "power_limit_kw": reported.get("power_limit_kw"),
+                "power_limit_kw": resource_spec.get("power_limit_kw") or reported.get("power_limit_kw"),
                 "comms_health": state.get("comms_health"),
             })
         elif resource_type == "DIESEL":
