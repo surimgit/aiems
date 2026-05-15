@@ -52,8 +52,13 @@ def _build_mqtt_command(command_id: str, command: dict) -> tuple[str, dict]:
             },
         )
 
+    edge_id = command.get("edge_id")
+    if edge_id and edge_id != device_id:
+        topic = f"{SITE_ID}/{edge_id}/{resource_type}/{device_id}/command"
+    else:
+        topic = f"{SITE_ID}/{resource_type}/{device_id}/command"
     return (
-        f"{SITE_ID}/{resource_type}/{device_id}/command",
+        topic,
         {
             "command_id": command_id,
             "command_type": command_type,
@@ -156,6 +161,7 @@ class MqttCommander:
                     password=MQTT_PASSWORD,
                 ) as sub:
                     await sub.subscribe(f"{SITE_ID}/+/+/ack", qos=1)
+                    await sub.subscribe(f"{SITE_ID}/+/+/+/ack", qos=1)
                     await sub.subscribe(f"{SITE_ID}/simulator-manager/topology/command/ack", qos=1)
                     print("[control][ack] ACK 구독 시작")
                     async for msg in sub.messages:
