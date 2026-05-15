@@ -91,7 +91,6 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
             zone_net = _diesel_zone_net(diesel, flow, states)
 
             # 이 디젤이 연결된 load 구역에 직접(1홉) 연결된 dispatchable ESS 가 있는지 확인.
-            # reachable_resources(BFS 전체) 대신 direct_supply_ids(1홉) 사용.
             zone_ess_can_discharge = False
             for comp in flow.get("component_deficits", []):
                 if device_id not in comp.get("reachable_resources", []):
@@ -101,6 +100,8 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
                     if e["device_id"] in direct_ids and (e["SOC"] or 0) > diesel_start_soc:
                         zone_ess_can_discharge = True
                         break
+
+            print(f"[debug][diesel] {device_id} running={running} zone_deficit={zone_deficit:.1f} zone_ess={zone_ess_can_discharge}")
 
             # 2. 구역 부족 + 구역 ESS 방전 불가 → 기동
             if not running and zone_deficit > 0 and not zone_ess_can_discharge:
