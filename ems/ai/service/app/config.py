@@ -38,6 +38,8 @@ class Settings:
     runpod_timeout_seconds: float = env_float("S305_RUNPOD_TIMEOUT_SECONDS", 900.0)
     schedule_token: str | None = env_str("S305_AI_SCHEDULE_TOKEN")
     forecast_solar_backend: str = env_str("S305_FORECAST_SOLAR_BACKEND", "live_satellite")
+    state_api_base_url: str | None = env_str("S305_STATE_API_BASE_URL", "http://state-processor:5002")
+    state_api_timeout_seconds: float = env_float("S305_STATE_API_TIMEOUT_SECONDS", 1.5)
     ai_db_enabled: bool = env_bool("S305_AI_DB_ENABLED", True)
     ai_database_url: str | None = env_str("S305_AI_DATABASE_URL") or env_str("DATABASE_URL")
     ai_db_host: str | None = env_str("S305_AI_DB_HOST") or env_str("AI_DB_HOST") or env_str("POSTGRES_HOST")

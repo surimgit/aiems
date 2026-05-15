@@ -82,8 +82,6 @@ class MqttCommander:
         self._retry_counts: dict[str, tuple[int, dict]] = {}
         # 외부 공유 cooldown dict — ACK 수신 시 즉시 해제
         self._device_cooldown: dict[str, float] = device_cooldown if device_cooldown is not None else {}
-        # (device_id, command_type) → 이미 EVT-N-005 발행 중 — 성공 시 해제
-        self._verify_fail_alerted: set[tuple[str, str]] = set()
         self._ack_task: asyncio.Task | None = None
         self._timeout_task: asyncio.Task | None = None
 
@@ -127,6 +125,11 @@ class MqttCommander:
             "issued_at": time.time(),
         }
         await self._set_desired(command, desired)
+
+        # 같은 device에 새 명령이 오면 이전 pending_verify 취소 — supersede된 명령의 오탐 방지
+        superseded = [cid for cid, info in self._pending_verify.items() if info[2] == device_id]
+        for cid in superseded:
+            self._pending_verify.pop(cid, None)
 
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
         self._pending_verify[command_id] = (
@@ -232,14 +235,14 @@ class MqttCommander:
             verified = _check_physical_result(command_type, payload, state)
 
             await self._db.mark_verified(command_id, verified)
-            alert_key = (device_id, command_type)
+            redis_alert_key = f"verify:{device_id}:{command_type}"
             if verified:
                 print(f"[control][verify] OK | {device_id} | {command_id[:8]}...")
-                self._verify_fail_alerted.discard(alert_key)
+                await self._event_pub.clear_alert(redis_alert_key)
             else:
                 print(f"[control][verify] FAIL | {device_id} | {command_id[:8]}... — 물리 반영 안됨")
-                if alert_key not in self._verify_fail_alerted:
-                    self._verify_fail_alerted.add(alert_key)
+                if not await self._event_pub.is_alerted(redis_alert_key):
+                    await self._event_pub.set_alerted(redis_alert_key)
                     await self._event_pub.publish({
                         "device_id": device_id,
                         "resource_type": resource_type,
@@ -325,9 +328,9 @@ class MqttCommander:
                     # 최대 재시도 초과 → CRITICAL 이벤트 발행
                     print(f"[control][ack] TIMEOUT 최종 실패 ({_MAX_RETRIES}회) | {device_id} | {command_id[:8]}...")
                     await self._db.update_ack(command_id, "TIMEOUT")
-                    alert_key = (device_id, "timeout")
-                    if alert_key not in self._verify_fail_alerted:
-                        self._verify_fail_alerted.add(alert_key)
+                    redis_alert_key = f"verify:{device_id}:timeout"
+                    if not await self._event_pub.is_alerted(redis_alert_key):
+                        await self._event_pub.set_alerted(redis_alert_key)
                         await self._event_pub.publish({
                             "device_id": device_id,
                             "resource_type": resource_type,
@@ -366,9 +369,9 @@ def _check_physical_result(command_type: str, payload: dict, state: dict) -> boo
         return True
 
     if command_type == "curtailment":
-        limit_kw = payload.get("limit_kw")
-        if limit_kw is not None and p > 0:
-            return p <= limit_kw + 1.0  # 1kW 허용 오차
+        # limit_kw가 매 사이클 소폭 변동하므로 verify 시점에 다른 명령이 적용 중일 수 있음.
+        # solar rule이 ems:curtailed: 키로 상태를 추적하므로 ACK 수신 자체를 성공으로 간주.
+        return True
 
     if command_type == "clear_curtailment":
         # 해제 명령 — P가 curtailment 전보다 높아야 하지만 기준값 없음
@@ -376,6 +379,10 @@ def _check_physical_result(command_type: str, payload: dict, state: dict) -> boo
         return True
 
     if command_type == "load_control":
+        # diesel이 fault/error 상태면 명령 자체가 무시됨 — verify 스킵
+        operating_mode = (rs.get("operating_mode") or "").lower()
+        if operating_mode in ("fault", "error"):
+            return True
         target_kw = payload.get("target_kw")
         if target_kw is not None:
             return abs(p - target_kw) <= target_kw * 0.1 + 1.0  # 10% + 1kW 허용 오차

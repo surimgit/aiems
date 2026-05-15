@@ -22,6 +22,13 @@ from ..schemas.prediction_schema import (
     PredictionResponseSchema,
     SiteProfileRequestSchema,
     SiteProfileResponseSchema,
+    SiteLoadProfileQuerySchema,
+    SiteLoadProfileResponseSchema,
+    SiteLoadProfileUpsertRequestSchema,
+    SiteMetadataQuerySchema,
+    SiteMetadataResponseSchema,
+    SiteMetadataSyncRequestSchema,
+    SiteMetadataUpsertRequestSchema,
     SatelliteCapacityFactorPredictionRequestSchema,
     SolarPredictionRequestSchema,
 )
@@ -30,6 +37,8 @@ from ..services.live_satellite_service import LiveSatellitePredictionService
 from ..services.load_service import LoadService
 from ..services.model_service import ModelService
 from ..services.prediction_service import PredictionService
+from ..services.site_load_profile_service import SiteLoadProfileService
+from ..services.site_metadata_service import SiteMetadataService
 from ..services.site_profile_service import SiteProfileService
 from ..config import settings
 
@@ -38,6 +47,8 @@ blp = Blueprint("ai", "ai", url_prefix="/api/ai")
 model_service = ModelService()
 prediction_service = PredictionService()
 site_profile_service = SiteProfileService()
+site_load_profile_service = SiteLoadProfileService(site_profile_service=site_profile_service)
+site_metadata_service = SiteMetadataService()
 load_service = LoadService()
 live_satellite_service = LiveSatellitePredictionService(prediction_service=prediction_service)
 forecast_service = ForecastService(
@@ -133,6 +144,40 @@ class SiteProfileStructureResource(MethodView):
     @blp.response(200, SiteProfileResponseSchema)
     def post(self, payload):
         return site_profile_service.structure(payload)
+
+
+@blp.route("/site-load-profile")
+class SiteLoadProfileResource(MethodView):
+    @blp.arguments(SiteLoadProfileQuerySchema, location="query")
+    @blp.response(200, SiteLoadProfileResponseSchema)
+    def get(self, payload):
+        return site_load_profile_service.latest(payload)
+
+    @blp.arguments(SiteLoadProfileUpsertRequestSchema)
+    @blp.response(200, SiteLoadProfileResponseSchema)
+    def post(self, payload):
+        return site_load_profile_service.save_prompt(payload)
+
+
+@blp.route("/site-metadata")
+class SiteMetadataResource(MethodView):
+    @blp.arguments(SiteMetadataQuerySchema, location="query")
+    @blp.response(200, SiteMetadataResponseSchema)
+    def get(self, payload):
+        return site_metadata_service.latest(payload)
+
+    @blp.arguments(SiteMetadataUpsertRequestSchema)
+    @blp.response(200, SiteMetadataResponseSchema)
+    def post(self, payload):
+        return site_metadata_service.save(payload)
+
+
+@blp.route("/site-metadata/sync")
+class SiteMetadataSyncResource(MethodView):
+    @blp.arguments(SiteMetadataSyncRequestSchema)
+    @blp.response(200, SiteMetadataResponseSchema)
+    def post(self, payload):
+        return site_metadata_service.sync_from_state(payload)
 
 
 @blp.route("/predict-load")

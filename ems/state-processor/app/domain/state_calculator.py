@@ -50,6 +50,9 @@ def calculate(envelope: dict) -> dict:
     elif resource_type == "LOAD":
         reported_state["demand_max"] = energy.get("demand_max")
 
+    elif resource_type == "SOLAR":
+        reported_state.update(_extract_solar_spec(payload))
+
     elif resource_type == "DIESEL":
         fuel = payload.get("fuel", {})
         engine = payload.get("engine", {})
@@ -87,6 +90,7 @@ def calculate(envelope: dict) -> dict:
         "location": location,
         "latitude": location.get("latitude") if location else None,
         "longitude": location.get("longitude") if location else None,
+        "site_metadata": _extract_site_metadata(envelope, payload),
         "reported_state": reported_state,
         "telemetry_window": payload.get("window"),
         "desired_state": None,      # state_publisher에서 Redis desired 키 조회 후 채움
@@ -116,6 +120,69 @@ def _extract_location(envelope: dict, payload: dict) -> dict | None:
                 "longitude": longitude,
             }
     return None
+
+
+def _extract_solar_spec(payload: dict) -> dict:
+    spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else {}
+    output = {}
+    capacity_kw = _to_float(
+        _first_present(
+            spec,
+            (
+                "installed_capacity_kw",
+                "capacity_kw",
+                "rated_power_kw",
+                "rated_capacity_kw",
+                "max_power_kw",
+                "power_limit_kw",
+            ),
+        )
+    )
+    if capacity_kw is None:
+        capacity_kw = _to_float(
+            _first_present(
+                payload,
+                (
+                    "installed_capacity_kw",
+                    "capacity_kw",
+                    "rated_power_kw",
+                    "rated_capacity_kw",
+                    "max_power_kw",
+                    "power_limit_kw",
+                ),
+            )
+        )
+    if capacity_kw is not None:
+        output["capacity_kw"] = capacity_kw
+        output["installed_capacity_kw"] = capacity_kw
+    return output
+
+
+def _extract_site_metadata(envelope: dict, payload: dict) -> dict | None:
+    merged = {}
+    for source in (
+        envelope.get("site") or {},
+        payload.get("site") or {},
+        payload.get("spec") or {},
+        payload.get("metadata") or {},
+    ):
+        if not isinstance(source, dict):
+            continue
+        aliases = {
+            "region": ("region",),
+            "address_region": ("address_region", "addressRegion"),
+            "model_region": ("model_region", "modelRegion"),
+            "dong_code": ("dong_code", "dongCode", "dong_cd", "dongCd", "adm_cd", "admCd"),
+            "timezone": ("timezone", "time_zone", "timeZone"),
+            "model_capacity_kw": ("model_capacity_kw", "modelCapacityKw", "estimated_capacity_kw", "estimatedCapacityKw"),
+        }
+        for key, names in aliases.items():
+            value = source.get(key)
+            if value is None or value == "":
+                value = _first_present(source, names)
+            if value is not None and value != "" and key not in merged:
+                merged[key] = value
+    return merged or None
 
 
 def _first_present(source: dict, keys: tuple[str, ...]):

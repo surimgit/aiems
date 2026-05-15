@@ -224,21 +224,23 @@ async def evaluate(flow: dict, states: dict, policy, event_pub) -> tuple[list[di
         else:
             await event_pub.clear_alert(f"{device_id}:EVT-N-011")
 
-        # 급감: 이전 대비 50% 이상 감소 (주간에만)
-        if prev_p is not None and prev_p > _SOLAR_DAYTIME_MIN_P:
-            if current_p < prev_p * (1 - _SOLAR_DROP_RATIO):
-                key = f"{device_id}:EVT-N-012"
-                if not await event_pub.is_alerted(key):
-                    await event_pub.set_alerted(key)
-                    events.append(_evt(
-                        device_id, "solar", "EVT-N-012", "WARNING",
-                        f"태양광 급감 ({current_p:.0f}kW)",
-                        {"prev_kw": prev_p, "current_kw": current_p},
-                    ))
-            else:
-                await event_pub.clear_alert(f"{device_id}:EVT-N-012")
-
-        await redis.set(f"{_REDIS_PREV_SOLAR_P}{device_id}", str(current_p))
+        # 급감: 이전 대비 50% 이상 감소 (주간에만, curtailment 제어 중 제외)
+        is_curtailed = bool(await redis.exists(f"ems:curtailed:{device_id}"))
+        if not is_curtailed:
+            if prev_p is not None and prev_p > _SOLAR_DAYTIME_MIN_P:
+                if current_p < prev_p * (1 - _SOLAR_DROP_RATIO):
+                    key = f"{device_id}:EVT-N-012"
+                    if not await event_pub.is_alerted(key):
+                        await event_pub.set_alerted(key)
+                        events.append(_evt(
+                            device_id, "solar", "EVT-N-012", "WARNING",
+                            f"태양광 급감 ({current_p:.0f}kW)",
+                            {"prev_kw": prev_p, "current_kw": current_p},
+                        ))
+                else:
+                    await event_pub.clear_alert(f"{device_id}:EVT-N-012")
+            # curtailment 중이 아닐 때만 prev_p 갱신 (curtailment로 인한 출력 감소값 기록 방지)
+            await redis.set(f"{_REDIS_PREV_SOLAR_P}{device_id}", str(current_p))
 
     # net_power 연속 부족 감지
     if flow["net_power"] < _DEFICIT_KW:

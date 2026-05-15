@@ -28,8 +28,9 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     if not solar_targets:
         return []
 
-    # --- 해제 조건: 부족 or ESS 충전 가능 ---
-    if net_power <= 0 or any_can_charge:
+    # --- 해제 조건: ESS 충전 가능해진 경우만 해제 ---
+    # net_power <= 0 은 curtailment 자체로 인해 발생하므로 해제 조건으로 쓰면 oscillation 발생.
+    if any_can_charge:
         for device_id, state in solar_targets:
             key = f"{_REDIS_PREFIX}{device_id}"
             if await redis.exists(key):
@@ -40,7 +41,7 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
                     "resource_type": "solar",
                     "command_type": "clear_curtailment",
                     "payload": {},
-                    "reason": f"net={net_power:.1f}kW or ESS can charge — curtailment 해제",
+                    "reason": f"ESS can charge (SOC < SOC_HIGH) — curtailment 해제",
                     "priority": PRIORITY,
                 })
         return commands

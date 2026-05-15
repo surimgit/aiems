@@ -192,6 +192,14 @@ async def _apply_topology_state(redis, plant_id: str, kind: str, payload: dict) 
                         if field in payload:
                             line[field] = payload[field]
                     break
+            else:
+                lines.append({
+                    "line_id": line_id,
+                    "from_node_id": payload.get("from_node_id"),
+                    "to_node_id": payload.get("to_node_id"),
+                    "status": payload.get("status", "NORMAL"),
+                    "flow_kw": float(payload.get("flow_kw") or 0.0),
+                })
 
     if kind == "switch":
         switch_id = payload.get("switch_id")
@@ -207,6 +215,14 @@ async def _apply_topology_state(redis, plant_id: str, kind: str, payload: dict) 
                         if field in payload:
                             sw[field] = payload[field]
                     break
+            else:
+                switches.append({
+                    "switch_id": switch_id,
+                    "line_id": payload.get("line_id"),
+                    "position": payload.get("position", "CLOSED"),
+                    "controllable": bool(payload.get("controllable", True)),
+                    "interlock_blocked": bool(payload.get("interlock_blocked", False)),
+                })
 
     entry["topology"] = topology
     entry["updated_at"] = _utc_now_iso()
