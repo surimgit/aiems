@@ -15,16 +15,22 @@ _REDIS_PREFIX = "ems:diesel:start:"
 
 
 def _diesel_zone_deficit(diesel: dict, flow: dict, states: dict) -> float:
-    """이 디젤이 연결된 load 구역들의 총 deficit.
+    """이 디젤이 연결된 load 구역들의 총 deficit (디젤 자신의 출력 제외).
 
-    component_deficits 에서 이 디젤이 reachable_resources 에 포함된 load 항목만 합산.
-    디젤이 꺼져있어도 '연결된 load 구역에 공급이 부족한가'를 판단하는 데 사용.
+    component_deficits 의 supply_kw 에는 이미 running 디젤의 P 가 포함되어 있으므로
+    자신의 P 를 빼서 '외부 공급만으로 얼마나 부족한가'를 계산한다.
+    이렇게 해야 load_control 목표값 oscillation 을 방지할 수 있다.
     """
     device_id = diesel["device_id"]
+    diesel_p = diesel.get("P") or 0.0
     total_deficit = 0.0
     for comp in flow.get("component_deficits", []):
-        if device_id in comp.get("reachable_resources", []):
-            total_deficit += comp.get("deficit_kw", 0.0)
+        if device_id not in comp.get("reachable_resources", []):
+            continue
+        # supply_kw 에서 이 디젤의 기여분을 제거한 순수 외부 공급 deficit
+        external_supply = comp.get("supply_kw", 0.0) - diesel_p
+        deficit = max(comp.get("load_kw", 0.0) - external_supply, 0.0)
+        total_deficit += deficit
     return total_deficit
 
 
