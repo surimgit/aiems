@@ -29,14 +29,16 @@ def _diesel_zone_deficit(diesel: dict, flow: dict, states: dict) -> float:
 
 
 def _diesel_zone_net(diesel: dict, flow: dict, states: dict) -> float:
-    """이 디젤이 연결된 load 구역들의 총 (supply - load).
+    """이 디젤이 직접 연결된(direct_supply_ids) load 구역들의 총 (supply - load).
 
+    direct_supply_ids 에 포함된 load 구역만 봄으로써 다른 구역의 잉여가
+    공급이 필요한 구역의 부족을 상쇄하는 오판을 방지한다.
     양수 = 잉여, 음수 = 부족.
     """
     device_id = diesel["device_id"]
     zone_net = 0.0
     for comp in flow.get("component_deficits", []):
-        if device_id in comp.get("reachable_resources", []):
+        if device_id in comp.get("direct_supply_ids", []):
             zone_net += comp.get("supply_kw", 0.0) - comp.get("load_kw", 0.0)
     return zone_net
 
@@ -110,7 +112,8 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
                 continue
 
             # 3. 구역 잉여 충분 → 정지 (최소 운전 시간 경과 후)
-            if running and zone_net > diesel_stop_net:
+            # deficit 있는 구역이 하나라도 있으면 정지 불가 (다른 구역 잉여가 상쇄해도 부족 구역엔 공급 안 됨)
+            if running and zone_net > diesel_stop_net and zone_deficit <= 0:
                 if running_seconds >= min_run_sec:
                     commands.append(_stop(diesel, f"zone_net={zone_net:.1f}kW > {diesel_stop_net}, run={running_seconds:.0f}s"))
                 else:
@@ -118,10 +121,10 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
                     print(f"[diesel] {device_id} 정지 보류: 최소 운전 시간 미달 ({running_seconds:.0f}s / {min_run_sec:.0f}s, {remaining:.0f}s 남음)")
                 continue
 
-            # 4. 운전 중 + 구역 부족 → 부하조정
-            if running and zone_net < 0:
-                target_kw = round(abs(zone_net) / len(diesel_devices), 1)
-                commands.append(_load_control(diesel, target_kw, f"zone_net={zone_net:.1f}kW"))
+            # 4. 운전 중 + 직접 연결 구역 부족 → 부하조정
+            if running and zone_deficit > 0:
+                target_kw = round(zone_deficit / len(diesel_devices), 1)
+                commands.append(_load_control(diesel, target_kw, f"zone_deficit={zone_deficit:.1f}kW, zone_net={zone_net:.1f}kW"))
 
         else:
             # fallback: 전역 net_power 기준 (토폴로지 없을 때)
