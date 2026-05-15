@@ -161,6 +161,7 @@ class MqttCommander:
                     password=MQTT_PASSWORD,
                 ) as sub:
                     await sub.subscribe(f"{SITE_ID}/+/+/ack", qos=1)
+                    await sub.subscribe(f"{SITE_ID}/+/+/+/ack", qos=1)
                     await sub.subscribe(f"{SITE_ID}/simulator-manager/topology/command/ack", qos=1)
                     print("[control][ack] ACK 구독 시작")
                     async for msg in sub.messages:
