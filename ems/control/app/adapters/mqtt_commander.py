@@ -126,6 +126,11 @@ class MqttCommander:
         }
         await self._set_desired(command, desired)
 
+        # 같은 device에 새 명령이 오면 이전 pending_verify 취소 — supersede된 명령의 오탐 방지
+        superseded = [cid for cid, info in self._pending_verify.items() if info[2] == device_id]
+        for cid in superseded:
+            self._pending_verify.pop(cid, None)
+
         # 폐루프 검증 대상 등록 (command_type, payload, device_id, resource_type)
         self._pending_verify[command_id] = (
             command["command_type"],
