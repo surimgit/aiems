@@ -169,9 +169,10 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             continue
         load_kw = abs((state.get("reported_state") or {}).get("P") or 0.0)
 
-        reachable = graph.reachable_resources(device_id)
+        # 다른 LOAD 를 통과하지 않고 직접 도달 가능한 발전/저장 자원만 supply 로 계산.
+        supply_resources = graph.reachable_supply_resources(device_id)
         supply_kw = 0.0
-        for r_id in reachable:
+        for r_id in supply_resources:
             r_state = states.get(r_id)
             if not r_state:
                 continue
@@ -181,6 +182,8 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             if r_type in ("SOLAR", "DIESEL", "ESS") and r_p > 0:
                 supply_kw += r_p
 
+        # reachable_resources 는 기존 호환성 유지 (dispatchable 판단 등에 사용).
+        reachable = graph.reachable_resources(device_id)
         deficit_kw = max(load_kw - supply_kw, 0.0)
         results.append({
             "load_id": device_id,

@@ -75,6 +75,38 @@ class TopologyGraph:
         self._reachable_cache[resource_id] = set(reached_resources)
         return reached_resources
 
+    def reachable_supply_resources(self, load_resource_id: str) -> set[str]:
+        """이 LOAD 에서 다른 LOAD 를 통과하지 않고 도달 가능한 발전/저장 자원 집합.
+
+        BFS 중 다른 LOAD 노드를 만나면 그 노드에서 탐색을 멈춘다.
+        이렇게 하면 diesel 을 거쳐 건너편 ess/solar 까지 reachable 로 잡는 문제를 방지한다.
+        """
+        start_node = self._resource_to_node.get(load_resource_id)
+        if start_node is None:
+            return set()
+
+        visited_nodes = {start_node}
+        queue: deque[str] = deque([start_node])
+        supply_resources: set[str] = set()
+
+        while queue:
+            node = queue.popleft()
+            for neighbor in self._adjacency.get(node, ()):
+                if neighbor in visited_nodes:
+                    continue
+                visited_nodes.add(neighbor)
+                neighbor_resource = self._node_to_resource.get(neighbor)
+                if neighbor_resource:
+                    if neighbor_resource == load_resource_id:
+                        continue
+                    # 다른 LOAD 노드: 집합에 추가하되 그 너머로는 탐색하지 않음.
+                    if neighbor_resource in self._load_resource_ids:
+                        continue
+                    supply_resources.add(neighbor_resource)
+                queue.append(neighbor)
+
+        return supply_resources
+
     def is_connected_to_any_load(self, resource_id: str) -> bool:
         """이 자원이 LOAD 노드 하나라도 통전 가능한가."""
         if not self._load_resource_ids:
