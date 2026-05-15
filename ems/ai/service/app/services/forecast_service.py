@@ -11,9 +11,11 @@ from astral.sun import elevation
 from .live_satellite_service import LiveSatellitePredictionService
 from .load_service import LoadService
 from .prediction_service import PredictionService
+from .site_metadata_service import SiteMetadataService
 from ..config import settings
 from ..repositories.forecast_repository import ForecastRepository
 from ..repositories.site_load_profile_repository import SiteLoadProfileRepository
+from ..repositories.site_metadata_repository import SiteMetadataRepository
 
 
 LIVE_SATELLITE_BACKENDS = {"live_satellite", "satellite", "v10"}
@@ -27,11 +29,16 @@ class ForecastService:
         forecast_repository: ForecastRepository | None = None,
         live_satellite_service: LiveSatellitePredictionService | None = None,
         site_load_profile_repository: SiteLoadProfileRepository | None = None,
+        site_metadata_repository: SiteMetadataRepository | None = None,
+        site_metadata_service: SiteMetadataService | None = None,
     ) -> None:
         self.prediction_service = prediction_service or PredictionService()
         self.load_service = load_service or LoadService()
         self.forecast_repository = forecast_repository or ForecastRepository()
         self.site_load_profile_repository = site_load_profile_repository or SiteLoadProfileRepository()
+        self.site_metadata_service = site_metadata_service or SiteMetadataService(
+            repository=site_metadata_repository or SiteMetadataRepository()
+        )
         self.live_satellite_service = live_satellite_service or LiveSatellitePredictionService(
             prediction_service=self.prediction_service
         )
@@ -39,6 +46,7 @@ class ForecastService:
     def forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = dict(payload)
         warnings: list[str] = []
+        payload = self._inject_stored_site_metadata(payload, warnings)
         payload = self._inject_stored_site_profile(payload, warnings)
         forecast_run_id = self._start_forecast_run(payload)
         if forecast_run_id:
@@ -99,11 +107,23 @@ class ForecastService:
         return result
 
     def scheduled_forecast(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.forecast({
+        scheduled_payload = {
             **payload,
             "trigger_source": payload.get("trigger_source") or "scheduled",
             "solar_backend": payload.get("solar_backend") or settings.forecast_solar_backend,
-        })
+            "periods": payload.get("periods") or 24,
+            "frequency_hours": payload.get("frequency_hours") or 1.0,
+        }
+        if not scheduled_payload.get("start_time") and not scheduled_payload.get("target_times"):
+            timezone_name = (
+                (scheduled_payload.get("site") or {}).get("timezone")
+                or scheduled_payload.get("timezone")
+                or "Asia/Seoul"
+            )
+            scheduled_payload["start_time"] = (
+                datetime.now(ZoneInfo(timezone_name)).replace(minute=0, second=0, microsecond=0).isoformat()
+            )
+        return self.forecast(scheduled_payload)
 
     def latest(self, payload: dict[str, Any]) -> dict[str, Any]:
         latest = self.forecast_repository.latest_forecast(payload)
@@ -173,6 +193,52 @@ class ForecastService:
             return self.forecast_repository.start_forecast(payload)
         except Exception:
             return None
+
+    def _inject_stored_site_metadata(self, payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+        site = dict(payload.get("site") or {})
+        site_id = payload.get("site_id") or site.get("site_id")
+        if not site_id:
+            return payload
+
+        site_id = str(site_id)
+        try:
+            current = self.site_metadata_service.resolve(site_id)
+        except Exception as exc:
+            warnings.append(f"site_metadata_lookup_failed: {exc}")
+            return {**payload, "site_id": site_id, "site": {**site, "site_id": site_id}}
+
+        if not current:
+            if self._site_metadata_incomplete(payload, site):
+                warnings.append(f"site_metadata_not_found:{site_id}")
+            return {**payload, "site_id": site_id, "site": {**site, "site_id": site_id}}
+        if current.get("_warning"):
+            warnings.append(str(current["_warning"]))
+
+        resolved_site = {**site, "site_id": site_id}
+        if current.get("model_region"):
+            resolved_site["region"] = current["model_region"]
+            resolved_site["model_region"] = current["model_region"]
+            resolved_site["address_region"] = current.get("region")
+        elif current.get("region") is not None:
+            resolved_site["region"] = current["region"]
+        for key in (
+            "dong_code",
+            "latitude",
+            "longitude",
+            "installed_capacity_kw",
+            "timezone",
+            "model_capacity_kw",
+        ):
+            if current.get(key) is not None:
+                resolved_site[key] = current[key]
+
+        return {
+            **payload,
+            "site_id": site_id,
+            "site": resolved_site,
+            "site_metadata_source": current.get("_source") or "ai_site_metadata",
+            "site_metadata_updated_at": current.get("updated_at"),
+        }
 
     def _inject_stored_site_profile(self, payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
         if payload.get("site_profile"):
@@ -461,6 +527,13 @@ class ForecastService:
         if value is None:
             raise ValueError(f"site.{key} is required for bundled forecast")
         return float(value)
+
+    @staticmethod
+    def _site_metadata_incomplete(payload: dict[str, Any], site: dict[str, Any]) -> bool:
+        for key in ("region", "latitude", "longitude", "installed_capacity_kw"):
+            if site.get(key) is None and payload.get(key) is None:
+                return True
+        return False
 
     @staticmethod
     def _history_defaults(payload: dict[str, Any]) -> dict[str, float]:

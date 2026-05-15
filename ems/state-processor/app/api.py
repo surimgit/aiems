@@ -154,9 +154,13 @@ def _state_to_resource(state: dict) -> dict:
         "status": status,
         "comms_health": comms,
         "location": state.get("location"),
+        "site_metadata": state.get("site_metadata"),
         "latitude": state.get("latitude"),
         "longitude": state.get("longitude"),
     }
+    for key in ("capacity_kw", "installed_capacity_kw", "rated_power_kw", "rated_capacity_kw", "max_power_kw", "power_limit_kw"):
+        if reported.get(key) is not None:
+            out[key] = reported.get(key)
 
     if rt == "SWITCH":
         out["position"] = reported.get("switch_state") or "UNKNOWN"
@@ -616,8 +620,15 @@ def _register_routes(app: Flask) -> None:
         status = fields.String(allow_none=True)
         comms_health = fields.String(allow_none=True)
         location = fields.Dict(allow_none=True)
+        site_metadata = fields.Dict(allow_none=True)
         latitude = fields.Float(allow_none=True)
         longitude = fields.Float(allow_none=True)
+        capacity_kw = fields.Float(allow_none=True)
+        installed_capacity_kw = fields.Float(allow_none=True)
+        rated_power_kw = fields.Float(allow_none=True)
+        rated_capacity_kw = fields.Float(allow_none=True)
+        max_power_kw = fields.Float(allow_none=True)
+        power_limit_kw = fields.Float(allow_none=True)
         position = fields.String(allow_none=True)
         controllable = fields.Boolean(allow_none=True)
         interlock_blocked = fields.Boolean(allow_none=True)
