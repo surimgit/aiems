@@ -12,6 +12,7 @@
     "alarmTop3": "Alarms",
     "recentCommand": "Recent Command Results",
     "countryLanguage": "Country Selection",
+    "settings": "Settings",
     "selectedResource": "Selected Equipment",
     "control": "Equipment Control",
     "loadUsage": "Load Usage Status"
@@ -21,6 +22,19 @@
     "languageTitle": "Language",
     "apply": "Apply",
     "applied": "Applied"
+  },
+  "settingsPanel": {
+    "regionLanguage": "Country/Language",
+    "loadProfile": {
+      "title": "Load Pattern Prompt",
+      "placeholder": "Example: Office and HVAC loads are high from 9 AM to 6 PM on weekdays, and only critical equipment remains at night.",
+      "save": "Save load pattern",
+      "saving": "Saving",
+      "loading": "Loading",
+      "updated": "Load pattern was updated.",
+      "unchanged": "Same as the existing load pattern.",
+      "error": "Failed to process the load pattern."
+    }
   },
   "common": {
     "thisMonth": "This Month",

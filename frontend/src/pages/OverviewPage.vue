@@ -19,7 +19,7 @@ import AiPerformanceWidget from '@/features/overview/components/AiPerformanceWid
 import RightPanelShell from '@/features/overview/components/right-panel/RightPanelShell.vue'
 import AlarmTopPanel from '@/features/overview/components/right-panel/AlarmTopPanel.vue'
 import RecentCommandPanel from '@/features/overview/components/right-panel/RecentCommandPanel.vue'
-import CountryLanguagePanel from '@/features/overview/components/right-panel/CountryLanguagePanel.vue'
+import SettingsPanel from '@/features/overview/components/right-panel/SettingsPanel.vue'
 import SelectedResourceIntegratedPanel from '@/features/overview/components/right-panel/SelectedResourceIntegratedPanel.vue'
 import LoadUsagePanel from '@/features/overview/components/right-panel/LoadUsagePanel.vue'
 import { useRightPanelState } from '@/features/overview/composables/useRightPanelState'
@@ -104,6 +104,7 @@ const rightPanelTitle = computed(() => {
     alarm: t('rightPanel.alarmTop3'),
     'recent-command': t('rightPanel.recentCommand'),
     'country-language': t('rightPanel.countryLanguage'),
+    settings: t('rightPanel.settings'),
     'selected-resource': t('rightPanel.selectedResource'),
     'load-usage': t('rightPanel.loadUsage')
   }
@@ -212,7 +213,7 @@ onUnmounted(() => {
         <RightPanelShell :title="rightPanelTitle" @close="rightPanel.close">
           <AlarmTopPanel v-if="rightPanel.mode.value === 'alarm'" @open-resource="handleOpenResourceFromBanner" />
           <RecentCommandPanel v-else-if="rightPanel.mode.value === 'recent-command'" @open-resource="handleOpenResourceFromBanner" />
-          <CountryLanguagePanel v-else-if="rightPanel.mode.value === 'country-language'" />
+          <SettingsPanel v-else-if="rightPanel.mode.value === 'settings'" />
           <SelectedResourceIntegratedPanel v-else-if="rightPanel.mode.value === 'selected-resource'" />
           <LoadUsagePanel v-else-if="rightPanel.mode.value === 'load-usage'" />
         </RightPanelShell>

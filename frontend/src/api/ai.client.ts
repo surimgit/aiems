@@ -24,6 +24,7 @@ import type {
 // 상대경로 사용: 로컬(vite proxy) / 배포(nginx) 모두 /api/ai/... 로 라우팅됨
 // localhost:5004 직접 호출 금지 — 브라우저에서 localhost는 사용자 PC를 의미함
 const AI_REQUEST_TIMEOUT_MS = 10000
+const AI_PROFILE_REQUEST_TIMEOUT_MS = 60000
 
 const aiHttpClient = axios.create({
   baseURL: '',
@@ -64,6 +65,31 @@ interface ForecastLatestResponse {
 interface ForecastSeries {
   generationForecast: ForecastData[]
   demandForecast: ForecastData[]
+}
+
+export interface SiteLoadProfileResponse {
+  ok?: boolean
+  task?: string
+  changed?: boolean
+  enabled?: boolean
+  found?: boolean
+  status?: string
+  site_id?: string
+  prompt_text?: string
+  prompt_hash?: string
+  source?: string
+  model_name?: string
+  profile_version?: string
+  profile?: Record<string, unknown> | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SiteLoadProfilePayload {
+  site_id: string
+  prompt_text: string
+  use_openai?: boolean
+  force?: boolean
 }
 
 const DEFAULT_SITE_ID = 'PLANT-ALPHA'
@@ -141,6 +167,22 @@ export const getForecastSeries = async (siteId: string = DEFAULT_SITE_ID): Promi
   }, { generationForecast: [], demandForecast: [] })
 }
 
+export const getSiteLoadProfile = async (siteId: string = DEFAULT_SITE_ID): Promise<SiteLoadProfileResponse | null> => {
+  return withAiFallback(async () => {
+    const response = await aiHttpClient.get<SiteLoadProfileResponse>('/api/ai/site-load-profile', {
+      params: { site_id: siteId }
+    })
+    return response.data
+  }, null)
+}
+
+export const saveSiteLoadProfile = async (payload: SiteLoadProfilePayload): Promise<SiteLoadProfileResponse> => {
+  const response = await aiHttpClient.post<SiteLoadProfileResponse>('/api/ai/site-load-profile', payload, {
+    timeout: AI_PROFILE_REQUEST_TIMEOUT_MS
+  })
+  return response.data
+}
+
 // 미구현 API — 백엔드 구현 전까지 빈 배열 반환
 export const getRecommendations = async (_siteId: string): Promise<Recommendation[]> => {
   return []
@@ -160,6 +202,8 @@ export const requestInference = async (
 
 export default {
   getForecastSeries,
+  getSiteLoadProfile,
+  saveSiteLoadProfile,
   getRecommendations,
   getAiModelStatus,
   requestInference,

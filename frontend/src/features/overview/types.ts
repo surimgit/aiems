@@ -2,6 +2,7 @@ export type RightPanelMode =
   | 'alarm'
   | 'recent-command'
   | 'country-language'
+  | 'settings'
   | 'selected-resource'
   | 'load-usage'
 

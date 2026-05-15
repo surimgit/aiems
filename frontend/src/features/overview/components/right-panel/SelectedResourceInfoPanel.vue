@@ -61,10 +61,14 @@ const selectedResourceDisplayName = computed(() => {
 })
 
 const modeLabel = computed(() => selectedResource.value?.telemetry?.operating_mode ?? '-')
+const powerLabel = computed(() => selectedResource.value?.telemetry?.p_kw ?? '-')
+const voltageLabel = computed(() => selectedResource.value?.telemetry?.v_volt ?? '-')
 const currentLabel = computed(() => selectedResource.value?.telemetry?.i_amp ?? '-')
 const frequencyLabel = computed(() => selectedResource.value?.telemetry?.f_hz ?? '-')
 const pfLabel = computed(() => selectedResource.value?.telemetry?.pf ?? '-')
 const socLabel = computed(() => selectedResource.value?.telemetry?.soc ?? selectedEss.value?.soc ?? '-')
+
+const showUnit = (value: unknown) => value !== '-' && value !== null && value !== undefined
 
 const imageFallback = ref(false)
 
@@ -150,10 +154,10 @@ const saveEdit = () => {
         <dt>{{ t('selectedResource.info.equipmentType') }}</dt><dd>{{ selectedResource.resource_type }}</dd>
         <dt>{{ t('selectedResource.info.status') }}</dt><dd>{{ displayedStatusLabel }}</dd>
         <dt>{{ t('selectedResource.info.commsStatus') }}</dt><dd>{{ selectedResource.comms_health ?? t('common.noData') }}</dd>
-        <dt>{{ t('selectedResource.info.currentPower') }}</dt><dd>{{ selectedResource.telemetry?.p_kw ?? '-' }} kW</dd>
-        <dt>{{ t('selectedResource.info.voltage') }}</dt><dd>{{ selectedResource.telemetry?.v_volt ?? '-' }} V</dd>
-        <dt>전류</dt><dd>{{ currentLabel }} A</dd>
-        <dt>주파수</dt><dd>{{ frequencyLabel }} Hz</dd>
+        <dt>{{ t('selectedResource.info.currentPower') }}</dt><dd>{{ powerLabel }}<span v-if="showUnit(powerLabel)"> kW</span></dd>
+        <dt>{{ t('selectedResource.info.voltage') }}</dt><dd>{{ voltageLabel }}<span v-if="showUnit(voltageLabel)"> V</span></dd>
+        <dt>전류</dt><dd>{{ currentLabel }}<span v-if="showUnit(currentLabel)"> A</span></dd>
+        <dt>주파수</dt><dd>{{ frequencyLabel }}<span v-if="showUnit(frequencyLabel)"> Hz</span></dd>
         <dt>역률</dt><dd>{{ pfLabel }}</dd>
         <dt>운전 모드</dt><dd>{{ modeLabel }}</dd>
         <dt>SOC</dt><dd>{{ socLabel }}<span v-if="socLabel !== '-'">%</span></dd>

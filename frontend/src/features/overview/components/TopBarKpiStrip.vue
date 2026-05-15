@@ -50,11 +50,11 @@ const toggleMode = (mode: RightPanelMode) => {
       <button
         type="button"
         class="icon-btn"
-        :class="{ active: panelOpen && currentMode === 'country-language' }"
-        data-testid="icon-country"
-        @click="toggleMode('country-language')"
+        :class="{ active: panelOpen && currentMode === 'settings' }"
+        data-testid="icon-settings"
+        @click="toggleMode('settings')"
       >
-        {{ t('topbar.countryLanguage') }}
+        {{ t('topbar.settings') }}
       </button>
     </div>
   </section>

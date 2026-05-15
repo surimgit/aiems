@@ -63,8 +63,34 @@ const normalizeSwitchPosition = (value: unknown): TopologySwitchPosition | 'UNKN
 
 const snapshotStatus = (snapshot: DeviceStateSnapshot): string => {
   if (snapshot.emergency) return 'EMERGENCY'
-  if (snapshot.comms_health === 'stale') return 'OFFLINE'
+  const comms = String(snapshot.comms_health ?? '').toLowerCase()
+  if (comms === 'stale' || comms.includes('stale') || comms === 'offline') return 'OFFLINE'
   return 'NORMAL'
+}
+
+const resolveSnapshotFromEvent = (event: StateUpdateEvent): DeviceStateSnapshot | null => {
+  const payload = event.data as unknown
+  if (Array.isArray(payload)) {
+    const first = payload[0]
+    return first && typeof first === 'object' ? (first as DeviceStateSnapshot) : null
+  }
+
+  if (payload && typeof payload === 'object') {
+    return payload as DeviceStateSnapshot
+  }
+
+  const topLevelCandidate: DeviceStateSnapshot = {
+    site_id: event.site_id,
+    edge_id: event.edge_id,
+    device_id: event.device_id,
+    resource_type: event.resource_type,
+    location: event.location,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    timestamp: event.timestamp
+  }
+
+  return topLevelCandidate.device_id ? topLevelCandidate : null
 }
 
 const snapshotTimestamp = (snapshot: DeviceStateSnapshot, fallback?: string): string => {
@@ -99,6 +125,7 @@ const mapSnapshotToResource = (snapshot: DeviceStateSnapshot): ResourceInfo | nu
     p_kw: numberOrUndefined(reported.P),
     q_kvar: numberOrUndefined(reported.Q),
     v_volt: numberOrUndefined(reported.V),
+    i_amp: numberOrUndefined(reported.I),
     f_hz: numberOrUndefined(reported.f),
     pf: numberOrUndefined(reported.PF),
     soc: numberOrUndefined(reported.SOC),
@@ -443,7 +470,7 @@ export const useDashboardStore = defineStore(
       },
 
       applyRealtimeStateUpdate(event: StateUpdateEvent): void {
-        const snapshot = event.data
+        const snapshot = resolveSnapshotFromEvent(event)
         if (!snapshot) return
         if (snapshot.site_id && snapshot.site_id !== this.siteId) return
 
