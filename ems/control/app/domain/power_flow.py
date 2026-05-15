@@ -169,8 +169,9 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             continue
         load_kw = abs((state.get("reported_state") or {}).get("P") or 0.0)
 
-        # 다른 LOAD 를 통과하지 않고 직접 도달 가능한 발전/저장 자원만 supply 로 계산.
-        supply_resources = graph.reachable_supply_resources(device_id)
+        # LOAD 에 직접 연결된(1홉) 발전/저장 자원만 supply 로 계산.
+        # mesh 토폴로지에서 우회 경로를 통한 과다 계산 방지.
+        supply_resources = graph.direct_supply_resources(device_id)
         supply_kw = 0.0
         for r_id in supply_resources:
             r_state = states.get(r_id)
