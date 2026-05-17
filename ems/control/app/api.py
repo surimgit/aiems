@@ -31,7 +31,8 @@ _device_cooldown: dict[str, float] = {}
 # ess_mode 명령의 dead-band: 마지막 발행한 (mode, target_power_kw) 기억
 # 변화량이 _ESS_DEADBAND_KW 미만이면 재발행 안 함
 _ESS_DEADBAND_KW = 2.0
-_device_last_ess_cmd: dict[str, tuple[str, float]] = {}  # device_id → (mode, kw)
+_ESS_MODE_FLIP_HOLD_SEC = 10.0
+_device_last_ess_cmd: dict[str, tuple[str, float, float]] = {}  # device_id → (mode, kw, sent_at)
 
 # Operator 명령용 MQTT 싱글턴 — 매번 connect/disconnect 방지
 _operator_mqtt: mqtt_client.Client | None = None
@@ -183,19 +184,26 @@ def _start_worker() -> None:
         if cmd["command_type"] == "ess_mode":
             requested_mode = cmd["payload"].get("mode", "standby")
             requested_kw = float(cmd["payload"].get("target_power_kw", 0.0))
+            last_mode, last_kw, last_sent_at = _device_last_ess_cmd.get(device_id, (None, None, None))
 
-            # 모드 전환이면 무조건 발행
+            # 직전에 보낸 반대 모드로 즉시 뒤집는 명령은 짧게 hold 한다.
             if current_mode != requested_mode:
-                _device_last_ess_cmd[device_id] = (requested_mode, requested_kw)
+                if (
+                    last_mode is not None
+                    and last_mode != requested_mode
+                    and last_sent_at is not None
+                    and now - last_sent_at < _ESS_MODE_FLIP_HOLD_SEC
+                ):
+                    return False
+                _device_last_ess_cmd[device_id] = (requested_mode, requested_kw, now)
                 return True
 
             # 같은 모드면 dead-band 체크 — power set-point 변화가 작으면 스킵
-            last_mode, last_kw = _device_last_ess_cmd.get(device_id, (None, None))
             if last_mode == requested_mode and last_kw is not None:
                 if abs(requested_kw - last_kw) < _ESS_DEADBAND_KW:
                     return False
 
-            _device_last_ess_cmd[device_id] = (requested_mode, requested_kw)
+            _device_last_ess_cmd[device_id] = (requested_mode, requested_kw, now)
             return True
 
         if cmd["command_type"] == "start":

@@ -9,24 +9,37 @@ PRIORITY = 50
 # 충방전 전환 시 진동 방지용 SOC 여유값 (%)
 SOC_HYSTERESIS = 5.0
 
+# 0 부근에서 charge/discharge가 핑퐁하지 않도록 하는 net hold band (kW)
+ESS_EXTERNAL_NET_HOLD_BAND_KW = 2.0
+
 # ESS 정격 기본값 — telemetry에 power_limit_kw 없을 때 fallback
 _ESS_POWER_LIMIT_DEFAULT_KW = 50.0
 
 
-def _ess_zone_net(ess_id: str, flow: dict) -> float | None:
+def _ess_zone_net(ess: dict, flow: dict) -> float | None:
     """이 ESS 가 연결된 load 구역들의 (supply - load) 합산.
 
     component_deficits 에서 이 ESS 가 reachable_resources 에 포함된 항목만.
-    ESS 자신의 P 는 supply_kw 에 이미 포함되어 있으므로 external_net 보정 불필요.
+    direct_supply_ids 에 현재 ESS 가 포함되어 있으면 자신의 방전 전력(P>0)은 제외한다.
     구역이 없으면 None (전역 fallback 사용).
     """
+    ess_id = ess["device_id"]
     matched = [
         c for c in flow.get("component_deficits", [])
         if ess_id in c.get("reachable_resources", [])
     ]
     if not matched:
         return None
-    return sum(c.get("supply_kw", 0.0) - c.get("load_kw", 0.0) for c in matched)
+
+    own_discharge_kw = max(float(ess.get("P") or 0.0), 0.0)
+    total = 0.0
+    for component in matched:
+        supply_kw = float(component.get("supply_kw", 0.0) or 0.0)
+        direct_supply_ids = set(component.get("direct_supply_ids") or [])
+        if own_discharge_kw > 0.0 and ess_id in direct_supply_ids:
+            supply_kw = max(0.0, supply_kw - own_discharge_kw)
+        total += supply_kw - float(component.get("load_kw", 0.0) or 0.0)
+    return total
 
 
 def evaluate(flow: dict, policy) -> list[dict]:
@@ -61,7 +74,7 @@ def evaluate(flow: dict, policy) -> list[dict]:
 
         # 구역별 net 사용 (토폴로지 있을 때). 구역 없으면 전역 fallback.
         if use_zone:
-            zone_net = _ess_zone_net(device_id, flow)
+            zone_net = _ess_zone_net(ess, flow)
             external_net = zone_net if zone_net is not None else global_external_net
         else:
             external_net = global_external_net
@@ -81,6 +94,10 @@ def evaluate(flow: dict, policy) -> list[dict]:
             raw_share = abs(external_net) / len(ess_devices)
 
         share = round(min(raw_share, device_limit), 1)
+
+        # 0 근처에서는 mode를 바꾸지 않고 현재 명령을 유지한다.
+        if abs(external_net) < ESS_EXTERNAL_NET_HOLD_BAND_KW:
+            continue
 
         if external_net < 0:
             discharge_start = soc_low + SOC_HYSTERESIS
