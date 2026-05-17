@@ -29,7 +29,7 @@ _COOLDOWN_SEC = 35.0  # ACK timeout(30s)보다 약간 김
 _device_cooldown: dict[str, float] = {}
 
 # ess_mode 명령의 dead-band: 마지막 발행한 (mode, target_power_kw) 기억
-# 변화량이 _ESS_DEADBAND_KW 미만이면 재발행 안 함
+# 변화량이 _ESS_DEADBAND_KW 미만이면 재발행 안합니다.
 _ESS_DEADBAND_KW = 2.0
 _ESS_MODE_FLIP_HOLD_SEC = 10.0
 _device_last_ess_cmd: dict[str, tuple[str, float, float]] = {}  # device_id → (mode, kw, sent_at)
