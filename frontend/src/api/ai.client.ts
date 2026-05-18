@@ -9,7 +9,7 @@
  *   POST /api/ai/inference-requests (AI 백엔드 없음)
  *   GET /api/ai/inference-results/{id} (AI 백엔드 없음)
  *   GET /api/ai/forecasts/{id} (AI 백엔드 없음)
- *   GET /api/ai/recommendations/{id} (AI 백엔드 없음)
+ *   GET /api/ai/recommendations/{id} (AI 백엔드 없음)d
  */
 
 import axios from 'axios'
