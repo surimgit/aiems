@@ -76,6 +76,7 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
             load_p += p
         elif resource_type == "ESS":
             ess_p += p
+            resource_spec = state.get("resource_spec") or {}
             ess_devices.append({
                 "device_id": device_id,
                 "edge_id": state.get("edge_id"),
@@ -83,7 +84,7 @@ def compute(states: dict, *, graph: Any = None, soc_low: float = 0.0) -> dict:
                 "P": p,
                 "SOC": reported.get("SOC"),
                 "mode": reported.get("operating_mode", "standby"),
-                "power_limit_kw": reported.get("power_limit_kw"),
+                "power_limit_kw": resource_spec.get("power_limit_kw") or reported.get("power_limit_kw"),
                 "comms_health": state.get("comms_health"),
             })
         elif resource_type == "DIESEL":
@@ -168,18 +169,21 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             continue
         load_kw = abs((state.get("reported_state") or {}).get("P") or 0.0)
 
-        reachable = graph.reachable_resources(device_id)
+        # LOAD 에 직접 연결된(1홉) 발전/저장 자원만 supply 로 계산.
+        # mesh 토폴로지에서 우회 경로를 통한 과다 계산 방지.
+        direct_supply = graph.direct_supply_resources(device_id)
         supply_kw = 0.0
-        for r_id in reachable:
+        for r_id in direct_supply:
             r_state = states.get(r_id)
             if not r_state:
                 continue
             r_type = (r_state.get("resource_type") or "").upper()
             r_p = (r_state.get("reported_state") or {}).get("P") or 0.0
-            # SOLAR / DIESEL: P > 0 만 공급, ESS: 방전 (P > 0) 시 공급으로 계산.
             if r_type in ("SOLAR", "DIESEL", "ESS") and r_p > 0:
                 supply_kw += r_p
 
+        # reachable_resources 는 기존 호환성 유지 (dispatchable 판단 등에 사용).
+        reachable = graph.reachable_resources(device_id)
         deficit_kw = max(load_kw - supply_kw, 0.0)
         results.append({
             "load_id": device_id,
@@ -187,5 +191,6 @@ def _compute_component_deficits(states: dict, graph: Any) -> list[dict]:
             "supply_kw": round(supply_kw, 2),
             "deficit_kw": round(deficit_kw, 2),
             "reachable_resources": sorted(reachable),
+            "direct_supply_ids": sorted(direct_supply),
         })
     return results

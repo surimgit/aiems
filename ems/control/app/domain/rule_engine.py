@@ -56,6 +56,7 @@ async def run(states: dict, policy, event_pub, *, topology_graph=None) -> tuple[
     flow = compute_flow(states, graph=topology_graph, soc_low=soc_low)
     redis = event_pub._redis
 
+
     candidates: list[dict] = []
     rule_events: list[dict] = []
 

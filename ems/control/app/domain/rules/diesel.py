@@ -14,6 +14,41 @@ _DIESEL_MIN_RUN_SECONDS_DEFAULT = 300
 _REDIS_PREFIX = "ems:diesel:start:"
 
 
+def _diesel_zone_deficit(diesel: dict, flow: dict, states: dict) -> float:
+    """이 디젤이 연결된 load 구역들의 총 deficit (디젤 자신의 출력 제외).
+
+    component_deficits 의 supply_kw 에는 이미 running 디젤의 P 가 포함되어 있으므로
+    자신의 P 를 빼서 '외부 공급만으로 얼마나 부족한가'를 계산한다.
+    이렇게 해야 load_control 목표값 oscillation 을 방지할 수 있다.
+    """
+    device_id = diesel["device_id"]
+    diesel_p = diesel.get("P") or 0.0
+    total_deficit = 0.0
+    for comp in flow.get("component_deficits", []):
+        if device_id not in comp.get("reachable_resources", []):
+            continue
+        # supply_kw 에서 이 디젤의 기여분을 제거한 순수 외부 공급 deficit
+        external_supply = comp.get("supply_kw", 0.0) - diesel_p
+        deficit = max(comp.get("load_kw", 0.0) - external_supply, 0.0)
+        total_deficit += deficit
+    return total_deficit
+
+
+def _diesel_zone_net(diesel: dict, flow: dict, states: dict) -> float:
+    """이 디젤이 직접 연결된(direct_supply_ids) load 구역들의 총 (supply - load).
+
+    direct_supply_ids 에 포함된 load 구역만 봄으로써 다른 구역의 잉여가
+    공급이 필요한 구역의 부족을 상쇄하는 오판을 방지한다.
+    양수 = 잉여, 음수 = 부족.
+    """
+    device_id = diesel["device_id"]
+    zone_net = 0.0
+    for comp in flow.get("component_deficits", []):
+        if device_id in comp.get("direct_supply_ids", []):
+            zone_net += comp.get("supply_kw", 0.0) - comp.get("load_kw", 0.0)
+    return zone_net
+
+
 async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     diesel_devices = flow["diesel_devices"]
     if not diesel_devices:
@@ -24,19 +59,11 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
     fuel_critical = policy.get("DIESEL_FUEL_CRITICAL")
     min_run_sec = policy.get("DIESEL_MIN_RUN_SECONDS") or _DIESEL_MIN_RUN_SECONDS_DEFAULT
 
-    # Phase D (PLAN_TOPOLOGY_AWARE_CONTROL.md):
-    # SOC 만 보지 않고 dispatchable_ess_devices 사용.
-    # → wire_fault / 토폴로지 고립 / fault 인 ESS 가 디젤 기동을 막지 않는다.
-    ess_can_discharge = any(
-        (e["SOC"] or 0) > diesel_start_soc
-        for e in flow.get("dispatchable_ess_devices", [])
-    )
-
+    # component_deficits 가 있으면 구역별 판단, 없으면 전역 net_power 로 fallback.
+    use_zone = bool(flow.get("component_deficits"))
     net_power = flow["net_power"]
-    # ESS 가 이미 방전 중인 만큼을 제외한 diesel 몫의 net.
-    # ESS p 는 net_power 에 포함되어 있으므로 빼서 diesel 이 담당할 실제 부족분만 본다.
     ess_p = flow.get("ess_p", 0.0)
-    diesel_net = net_power - ess_p
+
     now = _time.time()
     commands = []
 
@@ -66,24 +93,68 @@ async def evaluate(flow: dict, policy, states: dict, redis) -> list[dict]:
             commands.append(_stop(diesel, f"fuel_critical={fuel}%"))
             continue
 
-        # 2. 부족 + ESS 방전 불가 → 기동
-        if not running and net_power < 0 and not ess_can_discharge:
-            commands.append(_start(diesel, f"net={net_power:.1f}kW, ESS unavailable"))
-            continue
+        if use_zone:
+            # 토폴로지 기반: 이 디젤이 연결된 load 구역의 deficit/net 기준
+            zone_deficit = _diesel_zone_deficit(diesel, flow, states)
+            zone_net = _diesel_zone_net(diesel, flow, states)
 
-        # 3. 잉여 충분 → 정지 (ESS 포함 전체 net 기준, 최소 운전 시간 경과 후만)
-        if running and net_power > diesel_stop_net:
-            if running_seconds >= min_run_sec:
-                commands.append(_stop(diesel, f"net={net_power:.1f}kW > {diesel_stop_net}, run={running_seconds:.0f}s"))
-            else:
-                remaining = min_run_sec - running_seconds
-                print(f"[diesel] {device_id} 정지 보류: 최소 운전 시간 미달 ({running_seconds:.0f}s / {min_run_sec:.0f}s, {remaining:.0f}s 남음)")
-            continue
+            # deficit 있는 load 구역에 직접(1홉) 연결된 dispatchable ESS 가 있는지 확인.
+            # deficit 없는 구역(load-02~04 등)은 제외 — 그쪽 ESS 가 load-01 을 못 도와줌.
+            zone_ess_can_discharge = False
+            for comp in flow.get("component_deficits", []):
+                if device_id not in comp.get("reachable_resources", []):
+                    continue
+                if comp.get("deficit_kw", 0.0) <= 0:
+                    continue
+                direct_ids = set(comp.get("direct_supply_ids", []))
+                for e in flow.get("dispatchable_ess_devices", []):
+                    if e["device_id"] in direct_ids and (e["SOC"] or 0) > diesel_start_soc:
+                        zone_ess_can_discharge = True
+                        break
 
-        # 4. 운전 중 + diesel 몫 부족 → 부하조정 (ESS 방전분 제외한 diesel_net 기준)
-        if running and diesel_net < 0:
-            target_kw = round(abs(diesel_net) / len(diesel_devices), 1)
-            commands.append(_load_control(diesel, target_kw, f"diesel_net={diesel_net:.1f}kW (net={net_power:.1f}, ess={ess_p:.1f})"))
+            # 2. 구역 부족 + 구역 ESS 방전 불가 → 기동
+            if not running and zone_deficit > 0 and not zone_ess_can_discharge:
+                commands.append(_start(diesel, f"zone_deficit={zone_deficit:.1f}kW, zone_net={zone_net:.1f}kW"))
+                continue
+
+            # 3. 구역 잉여 충분 → 정지 (최소 운전 시간 경과 후)
+            # deficit 있는 구역이 하나라도 있으면 정지 불가 (다른 구역 잉여가 상쇄해도 부족 구역엔 공급 안 됨)
+            if running and zone_net > diesel_stop_net and zone_deficit <= 0:
+                if running_seconds >= min_run_sec:
+                    commands.append(_stop(diesel, f"zone_net={zone_net:.1f}kW > {diesel_stop_net}, run={running_seconds:.0f}s"))
+                else:
+                    remaining = min_run_sec - running_seconds
+                    print(f"[diesel] {device_id} 정지 보류: 최소 운전 시간 미달 ({running_seconds:.0f}s / {min_run_sec:.0f}s, {remaining:.0f}s 남음)")
+                continue
+
+            # 4. 운전 중 + 직접 연결 구역 부족 → 부하조정
+            if running and zone_deficit > 0:
+                target_kw = round(zone_deficit / len(diesel_devices), 1)
+                commands.append(_load_control(diesel, target_kw, f"zone_deficit={zone_deficit:.1f}kW, zone_net={zone_net:.1f}kW"))
+
+        else:
+            # fallback: 전역 net_power 기준 (토폴로지 없을 때)
+            ess_can_discharge = any(
+                (e["SOC"] or 0) > diesel_start_soc
+                for e in flow.get("dispatchable_ess_devices", [])
+            )
+            diesel_net = net_power - ess_p
+
+            if not running and net_power < 0 and not ess_can_discharge:
+                commands.append(_start(diesel, f"net={net_power:.1f}kW, ESS unavailable"))
+                continue
+
+            if running and net_power > diesel_stop_net:
+                if running_seconds >= min_run_sec:
+                    commands.append(_stop(diesel, f"net={net_power:.1f}kW > {diesel_stop_net}, run={running_seconds:.0f}s"))
+                else:
+                    remaining = min_run_sec - running_seconds
+                    print(f"[diesel] {device_id} 정지 보류: 최소 운전 시간 미달 ({running_seconds:.0f}s / {min_run_sec:.0f}s, {remaining:.0f}s 남음)")
+                continue
+
+            if running and diesel_net < 0:
+                target_kw = round(abs(diesel_net) / len(diesel_devices), 1)
+                commands.append(_load_control(diesel, target_kw, f"diesel_net={diesel_net:.1f}kW (net={net_power:.1f}, ess={ess_p:.1f})"))
 
     return commands
 

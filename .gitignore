@@ -23,6 +23,8 @@ mqtt_data/
 .vscode/
 .claude/
 tests/
+!ems/state-processor/tests/
+!ems/state-processor/tests/test_state_calculator.py
 .pytest_cache/
 .coverage
 htmlcov/

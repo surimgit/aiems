@@ -22,6 +22,7 @@ def calculate(envelope: dict) -> dict:
     instantaneous = payload.get("instantaneous", {})
     status = payload.get("status", {})
     energy = payload.get("energy", {})
+    resource_spec = _extract_resource_spec(payload)
     edge_id = envelope.get("edge_id") or envelope.get("resource_id")
     location = _extract_location(envelope, payload)
 
@@ -92,6 +93,7 @@ def calculate(envelope: dict) -> dict:
         "longitude": location.get("longitude") if location else None,
         "site_metadata": _extract_site_metadata(envelope, payload),
         "reported_state": reported_state,
+        "resource_spec": resource_spec,
         "telemetry_window": payload.get("window"),
         "desired_state": None,      # state_publisher에서 Redis desired 키 조회 후 채움
         "last_command_id": None,    # 위와 동일
@@ -99,6 +101,17 @@ def calculate(envelope: dict) -> dict:
         "emergency": emergency,
         "interlock": interlock,
         "calculated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _extract_resource_spec(payload: dict) -> dict:
+    spec = payload.get("spec") or {}
+    if not isinstance(spec, dict):
+        return {}
+    return {
+        key: value
+        for key, value in spec.items()
+        if value is not None and value != ""
     }
 
 

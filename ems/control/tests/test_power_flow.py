@@ -76,6 +76,19 @@ def test_ess_with_low_soc_not_dispatchable():
     assert flow["dispatchable_ess_devices"] == []
 
 
+def test_ess_power_limit_uses_resource_spec_before_reported_state():
+    states = {
+        "ess-01": {
+            **_state("ess-01", "ESS", SOC=80, mode="standby"),
+            "resource_spec": {"power_limit_kw": 42.0},
+        },
+    }
+
+    flow = compute(states, graph=None, soc_low=20)
+
+    assert flow["ess_devices"][0]["power_limit_kw"] == 42.0
+
+
 def test_ess_wire_fault_not_dispatchable_even_with_high_soc():
     # 핵심 시나리오: SOC 높지만 wire_fault → 디젤 기동을 막으면 안 됨.
     g = build_graph(_full_topology())

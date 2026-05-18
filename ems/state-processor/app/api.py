@@ -189,6 +189,7 @@ def _state_to_ess_status(state: dict) -> dict:
     if rt != "ESS":
         return None
     reported = state.get("reported_state") or {}
+    resource_spec = state.get("resource_spec") or {}
     p = reported.get("P") or 0.0
     mode = (reported.get("operating_mode") or "").lower()
 
@@ -206,8 +207,8 @@ def _state_to_ess_status(state: dict) -> dict:
         "ess_id": state.get("device_id"),
         "edge_id": state.get("edge_id"),
         "name": state.get("device_id"),
-        "capacity_kwh": reported.get("capacity_kwh") or 0.0,
-        "max_power_kw": reported.get("power_limit_kw") or 0.0,
+        "capacity_kwh": resource_spec.get("capacity_kwh") or reported.get("capacity_kwh") or 0.0,
+        "max_power_kw": resource_spec.get("power_limit_kw") or reported.get("power_limit_kw") or 0.0,
         "soc": reported.get("SOC") or 0.0,
         "soh": reported.get("SOH"),
         "status": status,

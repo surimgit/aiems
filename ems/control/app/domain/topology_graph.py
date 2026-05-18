@@ -75,6 +75,24 @@ class TopologyGraph:
         self._reachable_cache[resource_id] = set(reached_resources)
         return reached_resources
 
+    def direct_supply_resources(self, load_resource_id: str) -> set[str]:
+        """이 LOAD 노드와 유효 선로로 직접 인접한 발전/저장 자원 집합 (1홉).
+
+        mesh 토폴로지에서 중간 노드(diesel 등)를 통한 우회 경로로
+        다른 구역의 자원까지 supply 로 잡히는 문제를 방지한다.
+        """
+        start_node = self._resource_to_node.get(load_resource_id)
+        if start_node is None:
+            return set()
+
+        supply_resources: set[str] = set()
+        for neighbor_node in self._adjacency.get(start_node, ()):
+            neighbor_resource = self._node_to_resource.get(neighbor_node)
+            if neighbor_resource and neighbor_resource != load_resource_id:
+                supply_resources.add(neighbor_resource)
+
+        return supply_resources
+
     def is_connected_to_any_load(self, resource_id: str) -> bool:
         """이 자원이 LOAD 노드 하나라도 통전 가능한가."""
         if not self._load_resource_ids:
