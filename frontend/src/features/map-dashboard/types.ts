@@ -1,7 +1,7 @@
 import type { TopologyData } from '@/types/common'
 
 export type EquipmentStatus = 'normal' | 'stopped' | 'error'
-export type EquipmentType = 'GENERATOR' | 'ESS' | 'LOAD'
+export type EquipmentType = 'SOLAR' | 'DIESEL' | 'GENERATOR' | 'ESS' | 'LOAD'
 
 export interface MapEquipment {
   id: string

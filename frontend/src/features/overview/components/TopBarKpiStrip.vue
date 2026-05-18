@@ -36,7 +36,12 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-alarm"
         @click="toggleMode('alarm')"
       >
-        {{ t('topbar.alarm') }} <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 4a6 6 0 0 0-6 6v3.2l-1.5 2.6A1 1 0 0 0 5.37 17h13.26a1 1 0 0 0 .87-1.5L18 13.2V10a6 6 0 0 0-6-6Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span>{{ t('topbar.alarm') }}</span>
+        <span v-if="activeAlarmCount > 0" class="badge">{{ activeAlarmCount }}</span>
       </button>
       <button
         type="button"
@@ -45,7 +50,12 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-recent"
         @click="toggleMode('recent-command')"
       >
-        {{ t('topbar.recent') }}
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h8M4 17h8M16 7h4M16 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="14" cy="7" r="2" stroke="currentColor" stroke-width="1.8"/>
+          <circle cx="10" cy="17" r="2" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+        <span>{{ t('topbar.recent') }}</span>
       </button>
       <button
         type="button"
@@ -54,7 +64,11 @@ const toggleMode = (mode: RightPanelMode) => {
         data-testid="icon-settings"
         @click="toggleMode('settings')"
       >
-        {{ t('topbar.settings') }}
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 .99-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 .99 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51.99H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51.99V15Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>{{ t('topbar.settings') }}</span>
       </button>
     </div>
   </section>
@@ -82,7 +96,11 @@ const toggleMode = (mode: RightPanelMode) => {
 }
 
 .icon-btn {
-  @apply rounded border border-slate-600 px-3 py-1.5 text-sm text-slate-200 transition-colors outline-none;
+  @apply inline-flex items-center gap-1.5 rounded border border-slate-600 px-3 py-1.5 text-sm text-slate-200 transition-colors outline-none;
+}
+
+.btn-icon {
+  @apply h-4 w-4 shrink-0;
 }
 
 .icon-btn.active {

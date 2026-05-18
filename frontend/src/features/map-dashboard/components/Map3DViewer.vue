@@ -10,6 +10,8 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { MapConnection, MapEquipment } from "../types";
 
 const props = defineProps<{
@@ -41,6 +43,213 @@ let resizeObserver: ResizeObserver | null = null;
 let resizeRaf: number | null = null;
 let windowResizeHandler: (() => void) | null = null;
 
+const EQUIPMENT_MODEL_LAYER_ID = "equipment-glb-models";
+const MODEL_SCENE_SCALE = 0.095;
+
+type EquipmentModelConfig = {
+  url: string;
+  sizeMeters: number;
+  altitudeMeters?: number;
+  rotationZ?: number;
+};
+
+const MODEL_CONFIG: Record<MapEquipment["type"], EquipmentModelConfig> = {
+  SOLAR: {
+    url: "/models/equipment/solar.glb",
+    sizeMeters: 14,
+    altitudeMeters: 0,
+    rotationZ: Math.PI * 0.08,
+  },
+  DIESEL: {
+    url: "/models/equipment/diesel.glb",
+    sizeMeters: 10,
+    altitudeMeters: 0,
+    rotationZ: Math.PI,
+  },
+  GENERATOR: {
+    url: "/models/equipment/diesel.glb",
+    sizeMeters: 10,
+    altitudeMeters: 0,
+    rotationZ: Math.PI,
+  },
+  ESS: {
+    url: "/models/equipment/ess.glb",
+    sizeMeters: 10,
+    altitudeMeters: 0,
+    rotationZ: Math.PI * 0.5,
+  },
+  LOAD: {
+    url: "/models/equipment/load.glb",
+    sizeMeters: 11,
+    altitudeMeters: 0,
+    rotationZ: Math.PI * 0.25,
+  },
+};
+
+type EquipmentModelLayerState = {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
+  renderer: THREE.WebGLRenderer;
+  loader: GLTFLoader;
+  templates: Map<MapEquipment["type"], THREE.Object3D>;
+  loadingTypes: Set<MapEquipment["type"]>;
+  objects: Map<string, THREE.Object3D>;
+};
+
+let modelLayerState: EquipmentModelLayerState | null = null;
+
+const normalizeModel = (source: THREE.Object3D): THREE.Object3D => {
+  const sourceClone = source.clone(true);
+  const sourceBox = new THREE.Box3().setFromObject(sourceClone);
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  sourceBox.getCenter(center);
+  sourceBox.getSize(size);
+
+  sourceClone.position.x -= center.x;
+  sourceClone.position.y -= sourceBox.min.y;
+  sourceClone.position.z -= center.z;
+
+  const wrapper = new THREE.Group();
+  wrapper.add(sourceClone);
+
+  const maxDimension = Math.max(size.x, size.y, size.z, 1);
+  wrapper.scale.setScalar(1 / maxDimension);
+  return wrapper;
+};
+
+const loadModelTemplate = (type: MapEquipment["type"]) => {
+  if (!modelLayerState) return;
+  if (modelLayerState.templates.has(type) || modelLayerState.loadingTypes.has(type)) return;
+
+  const config = MODEL_CONFIG[type];
+  modelLayerState.loadingTypes.add(type);
+  modelLayerState.loader.load(
+    config.url,
+    (gltf) => {
+      if (!modelLayerState) return;
+      modelLayerState.templates.set(type, normalizeModel(gltf.scene));
+      modelLayerState.loadingTypes.delete(type);
+      syncEquipmentModels();
+    },
+    undefined,
+    (error) => {
+      modelLayerState?.loadingTypes.delete(type);
+      console.warn(`[Map3DViewer] GLB 모델 로드 실패: ${type}`, error);
+    },
+  );
+};
+
+const applyModelMatrix = (object: THREE.Object3D, item: MapEquipment) => {
+  const config = MODEL_CONFIG[item.type];
+  const coordinate = maplibregl.MercatorCoordinate.fromLngLat(
+    item.lngLat,
+    config.altitudeMeters ?? 0,
+  );
+  const meterScale = coordinate.meterInMercatorCoordinateUnits();
+  const selectedScale = item.id === props.selectedEquipmentId ? 1.16 : 1;
+  const scale = meterScale * config.sizeMeters * MODEL_SCENE_SCALE * selectedScale;
+
+  const translation = new THREE.Matrix4().makeTranslation(
+    coordinate.x,
+    coordinate.y,
+    coordinate.z,
+  );
+  const scaleMatrix = new THREE.Matrix4().makeScale(scale, -scale, scale);
+  const rotateOnMap = new THREE.Matrix4().makeRotationZ(config.rotationZ ?? 0);
+  const alignModelToGround = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+
+  object.matrixAutoUpdate = false;
+  object.matrix.copy(
+    translation
+      .multiply(rotateOnMap)
+      .multiply(scaleMatrix)
+      .multiply(alignModelToGround),
+  );
+  object.matrixWorldNeedsUpdate = true;
+  object.visible = true;
+};
+
+const syncEquipmentModels = () => {
+  if (!modelLayerState) return;
+
+  const visibleIds = new Set<string>();
+  props.equipmentData.forEach((item) => {
+    visibleIds.add(item.id);
+    loadModelTemplate(item.type);
+
+    const template = modelLayerState?.templates.get(item.type);
+    if (!template || !modelLayerState) return;
+
+    let object = modelLayerState.objects.get(item.id);
+    if (!object) {
+      object = template.clone(true);
+      modelLayerState.objects.set(item.id, object);
+      modelLayerState.scene.add(object);
+    }
+    applyModelMatrix(object, item);
+  });
+
+  Array.from(modelLayerState.objects.entries()).forEach(([id, object]) => {
+    if (visibleIds.has(id)) return;
+    modelLayerState?.scene.remove(object);
+    modelLayerState?.objects.delete(id);
+  });
+
+  map?.triggerRepaint();
+};
+
+const createEquipmentModelLayer = (): maplibregl.CustomLayerInterface => ({
+  id: EQUIPMENT_MODEL_LAYER_ID,
+  type: "custom",
+  renderingMode: "3d",
+  onAdd: (targetMap, gl) => {
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 2.4));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(0, -70, 100);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 1.0);
+    fillLight.position.set(-60, 40, 70);
+    scene.add(fillLight);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas: targetMap.getCanvas(),
+      context: gl,
+      antialias: true,
+    });
+    renderer.autoClear = false;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    modelLayerState = {
+      scene,
+      camera: new THREE.Camera(),
+      renderer,
+      loader: new GLTFLoader(),
+      templates: new Map(),
+      loadingTypes: new Set(),
+      objects: new Map(),
+    };
+
+    props.equipmentData.forEach((item) => loadModelTemplate(item.type));
+    syncEquipmentModels();
+  },
+  render: (_gl, options) => {
+    if (!modelLayerState) return;
+    modelLayerState.camera.projectionMatrix.fromArray(options.defaultProjectionData.mainMatrix);
+    modelLayerState.renderer.resetState();
+    modelLayerState.renderer.clearDepth();
+    modelLayerState.renderer.render(modelLayerState.scene, modelLayerState.camera);
+    map?.triggerRepaint();
+  },
+  onRemove: () => {
+    modelLayerState?.renderer.dispose();
+    modelLayerState = null;
+  },
+});
+
 const toPointFeatureCollection = () => ({
   type: "FeatureCollection",
   features: props.equipmentData.map((e) => ({
@@ -53,7 +262,7 @@ const toPointFeatureCollection = () => ({
 const toBoxFeatureCollection = () => ({
   type: "FeatureCollection",
   features: props.equipmentData.map((e) => {
-    const size = 0.00085;
+    const size = 0.00016;
     const [lng, lat] = e.lngLat;
     return {
       type: "Feature",
@@ -133,6 +342,7 @@ const refreshMapSources = () => {
     | maplibregl.GeoJSONSource
     | undefined;
   if (lines) lines.setData(toLineFeatureCollection() as any);
+  syncEquipmentModels();
 };
 
 const centerMapToEquipments = () => {
@@ -211,7 +421,7 @@ const startAnimation = () => {
       map.setPaintProperty("lines-glow-error", "line-opacity", blink * 0.5);
     }
     if (map.getLayer("boxes-error")) {
-      map.setPaintProperty("boxes-error", "fill-extrusion-opacity", blink);
+      map.setPaintProperty("boxes-error", "fill-extrusion-opacity", 0.06 + blink * 0.08);
     }
 
     if (progress > 42) {
@@ -242,6 +452,7 @@ onMounted(() => {
     maxZoom: 18,
     pitch: 60,
     bearing: -15,
+    canvasContextAttributes: { antialias: true },
     renderWorldCopies: false,
   });
 
@@ -477,7 +688,7 @@ onMounted(() => {
         ],
         "fill-extrusion-height": ["get", "height"],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.72, 10, 0.88],
+        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.04, 10, 0.08],
       },
     });
     map.addLayer({
@@ -490,9 +701,10 @@ onMounted(() => {
         "fill-extrusion-color": "#ef4444",
         "fill-extrusion-height": ["get", "height"],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.72, 10, 0.88],
+        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 7.5, 0.06, 10, 0.12],
       },
     });
+    map.addLayer(createEquipmentModelLayer());
     map.addLayer({
       id: "boxes-selected-highlight",
       type: "line",
@@ -600,6 +812,7 @@ watch(
     if (!map || !map.getLayer("boxes-selected-highlight")) return;
     const targetId = equipmentId ?? "__none__";
     map.setFilter("boxes-selected-highlight", ["==", ["get", "id"], targetId]);
+    syncEquipmentModels();
   },
   { immediate: true },
 );

@@ -1,19 +1,19 @@
 {
   "topbar": {
-    "title": "AI EMS Dashboard",
+    "title": "AIEMS Dashboard",
     "subtitle": "Energy Management System",
-    "alarm": "Alarm",
+    "alarm": "Alert",
     "recent": "Recent Commands",
     "countryLanguage": "Country/Language",
     "settings": "Settings"
   },
   "rightPanel": {
     "defaultTitle": "Panel",
-    "alarmTop3": "Alarms",
+    "alarmTop3": "Alerts",
     "recentCommand": "Recent Command Results",
     "countryLanguage": "Country Selection",
     "settings": "Settings",
-    "selectedResource": "Selected Equipment",
+    "selectedResource": "Selected Facility",
     "control": "Equipment Control",
     "loadUsage": "Load Usage Status"
   },
@@ -66,7 +66,7 @@
     },
     "subText": {
       "vsLastMonth": "vs last month",
-      "basedOnCurrentAlarm": "based on current alarms"
+      "basedOnCurrentAlarm": "based on current alerts"
     },
     "items": {
       "generation": {
@@ -95,13 +95,13 @@
   },
   "selectedResource": {
     "sections": {
-      "summary": "Selected Equipment Summary",
+      "summary": "Selected Facility Summary",
       "control": "Equipment Control",
       "loadUsage": "Load Usage Overview"
     },
     "info": {
-      "equipmentId": "Equipment ID",
-      "equipmentType": "Equipment Type",
+      "equipmentId": "Facility ID",
+      "equipmentType": "Facility Type",
       "status": "Status",
       "commsStatus": "Communication",
       "currentPower": "Current Power",
@@ -190,8 +190,8 @@
   },
   "alarmPanel": {
     "ack": "Acknowledge",
-    "empty": "No active alarms.",
-    "viewAll": "View all alarms",
+    "empty": "No active alerts.",
+    "viewAll": "View all alerts",
     "viewTop5": "Summary view",
     "level": {
       "info": "Info",
@@ -207,8 +207,8 @@
       "warning": "Anomaly Alert · Warning",
       "info": "Anomaly Alert"
     },
-    "summary": "{total} active alarms",
+    "summary": "{total} active alerts",
     "summaryWithCritical": "{critical} critical · {total} total",
-    "openAlarmPanel": "Open alarm panel"
+    "openAlarmPanel": "Open alert panel"
   }
 }

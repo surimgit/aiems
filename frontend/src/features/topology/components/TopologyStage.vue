@@ -145,6 +145,7 @@ import EquipFormModal from '@/features/map-dashboard/components/EquipFormModal.v
 import type { ResourceInfo, TopologyData } from '@/types/common'
 import type { ConnectionDirection, EquipmentFormData, MapConnection, MapEquipment } from '@/features/map-dashboard/types'
 import { useControlStore } from '@/stores/control/control.store'
+import { useAlarmStore } from '@/stores/alarm/alarm.store'
 
 const props = defineProps<{
   topology: TopologyData | null
@@ -161,7 +162,9 @@ const emit = defineEmits<{
 }>()
 
 const controlStore = useControlStore()
+const alarmStore = useAlarmStore()
 const { pendingCommands, commandHistory } = storeToRefs(controlStore)
+const { activeAlarms } = storeToRefs(alarmStore)
 
 const commandStatusPriority: Record<string, number> = {
   CREATED: 1,
@@ -282,12 +285,20 @@ const nodeTypeToEquipmentType = (nodeType: string): MapEquipment['type'] | null 
   return null
 }
 
+const resolveGenerationEquipmentType = (resourceType?: string, resourceId?: string, name?: string): MapEquipment['type'] => {
+  const hint = `${resourceType ?? ''} ${resourceId ?? ''} ${name ?? ''}`.toUpperCase()
+  if (hint.includes('SOLAR') || hint.includes('PV')) return 'SOLAR'
+  if (hint.includes('DIESEL') || hint.includes('GENERATOR') || hint.includes('DG')) return 'DIESEL'
+  return 'GENERATOR'
+}
+
 const resourceTypeToEquipmentType = (resourceType?: string): MapEquipment['type'] | null => {
   if (!resourceType) return null
   const upper = resourceType.toUpperCase()
   if (upper === 'ESS') return 'ESS'
   if (upper === 'LOAD') return 'LOAD'
-  if (upper === 'SOLAR' || upper === 'DIESEL_GENERATOR' || upper === 'DIESEL') return 'GENERATOR'
+  if (upper === 'SOLAR' || upper === 'PV') return 'SOLAR'
+  if (upper === 'DIESEL_GENERATOR' || upper === 'DIESEL') return 'DIESEL'
   return null
 }
 
@@ -295,6 +306,62 @@ const resourceStatusToEquipmentStatus = (status?: string): MapEquipment['status'
   const upper = (status ?? '').toUpperCase()
   if (upper.includes('EMERGENCY') || upper.includes('FAULT') || upper.includes('ERROR') || upper.includes('OFFLINE')) return 'error'
   if (upper.includes('WARNING') || upper.includes('OPEN') || upper.includes('BLOCKED')) return 'stopped'
+  return 'normal'
+}
+
+const alarmSeverityRank: Record<'info' | 'warning' | 'critical', number> = {
+  info: 1,
+  warning: 2,
+  critical: 3
+}
+
+const extractAlarmResourceCandidates = (alarm: (typeof activeAlarms.value)[number]): string[] => {
+  const alarmRecord = alarm as unknown as Record<string, unknown>
+  const extraCandidates = [alarmRecord.resource_id, alarmRecord.target_resource_id]
+
+  return [alarm.ess_id, alarm.device_id, ...extraCandidates]
+    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+    .filter(Boolean)
+}
+
+const alarmLevelByResourceId = computed(() => {
+  const levelByResource = new Map<string, 'info' | 'warning' | 'critical'>()
+
+  activeAlarms.value.forEach((alarm) => {
+    const level = alarm.level
+    const candidates = extractAlarmResourceCandidates(alarm)
+
+    candidates.forEach((resourceId) => {
+      const prev = levelByResource.get(resourceId)
+      if (!prev || alarmSeverityRank[level] > alarmSeverityRank[prev]) {
+        levelByResource.set(resourceId, level)
+      }
+    })
+  })
+
+  return levelByResource
+})
+
+const applyAlarmToEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
+  const key = resourceId.toLowerCase()
+  const directLevel = alarmLevelByResourceId.value.get(key)
+  const messageLevel = activeAlarms.value
+    .filter((alarm) => (alarm.message ?? '').toLowerCase().includes(key))
+    .reduce<'info' | 'warning' | 'critical' | null>((acc, alarm) => {
+      if (!acc) return alarm.level
+      return alarmSeverityRank[alarm.level] > alarmSeverityRank[acc] ? alarm.level : acc
+    }, null)
+
+  const level = directLevel ?? messageLevel
+  if (!level) return baseStatus
+  if (level === 'critical') return 'error'
+  if (level === 'warning') return baseStatus === 'error' ? 'error' : 'stopped'
+  return baseStatus
+}
+
+const mergeStatusByPriority = (left: MapEquipment['status'], right: MapEquipment['status']): MapEquipment['status'] => {
+  if (left === 'error' || right === 'error') return 'error'
+  if (left === 'stopped' || right === 'stopped') return 'stopped'
   return 'normal'
 }
 
@@ -337,6 +404,12 @@ const applyCommandToEquipmentStatus = (resourceId: string, baseStatus: MapEquipm
   }
 
   return applyUnintendedDisconnectStatus(baseStatus)
+}
+
+const computeEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
+  const alarmApplied = applyAlarmToEquipmentStatus(resourceId, baseStatus)
+  const commandApplied = applyCommandToEquipmentStatus(resourceId, baseStatus)
+  return mergeStatusByPriority(alarmApplied, commandApplied)
 }
 
 const applyCommandToLineStatus = (lineId: string, fromResourceId: string, toResourceId: string, baseStatus: MapConnection['status']): MapConnection['status'] => {
@@ -463,6 +536,12 @@ const fallbackPositionByType = (type: MapEquipment['type'], index: number, ancho
   if (type === 'GENERATOR') {
     return [baseLng - 0.0016, baseLat + 0.0007 - index * 0.0008]
   }
+  if (type === 'SOLAR') {
+    return [baseLng - 0.0019, baseLat + 0.0009 - index * 0.00075]
+  }
+  if (type === 'DIESEL') {
+    return [baseLng - 0.0015, baseLat - 0.0006 - index * 0.00075]
+  }
   if (type === 'ESS') {
     return [baseLng, baseLat]
   }
@@ -525,14 +604,20 @@ const applyTopologyData = () => {
     const topologyEquipments: MapEquipment[] = []
     const typeCounts: Record<MapEquipment['type'], number> = {
       GENERATOR: 0,
+      SOLAR: 0,
+      DIESEL: 0,
       ESS: 0,
       LOAD: 0
     }
 
     props.topology.nodes.forEach((node) => {
-      const type = nodeTypeToEquipmentType(node.node_type)
-      if (!type) return
       const linkedResource = resourceById.get(node.resource_id.toLowerCase())
+      const baseType = nodeTypeToEquipmentType(node.node_type)
+      const type =
+        baseType === 'GENERATOR'
+          ? resolveGenerationEquipmentType(linkedResource?.resource_type, node.resource_id, linkedResource?.name)
+          : baseType
+      if (!type) return
       const powerKw = toNumber(linkedResource?.telemetry?.p_kw) ?? flowByNodeId.get(node.node_id) ?? 0
       const fallbackIndex = typeCounts[type]
       typeCounts[type] += 1
@@ -542,7 +627,7 @@ const applyTopologyData = () => {
       const lng = resourcePosition?.[0] ?? mappedPosition?.[0] ?? fallback[0]
       const lat = resourcePosition?.[1] ?? mappedPosition?.[1] ?? fallback[1]
 
-      const equipmentStatus = applyCommandToEquipmentStatus(
+      const equipmentStatus = computeEquipmentStatus(
         node.resource_id,
         linkedResource ? resourceStatusToEquipmentStatus(linkedResource.status) : nodeToStatus(node.status)
       )
@@ -603,6 +688,8 @@ const applyTopologyData = () => {
 
   const typeCounts: Record<MapEquipment['type'], number> = {
     GENERATOR: 0,
+    SOLAR: 0,
+    DIESEL: 0,
     ESS: 0,
     LOAD: 0
   }
@@ -616,7 +703,7 @@ const applyTopologyData = () => {
       id: resource.resource_id,
       name: resource.name ?? resource.resource_id,
       type,
-      status: applyCommandToEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
+      status: computeEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
       power: `${Math.round(powerKw)} kW`,
       lngLat: fallback,
       metrics: {
@@ -662,6 +749,8 @@ const applyTopologyData = () => {
 
 const typePrefix: Record<MapEquipment['type'], string> = {
   GENERATOR: 'GENERATOR',
+  SOLAR: 'SOLAR',
+  DIESEL: 'DIESEL',
   ESS: 'ESS',
   LOAD: 'LOAD'
 }
@@ -762,6 +851,8 @@ const resolveResourceIdFromMapEquipment = (id: string): string => {
   const typeFilteredNodes = props.topology.nodes.filter((node) => {
     if (mapEquipment.type === 'ESS') return node.node_type === 'STORAGE'
     if (mapEquipment.type === 'LOAD') return node.node_type === 'LOAD'
+    if (mapEquipment.type === 'SOLAR') return node.resource_id.toUpperCase().includes('SOLAR') || node.resource_id.toUpperCase().includes('PV')
+    if (mapEquipment.type === 'DIESEL') return node.resource_id.toUpperCase().includes('DIESEL') || node.resource_id.toUpperCase().includes('GENERATOR')
     return node.node_type === 'GENERATION' || node.node_type === 'GRID'
   })
 
@@ -819,6 +910,12 @@ watch(
 
 watch(
   () => sortedControlSignals.value,
+  () => applyTopologyData(),
+  { deep: true }
+)
+
+watch(
+  () => activeAlarms.value,
   () => applyTopologyData(),
   { deep: true }
 )

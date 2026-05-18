@@ -1,52 +1,52 @@
 <script setup lang="ts">
 /**
  * AlarmPage.vue - 알람 페이지
- * 
+ *
  * [중요] 이 페이지는 조합 전용 페이지입니다.
  * - API를 직접 호출하지 마세요.
  */
 
-import { onMounted } from 'vue'
-import { useAlarmFeature } from '@/features/alarm'
+import { onMounted } from "vue";
+import { useAlarmFeature } from "@/features/alarm";
 
-const { 
-  alarms, 
-  activeAlarms, 
-  criticalAlarms, 
-  hasActiveAlarm, 
+const {
+  alarms,
+  activeAlarms,
+  criticalAlarms,
+  hasActiveAlarm,
   criticalAlarmCount,
-  isLoading, 
+  isLoading,
   fetchAlarms,
-  acknowledgeAlarm 
-} = useAlarmFeature()
+  acknowledgeAlarm,
+} = useAlarmFeature();
 
 onMounted(async () => {
-  await fetchAlarms()
-})
+  await fetchAlarms();
+});
 </script>
 
 <template>
   <div class="alarm-page">
-    <h1 class="page-title">알람</h1>
-    
+    <h1 class="page-title">알림</h1>
+
     <!-- 요약 -->
     <section class="alarm-summary">
       <div class="summary-card">
         <span class="count">{{ activeAlarms.length }}</span>
-        <span class="label">활성 알람</span>
+        <span class="label">활성 알림</span>
       </div>
       <div class="summary-card critical">
         <span class="count">{{ criticalAlarmCount }}</span>
-        <span class="label">비상 알람</span>
+        <span class="label">비상 알림</span>
       </div>
     </section>
-    
-    <!-- 비상 알람 -->
+
+    <!-- 비상 알림 -->
     <section v-if="criticalAlarms.length > 0" class="critical-alarms">
-      <h2>🚨 비상 알람</h2>
+      <h2>🚨 비상 알림</h2>
       <div class="alarm-list">
-        <div 
-          v-for="alarm in criticalAlarms" 
+        <div
+          v-for="alarm in criticalAlarms"
           :key="alarm.alarm_id"
           class="alarm-item critical"
         >
@@ -58,13 +58,13 @@ onMounted(async () => {
         </div>
       </div>
     </section>
-    
-    <!-- 모든 알람 -->
+
+    <!-- 모든 알림 -->
     <section class="all-alarms">
-      <h2>모든 알람</h2>
+      <h2>모든 알림</h2>
       <div v-if="alarms.length > 0" class="alarm-list">
-        <div 
-          v-for="alarm in alarms" 
+        <div
+          v-for="alarm in alarms"
           :key="alarm.alarm_id"
           class="alarm-item"
           :class="alarm.level"
@@ -73,8 +73,8 @@ onMounted(async () => {
           <span class="code">{{ alarm.code }}</span>
           <span class="message">{{ alarm.message }}</span>
           <span class="timestamp">{{ alarm.timestamp }}</span>
-          <button 
-            v-if="!alarm.acknowledged" 
+          <button
+            v-if="!alarm.acknowledged"
             @click="acknowledgeAlarm(alarm.alarm_id!)"
           >
             확인

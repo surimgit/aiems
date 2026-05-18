@@ -13,8 +13,9 @@
         </button>
       </div>
 
-      <div class="mb-3 grid grid-cols-3 gap-2">
-        <button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs" @click="spawnTemplate('GENERATOR')">예비 발전기</button>
+      <div class="mb-3 grid grid-cols-4 gap-2">
+        <button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs" @click="spawnTemplate('SOLAR')">예비 태양광</button>
+        <button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs" @click="spawnTemplate('DIESEL')">예비 디젤</button>
         <button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs" @click="spawnTemplate('ESS')">예비 ESS</button>
         <button type="button" class="rounded bg-slate-700 px-2 py-1 text-xs" @click="spawnTemplate('LOAD')">예비 LOAD</button>
       </div>
@@ -27,6 +28,8 @@
         </div>
         <div class="mb-2 grid grid-cols-2 gap-2">
           <select v-model="coordForm.type" class="rounded bg-slate-800 px-2 py-1 text-xs">
+            <option value="SOLAR">태양광</option>
+            <option value="DIESEL">디젤 발전기</option>
             <option value="GENERATOR">발전기</option>
             <option value="ESS">ESS</option>
             <option value="LOAD">LOAD</option>
@@ -118,9 +121,10 @@ const visibleMetrics = ref({
 })
 const uiPositions = ref<Record<string, { x: number; y: number }>>({})
 const equipmentData = ref<MapEquipment[]>([
-  { id: 'solar-1', name: 'SOLAR #1', type: 'GENERATOR', status: 'normal', power: '640 kW', lngLat: [129.074, 35.1795] },
-  { id: 'solar-2', name: 'SOLAR #2', type: 'GENERATOR', status: 'stopped', power: '320 kW', lngLat: [129.074, 35.1785] },
+  { id: 'solar-1', name: 'SOLAR #1', type: 'SOLAR', status: 'normal', power: '640 kW', lngLat: [129.074, 35.1795] },
+  { id: 'solar-2', name: 'SOLAR #2', type: 'SOLAR', status: 'stopped', power: '320 kW', lngLat: [129.074, 35.1785] },
   { id: 'ess-1', name: 'ESS', type: 'ESS', status: 'normal', power: '-120 kW', lngLat: [129.076, 35.178] },
+  { id: 'diesel-1', name: 'DIESEL #1', type: 'DIESEL', status: 'normal', power: '180 kW', lngLat: [129.0752, 35.1774] },
   { id: 'load-1', name: 'LOAD #1', type: 'LOAD', status: 'normal', power: '420 kW', lngLat: [129.0775, 35.1795] },
   { id: 'load-2', name: 'LOAD #2', type: 'LOAD', status: 'normal', power: '350 kW', lngLat: [129.0775, 35.1785] },
   { id: 'load-3', name: 'LOAD #3', type: 'LOAD', status: 'error', power: '250 kW', lngLat: [129.0775, 35.1775] }
@@ -128,6 +132,7 @@ const equipmentData = ref<MapEquipment[]>([
 const connections = ref<MapConnection[]>([
   { id: 'line-solar1-ess', fromEquipmentId: 'solar-1', toEquipmentId: 'ess-1', direction: 'FORWARD', status: 'normal' },
   { id: 'line-solar2-ess', fromEquipmentId: 'solar-2', toEquipmentId: 'ess-1', direction: 'FORWARD', status: 'stopped' },
+  { id: 'line-diesel-ess', fromEquipmentId: 'diesel-1', toEquipmentId: 'ess-1', direction: 'FORWARD', status: 'normal' },
   { id: 'line-ess-load1', fromEquipmentId: 'ess-1', toEquipmentId: 'load-1', direction: 'FORWARD', status: 'normal' },
   { id: 'line-ess-load2', fromEquipmentId: 'ess-1', toEquipmentId: 'load-2', direction: 'FORWARD', status: 'normal' },
   { id: 'line-ess-load3', fromEquipmentId: 'ess-1', toEquipmentId: 'load-3', direction: 'FORWARD', status: 'error' }
@@ -155,6 +160,8 @@ const nodeToType = (resourceId: string): MapEquipment['type'] => {
   const id = resourceId.toUpperCase()
   if (id.includes('ESS')) return 'ESS'
   if (id.includes('LOAD')) return 'LOAD'
+  if (id.includes('SOLAR') || id.includes('PV')) return 'SOLAR'
+  if (id.includes('DIESEL') || id.includes('GENERATOR')) return 'DIESEL'
   return 'GENERATOR'
 }
 

@@ -11,6 +11,8 @@
 
         <label class="text-xs text-slate-300">장비 타입</label>
         <select v-model="localForm.type" class="rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs">
+          <option value="SOLAR">태양광</option>
+          <option value="DIESEL">디젤 발전기</option>
           <option value="GENERATOR">발전기</option>
           <option value="ESS">ESS</option>
           <option value="LOAD">LOAD</option>
