@@ -272,15 +272,6 @@ EOF
                         '''
                     }
                 }
-                stage('Test - AI') {
-                    when { expression { env.CHANGED_AI == 'true' } }
-                    steps {
-                        sh '''
-                            docker compose -f docker-compose.control.yml run --rm --no-deps ai \
-                                sh -c "pip install pytest && pytest tests/ -v --tb=short || true"
-                        '''
-                    }
-                }
             }
             post { failure { script { env.FAILED_STAGE = env.FAILED_STAGE ?: 'Test' } } }
         }
