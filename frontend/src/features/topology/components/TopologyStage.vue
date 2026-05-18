@@ -145,7 +145,6 @@ import EquipFormModal from '@/features/map-dashboard/components/EquipFormModal.v
 import type { ResourceInfo, TopologyData } from '@/types/common'
 import type { ConnectionDirection, EquipmentFormData, MapConnection, MapEquipment } from '@/features/map-dashboard/types'
 import { useControlStore } from '@/stores/control/control.store'
-import { useAlarmStore } from '@/stores/alarm/alarm.store'
 
 const props = defineProps<{
   topology: TopologyData | null
@@ -162,9 +161,7 @@ const emit = defineEmits<{
 }>()
 
 const controlStore = useControlStore()
-const alarmStore = useAlarmStore()
 const { pendingCommands, commandHistory } = storeToRefs(controlStore)
-const { activeAlarms } = storeToRefs(alarmStore)
 
 const commandStatusPriority: Record<string, number> = {
   CREATED: 1,
@@ -309,62 +306,6 @@ const resourceStatusToEquipmentStatus = (status?: string): MapEquipment['status'
   return 'normal'
 }
 
-const alarmSeverityRank: Record<'info' | 'warning' | 'critical', number> = {
-  info: 1,
-  warning: 2,
-  critical: 3
-}
-
-const extractAlarmResourceCandidates = (alarm: (typeof activeAlarms.value)[number]): string[] => {
-  const alarmRecord = alarm as unknown as Record<string, unknown>
-  const extraCandidates = [alarmRecord.resource_id, alarmRecord.target_resource_id]
-
-  return [alarm.ess_id, alarm.device_id, ...extraCandidates]
-    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
-    .filter(Boolean)
-}
-
-const alarmLevelByResourceId = computed(() => {
-  const levelByResource = new Map<string, 'info' | 'warning' | 'critical'>()
-
-  activeAlarms.value.forEach((alarm) => {
-    const level = alarm.level
-    const candidates = extractAlarmResourceCandidates(alarm)
-
-    candidates.forEach((resourceId) => {
-      const prev = levelByResource.get(resourceId)
-      if (!prev || alarmSeverityRank[level] > alarmSeverityRank[prev]) {
-        levelByResource.set(resourceId, level)
-      }
-    })
-  })
-
-  return levelByResource
-})
-
-const applyAlarmToEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
-  const key = resourceId.toLowerCase()
-  const directLevel = alarmLevelByResourceId.value.get(key)
-  const messageLevel = activeAlarms.value
-    .filter((alarm) => (alarm.message ?? '').toLowerCase().includes(key))
-    .reduce<'info' | 'warning' | 'critical' | null>((acc, alarm) => {
-      if (!acc) return alarm.level
-      return alarmSeverityRank[alarm.level] > alarmSeverityRank[acc] ? alarm.level : acc
-    }, null)
-
-  const level = directLevel ?? messageLevel
-  if (!level) return baseStatus
-  if (level === 'critical') return 'error'
-  if (level === 'warning') return baseStatus === 'error' ? 'error' : 'stopped'
-  return baseStatus
-}
-
-const mergeStatusByPriority = (left: MapEquipment['status'], right: MapEquipment['status']): MapEquipment['status'] => {
-  if (left === 'error' || right === 'error') return 'error'
-  if (left === 'stopped' || right === 'stopped') return 'stopped'
-  return 'normal'
-}
-
 const applyUnintendedDisconnectStatus = <T extends MapEquipment['status'] | MapConnection['status']>(status: T): T => {
   if (!hasUnintendedCommDisconnect.value) return status
   return 'error' as T
@@ -404,12 +345,6 @@ const applyCommandToEquipmentStatus = (resourceId: string, baseStatus: MapEquipm
   }
 
   return applyUnintendedDisconnectStatus(baseStatus)
-}
-
-const computeEquipmentStatus = (resourceId: string, baseStatus: MapEquipment['status']): MapEquipment['status'] => {
-  const alarmApplied = applyAlarmToEquipmentStatus(resourceId, baseStatus)
-  const commandApplied = applyCommandToEquipmentStatus(resourceId, baseStatus)
-  return mergeStatusByPriority(alarmApplied, commandApplied)
 }
 
 const applyCommandToLineStatus = (lineId: string, fromResourceId: string, toResourceId: string, baseStatus: MapConnection['status']): MapConnection['status'] => {
@@ -627,7 +562,7 @@ const applyTopologyData = () => {
       const lng = resourcePosition?.[0] ?? mappedPosition?.[0] ?? fallback[0]
       const lat = resourcePosition?.[1] ?? mappedPosition?.[1] ?? fallback[1]
 
-      const equipmentStatus = computeEquipmentStatus(
+      const equipmentStatus = applyCommandToEquipmentStatus(
         node.resource_id,
         linkedResource ? resourceStatusToEquipmentStatus(linkedResource.status) : nodeToStatus(node.status)
       )
@@ -703,7 +638,7 @@ const applyTopologyData = () => {
       id: resource.resource_id,
       name: resource.name ?? resource.resource_id,
       type,
-      status: computeEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
+      status: applyCommandToEquipmentStatus(resource.resource_id, resourceStatusToEquipmentStatus(resource.status)),
       power: `${Math.round(powerKw)} kW`,
       lngLat: fallback,
       metrics: {
@@ -910,12 +845,6 @@ watch(
 
 watch(
   () => sortedControlSignals.value,
-  () => applyTopologyData(),
-  { deep: true }
-)
-
-watch(
-  () => activeAlarms.value,
   () => applyTopologyData(),
   { deep: true }
 )
