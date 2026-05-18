@@ -10,7 +10,7 @@ PRIORITY = 50
 SOC_HYSTERESIS = 5.0
 
 # 0 부근에서 charge/discharge가 핑퐁하지 않도록 하는 net hold band (kW)
-ESS_EXTERNAL_NET_HOLD_BAND_KW = 2.0
+ESS_EXTERNAL_NET_HOLD_BAND_KW = 0.5
 
 # ESS 정격 기본값 — telemetry에 power_limit_kw 없을 때 fallback
 _ESS_POWER_LIMIT_DEFAULT_KW = 50.0
